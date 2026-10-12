@@ -1,0 +1,18 @@
+{
+  "name": "infinity-edge-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "InfinityEdge3D migrated to the browser: WebGL (three.js) + Vue 3, JSON levels/models, HTML UI",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "convert:content": "node tools/convert-content.mjs",
+    "convert:models": "bash tools/convert-models.sh"
+  },
+  "dependencies": {
+    "three": "^0.186.1",
+    "vue": "^3.5.43"
+  }
+}
