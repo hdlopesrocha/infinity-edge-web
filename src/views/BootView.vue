@@ -1,5 +1,5 @@
-<!-- Boot splash sequence: EngineScreen (3000ms + 500ms fade) then StartScreen
-     (3000ms + fade), then MainMenu. Mirrors Game1.LoadContent scene stack. -->
+<!-- Boot splashes: EngineScreen (wheel scene + engineLogo) then StartScreen
+     (gameLogo), 3000ms + 500ms fades, then MainMenu. -->
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -8,38 +8,30 @@ import { audio } from '../game/audio';
 const router = useRouter();
 const route = useRoute();
 const fading = ref(false);
+const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
 
-function logoFor(): string {
-  const name = String(route.name ?? 'boot');
-  // /engine shows engineLogo; /start and / show gameLogo.
-  if (name === 'engine') return import.meta.env.BASE_URL + 'assets/textures/_engineLogo.png';
-  return import.meta.env.BASE_URL + 'assets/textures/_gameLogo.png';
+function logo(): string {
+  const n = String(route.name ?? 'boot');
+  if (n === 'engine') return base + '_engineLogo.png';
+  return base + '_gameLogo.png';
 }
 
 onMounted(() => {
-  const name = String(route.name ?? 'boot');
-  if (name === 'boot') {
-    // Root URL: play the full stack quickly (engine -> start -> menu).
-    window.setTimeout(() => void router.replace('/engine'), 50);
+  const n = String(route.name ?? 'boot');
+  if (n === 'boot') {
+    window.setTimeout(() => void router.replace('/engine'), 60);
     return;
   }
-  if (name === 'engine') {
-    void audio.speak('Welcome');
-    window.setTimeout(() => {
-      fading.value = true;
-    }, 3000);
-    window.setTimeout(() => void router.replace('/start'), 3500);
-    return;
-  }
+  if (n === 'engine') void audio.voice('welcome');
   window.setTimeout(() => {
     fading.value = true;
   }, 3000);
-  window.setTimeout(() => void router.replace('/menu'), 3500);
+  window.setTimeout(() => void router.replace(n === 'engine' ? '/start' : '/menu'), 3500);
 });
 </script>
 
 <template>
   <div class="splash" :class="{ fade: fading }">
-    <img :src="logoFor()" alt="Infinity Edge" />
+    <img :src="logo()" alt="Infinity Edge" />
   </div>
 </template>

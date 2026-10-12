@@ -27,65 +27,49 @@
       "team": "human",
       "type": "base",
       "model": "Base",
-      "position": "0|0|0",
-      "name": "",
-      "life": ""
+      "position": "0|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|64|64",
-      "name": "",
-      "life": ""
+      "position": "0|64|64"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|128|128",
-      "name": "",
-      "life": ""
+      "position": "0|128|128"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|192|192",
-      "name": "",
-      "life": ""
+      "position": "0|192|192"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|256|256",
-      "name": "",
-      "life": ""
+      "position": "0|256|256"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|320|320",
-      "name": "",
-      "life": ""
+      "position": "0|320|320"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|384|384",
-      "name": "",
-      "life": ""
+      "position": "0|384|384"
     },
     {
       "team": "ambient",
       "type": "miniStar",
       "model": "",
       "position": "random",
-      "name": "",
-      "life": "",
       "amount": 10000
     }
   ],

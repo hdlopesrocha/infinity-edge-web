@@ -2,7 +2,7 @@
   {
     "file": "Background.json",
     "source": "Background.xml",
-    "type": "",
+    "type": "BACK",
     "objects": 5
   },
   {
@@ -27,7 +27,7 @@
     "file": "SinglePlayer_TT_Easy_01_Level.json",
     "source": "SinglePlayer/TT/Easy/01/Level.xml",
     "type": "TT",
-    "objects": 10
+    "objects": 9
   },
   {
     "file": "SinglePlayer_TT_Easy_02_Level.json",

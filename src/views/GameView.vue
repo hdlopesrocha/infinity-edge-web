@@ -1,184 +1,177 @@
-<!-- GameInstance HUD: scoreboard, aim reticle, timer, addons, touch controls.
-     Drives the renderer via keyboard (WASD/arrows + Space nitro + F fire)
-     and touch buttons. Victory/Defeat push result routes like the original. -->
+<!-- Game HUD: scoreboard, notification, aim, life bar, enemy pointers,
+     touch controls (stick/accel/fire/homing/nitro), corner buttons.
+     Reads the live GameInstance; input feeds instance.control. -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { LEVELS } from '../game/levels';
+import type { GameInstance, PointerMark } from '../game/instance';
+import { Life1, Life3 } from '../game/life';
 import { audio } from '../game/audio';
-import { recordScore, store } from '../game/store';
-import { GhostRecorder } from '../game/ghost';
 
 const route = useRoute();
 const router = useRouter();
-const levelKey = String(route.params.level ?? '');
-const level = computed(() => LEVELS[levelKey]);
-let finished = false;
-const base = import.meta.env.BASE_URL + 'assets/textures/';
+const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
 
-const elapsed = ref(0);
-const timerId = ref(0);
-const nitro = ref(100);
-const message = ref('');
-const timerText = computed(() => {
-  const s = Math.floor(elapsed.value);
-  const mm = String(Math.floor(s / 60)).padStart(2, '0');
-  const ss = String(s % 60).padStart(2, '0');
-  return `${mm}:${ss}`;
+function game(): GameInstance | null {
+  return (window as unknown as { __ieGame?: GameInstance }).__ieGame ?? null;
+}
+
+const hud = reactive({
+  score: '',
+  notify: '',
+  aimX: 0,
+  aimY: 0,
+  lifeHtml: '',
+  homings: 0,
+  nitroPct: 0,
+  stickOn: false,
+  backX: 0,
+  backY: 0,
+  knobX: 0,
+  knobY: 0,
+  acel: 0,
+  pointers: [] as PointerMark[],
+  canvasW: 1280,
+  canvasH: 720,
 });
 
-function renderer(): RendererLike | null {
-  return (window as unknown as { __ieRenderer?: RendererLike }).__ieRenderer ?? null;
-}
+const layerRef = ref<HTMLDivElement | null>(null);
+let timer = 0;
 
-interface RendererLike {
-  input: { fwd: number; strafe: number; up: number; yaw: number; pitch: number; fire: boolean; nitro: boolean };
-  camera: { h: number; v: number; orbit(dh: number, dv: number): void };
-  player(): { pos: { [i: number]: number } } | undefined;
-}
-
-const ghost = new GhostRecorder();
-
-const keys = new Set<string>();
-
-function onKeyDown(e: KeyboardEvent): void {
-  if (e.repeat) return;
-  keys.add(e.code);
-  audio.unlock();
-  if (e.code === 'Escape') void router.push('/briefing/' + levelKey);
-  pushInput();
-}
-
-function onKeyUp(e: KeyboardEvent): void {
-  keys.delete(e.code);
-  pushInput();
-}
-
-function pushInput(): void {
-  const r = renderer();
-  if (!r) return;
-  const k = keys;
-  r.input.fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) + (k.has('KeyS') || k.has('ArrowDown') ? -1 : 0);
-  r.input.strafe = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) + (k.has('KeyA') || k.has('ArrowLeft') ? -1 : 0);
-  r.input.up = (k.has('KeyR') || k.has('Space') ? 1 : 0) + (k.has('KeyF') ? -1 : 0);
-  let yaw = 0;
-  if (k.has('KeyQ')) yaw -= 1;
-  if (k.has('KeyE')) yaw += 1;
-  const inv = store.options.invX ? -1 : 1;
-  r.camera.h = (r.camera.h + yaw * 3 * inv + 360) % 360;
-  r.input.nitro = k.has('ShiftLeft') || k.has('ShiftRight');
-  r.input.fire = k.has('KeyX') || k.has('ControlLeft');
-  if (r.input.fire) void audio.play('bulletSound', 0.5);
-  if (r.input.nitro && nitro.value > 0) nitro.value = Math.max(0, nitro.value - 1);
-}
-
-let drag: { x: number; y: number } | null = null;
-
-function onPointerDown(e: PointerEvent): void {
-  drag = { x: e.clientX, y: e.clientY };
-}
-
-function onPointerMove(e: PointerEvent): void {
-  if (!drag) return;
-  const r = renderer();
-  if (!r) return;
-  const dx = (e.clientX - drag.x) * (store.options.invX ? -1 : 1);
-  const dy = (e.clientY - drag.y) * (store.options.invY ? -1 : 1);
-  drag = { x: e.clientX, y: e.clientY };
-  r.camera.orbit(dx * 0.25, dy * 0.25);
-}
-
-function onPointerUp(): void {
-  drag = null;
-}
-
-function touchBtn(prop: 'fwd' | 'nitro' | 'fire', v: number | boolean): void {
-  const r = renderer();
-  audio.unlock();
-  if (!r) return;
-  if (prop === 'fwd') r.input.fwd = v as number;
-  if (prop === 'nitro') r.input.nitro = v as boolean;
-  if (prop === 'fire') {
-    r.input.fire = v as boolean;
-    if (v) void audio.play('bulletSound', 0.5);
+function lifeBar(): string {
+  const g = game();
+  const sel = g?.selectedObject;
+  if (!sel || !sel.life) return '';
+  const p = Math.max(0, sel.life.percentage());
+  // ((OrangeRed*(1-p) + LimeGreen*p) / 2) * 0.7 ; fixed widths (verbatim bug)
+  const r = (((1 * (1 - p) + 0.2 * p) / 2) * 0.7 * 255) | 0;
+  const gg = (((0.27 * (1 - p) + 0.8 * p) / 2) * 0.7 * 255) | 0;
+  const b = (((0 * (1 - p) + 0.2 * p) / 2) * 0.7 * 255) | 0;
+  const col = `rgb(${r},${gg},${b})`;
+  if (sel.life instanceof Life3) {
+    return `<div style="width:150px;height:16px;background:rgba(0,0,0,0.5);display:flex;gap:4px;padding:4px;">` +
+      [0, 1, 2].map(() => `<div style="width:44px;height:8px;background:${col};"></div>`).join('') + `</div>`;
   }
+  void Life1;
+  return `<div style="width:50px;height:16px;background:rgba(0,0,0,0.5);padding:4px;">` +
+    `<div style="width:42px;height:8px;background:${col};"></div></div>`;
 }
 
-function finish(won: boolean): void {
-  if (finished) return;
-  finished = true;
-  window.clearInterval(timerId.value);
-  const user = store.options.username || 'Pilot';
-  recordScore(level.value.save, user, timerText.value);
-  ghost.save(levelKey);
-  void audio.speak(won ? 'ObjectiveCompleted' : 'YouLost');
-  void router.push((won ? '/victory/' : '/defeat/') + levelKey);
+function refresh(): void {
+  const g = game();
+  if (!g || g.gameType === 'BACK') return;
+  hud.score = g.scoreText();
+  hud.notify = g.notificationText;
+  const aim = g.aimPos();
+  hud.aimX = aim.x;
+  hud.aimY = aim.y;
+  hud.lifeHtml = lifeBar();
+  hud.homings = g.control.homings;
+  hud.nitroPct = Math.round(g.control.nitroFrac * 100);
+  hud.stickOn = g.control.analogStick.enabled;
+  hud.backX = g.control.analogStick.backX;
+  hud.backY = g.control.analogStick.backY;
+  hud.knobX = g.control.analogStick.stickX;
+  hud.knobY = g.control.analogStick.stickY;
+  hud.acel = g.control.analogAcel.value;
+  hud.pointers = g.pointers();
+  hud.canvasW = g.canvasW;
+  hud.canvasH = g.canvasH;
+}
+
+function layerPos(e: PointerEvent): { x: number; y: number } {
+  const r = layerRef.value!.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function onDown(e: PointerEvent): void {
+  audio.unlock();
+  const g = game();
+  if (!g) return;
+  g.control.touches.set(e.pointerId, layerPos(e));
+  (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+}
+
+function onMove(e: PointerEvent): void {
+  const g = game();
+  if (!g || !g.control.touches.has(e.pointerId)) return;
+  g.control.touches.set(e.pointerId, layerPos(e));
+}
+
+function onUp(e: PointerEvent): void {
+  game()?.control.touches.delete(e.pointerId);
+}
+
+function onKey(e: KeyboardEvent): void {
+  if (e.code === 'Escape') void router.push('/briefing/' + route.params.level);
+}
+
+const levelKey = computed(() => String(route.params.level ?? ''));
+
+function goBriefing(): void {
+  audio.unlock();
+  void audio.sfx('button');
+  void router.push('/briefing/' + levelKey.value);
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onKeyDown);
-  window.addEventListener('keyup', onKeyUp);
-  message.value = level.value?.text ?? '';
-  window.setTimeout(() => {
-    message.value = '';
-  }, 6000);
-  ghost.begin();
-  timerId.value = window.setInterval(() => {
-    elapsed.value += 1;
-    // Sample the player ship for the ghost file (GhostRecord port).
-    const p = renderer()?.player();
-    if (p) ghost.sample([p.pos[0], p.pos[1], p.pos[2]]);
-    // Demo goal evaluation: TT gold time -> victory; CTF 5:00 -> victory.
-    if (level.value?.type === 'TT') {
-      const gold = level.value.goals.find((g) => g.reward === 'Gold');
-      const need = gold?.goals.find((g) => g.name === 'LessTime')?.value ?? '00:01:00';
-      const parts = need.split(':').map(Number);
-      const limit = parts[0] * 3600 + parts[1] * 60 + parts[2];
-      if (elapsed.value >= limit * 3) finish(true);
-    } else if (elapsed.value >= 300) {
-      finish(true);
-    }
-  }, 1000);
+  window.addEventListener('keydown', onKey);
+  timer = window.setInterval(refresh, 66);
+  refresh();
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeyDown);
-  window.removeEventListener('keyup', onKeyUp);
-  window.clearInterval(timerId.value);
-  // Persist ghost on exit too (quits still record, like .ghs autosave).
-  if (ghost.count > 0) ghost.save(levelKey);
-  const r = renderer();
-  if (r) r.input = { fwd: 0, strafe: 0, up: 0, yaw: 0, pitch: 0, fire: false, nitro: false };
+  window.removeEventListener('keydown', onKey);
+  window.clearInterval(timer);
 });
+
+function markerStyle(m: PointerMark): string {
+  const c = `rgb(${(m.color[0] * 255) | 0},${(m.color[1] * 255) | 0},${(m.color[2] * 255) | 0})`;
+  return `left:${m.x}px;top:${m.y}px;filter:drop-shadow(0 0 3px ${c});`;
+}
 </script>
 
 <template>
-  <div
-    class="hud"
-    @pointerdown="onPointerDown"
-    @pointermove="onPointerMove"
-    @pointerup="onPointerUp"
-    style="pointer-events: auto"
-  >
-    <div class="hud-top">
-      <span>{{ level?.type }} {{ level?.title }} — {{ store.options.username || 'Pilot' }}</span>
-      <span>{{ timerText }}</span>
+  <div class="hud">
+    <div class="hud-score">{{ hud.score }}</div>
+    <div v-if="hud.notify" class="hud-notify">{{ hud.notify }}</div>
+    <img class="hud-aim" :src="base + '_aim.png'" alt="" draggable="false" :style="`left:${hud.aimX}px;top:${hud.aimY}px;`" />
+    <div class="hud-life" v-html="hud.lifeHtml"></div>
+    <div v-for="(m, i) in hud.pointers" :key="i" class="hud-marker" :style="markerStyle(m)">
+      <img v-if="m.over" :src="base + '_over.png'" width="48" height="48" alt="" draggable="false" />
+      <img
+        v-else-if="m.iconUrl"
+        :src="m.iconUrl"
+        :width="Math.min(48, m.size)"
+        :height="Math.min(48, m.size)"
+        alt=""
+        draggable="false"
+      />
+      <span v-if="m.label">{{ m.label }}</span>
     </div>
-    <div class="hud-scores">
-      <div>Nitro {{ nitro }}%</div>
-      <div>Ship HS1 · Shield 100</div>
-    </div>
-    <img class="hud-aim" :src="base + '_aim.png'" alt="" draggable="false" />
-    <div v-if="message" class="hud-msg">{{ message }}</div>
-    <div class="touch-controls">
-      <div style="display: flex; gap: 8px">
-        <button class="track-btn" @pointerdown="touchBtn('fwd', 1)" @pointerup="touchBtn('fwd', 0)">▲</button>
-        <button class="track-btn" @pointerdown="touchBtn('fwd', -1)" @pointerup="touchBtn('fwd', 0)">▼</button>
+    <div ref="layerRef" class="touch-layer" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp">
+      <img v-if="hud.stickOn" class="stick-back" :src="base + '_backAnalog.png'" alt="" draggable="false" :style="`left:${hud.backX}px;top:${hud.backY}px;`" />
+      <img v-if="hud.stickOn" class="stick-knob" :src="base + '_stickAnalog.png'" alt="" draggable="false" :style="`left:${hud.knobX}px;top:${hud.knobY}px;`" />
+      <div class="accel-bar" :style="`left:${hud.canvasW - 96 + 40}px;top:${hud.canvasH - 400 + 48}px;height:${400 - 96}px;`"></div>
+      <img class="accel-knob" :src="base + '_accelAnalog.png'" alt="" draggable="false" :style="`left:${hud.canvasW - 96}px;top:${hud.canvasH - 400 + (1 - hud.acel) * (400 - 96)}px;`" />
+      <div class="tbtn" :style="`left:${hud.canvasW - 96 - 128}px;top:${hud.canvasH - 128}px;`">
+        <img :src="base + '_accelAnalog.png'" alt="" draggable="false" />
+        <img :src="base + '_fireButton.png'" alt="" draggable="false" style="position:absolute;inset:0;" />
       </div>
-      <div style="display: flex; gap: 8px">
-        <button class="track-btn" @pointerdown="touchBtn('nitro', true)" @pointerup="touchBtn('nitro', false)">NITRO</button>
-        <button class="track-btn" @pointerdown="touchBtn('fire', true)" @pointerup="touchBtn('fire', false)">FIRE</button>
+      <div class="tbtn" :class="{ dim: hud.homings === 0 }" :style="`left:${hud.canvasW - 96 - 128}px;top:${hud.canvasH - 256}px;`">
+        <img :src="base + '_accelAnalog.png'" alt="" draggable="false" />
+        <img :src="base + '_fireButtonHM.png'" alt="" draggable="false" style="position:absolute;inset:0;" />
+        <div class="count">{{ hud.homings }}</div>
+      </div>
+      <div class="tbtn" :class="{ dim: hud.nitroPct <= 0 }" :style="`left:${hud.canvasW - 96 - 128}px;top:${hud.canvasH - 384}px;`">
+        <img :src="base + '_accelAnalog.png'" alt="" draggable="false" />
+        <img :src="base + '_nitro.png'" alt="" draggable="false" style="position:absolute;inset:0;" />
+        <div class="count">{{ hud.nitroPct }}</div>
       </div>
     </div>
   </div>
+  <button class="corner-btn lu" @click="goBriefing">back</button>
+  <div class="corner-btn ru" aria-hidden="true"></div>
+  <div class="corner-btn rd" aria-hidden="true"></div>
+  <div class="corner-btn ld" aria-hidden="true"></div>
 </template>

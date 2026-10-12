@@ -27,160 +27,121 @@
       "team": "human",
       "type": "base",
       "model": "Base",
-      "position": "0|0|0",
-      "name": "",
-      "life": ""
+      "position": "0|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|32",
-      "name": "",
-      "life": ""
+      "position": "0|0|32"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|64",
-      "name": "",
-      "life": ""
+      "position": "0|0|64"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|96",
-      "name": "",
-      "life": ""
+      "position": "0|0|96"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|128",
-      "name": "",
-      "life": ""
+      "position": "0|0|128"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|160",
-      "name": "",
-      "life": ""
+      "position": "0|0|160"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|9,37|182,62",
-      "name": "",
-      "life": ""
+      "position": "0|9,37|182,62"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|32|192",
-      "name": "",
-      "life": ""
+      "position": "0|32|192"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|54,62|182,62",
-      "name": "",
-      "life": ""
+      "position": "0|54,62|182,62"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|64|160",
-      "name": "",
-      "life": ""
+      "position": "0|64|160"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|54,62|137,37",
-      "name": "",
-      "life": ""
+      "position": "0|54,62|137,37"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|32|128",
-      "name": "",
-      "life": ""
+      "position": "0|32|128"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|9,37|137,37",
-      "name": "",
-      "life": ""
+      "position": "0|9,37|137,37"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|160",
-      "name": "",
-      "life": ""
+      "position": "0|0|160"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|192",
-      "name": "",
-      "life": ""
+      "position": "0|0|192"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|224",
-      "name": "",
-      "life": ""
+      "position": "0|0|224"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|256",
-      "name": "",
-      "life": ""
+      "position": "0|0|256"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|288",
-      "name": "",
-      "life": ""
+      "position": "0|0|288"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|320",
-      "name": "",
-      "life": ""
+      "position": "0|0|320"
     },
     {
       "team": "ambient",
       "type": "asteroid",
       "model": "Asteroid3",
       "position": "0|0|192",
-      "name": "",
       "life": "50"
     },
     {
@@ -188,7 +149,6 @@
       "type": "asteroid",
       "model": "Asteroid1",
       "position": "0|8|256",
-      "name": "",
       "life": "50"
     },
     {
@@ -196,7 +156,6 @@
       "type": "asteroid",
       "model": "Asteroid1",
       "position": "0|-8|256",
-      "name": "",
       "life": "50"
     },
     {
@@ -204,7 +163,6 @@
       "type": "asteroid",
       "model": "Asteroid1",
       "position": "8|0|256",
-      "name": "",
       "life": "50"
     },
     {
@@ -212,7 +170,6 @@
       "type": "asteroid",
       "model": "Asteroid1",
       "position": "-8|0|256",
-      "name": "",
       "life": "50"
     },
     {
@@ -220,7 +177,6 @@
       "type": "asteroid",
       "model": "Asteroid3",
       "position": "0|0|288",
-      "name": "",
       "life": "50"
     },
     {
@@ -228,8 +184,6 @@
       "type": "miniStar",
       "model": "",
       "position": "random",
-      "name": "",
-      "life": "",
       "amount": 10000
     }
   ],

@@ -1,13 +1,13 @@
 {
   "name": "infinity-edge-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
-  "description": "InfinityEdge3D migrated to the browser: Vue 3 + TypeScript + raw WebGL2 + gl-matrix, JSON levels/models, HTML/CSS UI, hash routing",
+  "description": "InfinityEdge3D (XNA) fully migrated to the browser: Vue 3 + TypeScript + raw WebGL2 + gl-matrix",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 5173 --strictPort",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview --port 5173",
+    "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "convert:models": "node tools/convert-fbx.mjs",
     "convert:levels": "node tools/convert-levels.mjs",

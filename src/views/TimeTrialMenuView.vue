@@ -1,15 +1,15 @@
-<!-- TimeTrial.Menu: PEGASUS(easy) / LEO(normal) / DRACO(hard). -->
+<!-- TimeTrial.Menu: PEGASUS / LEO / DRACO. -->
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
 import { audio } from '../game/audio';
 
 const router = useRouter();
-const base = import.meta.env.BASE_URL + 'assets/textures/';
+const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
 
 function go(diff: string): void {
   audio.unlock();
-  void audio.play('button');
+  void audio.sfx('button');
   void router.push('/tt/' + diff);
 }
 </script>
@@ -19,15 +19,15 @@ function go(diff: string): void {
     <template #left>
       <div class="fit-list">
         <button class="icon-btn" @click="go('easy')">
-          <img :src="base + '_easy.png'" alt="Pegasus easy" />
+          <img :src="base + '_easy.png'" alt="Pegasus" />
           <span>PEGASUS</span>
         </button>
         <button class="icon-btn" @click="go('normal')">
-          <img :src="base + '_normal.png'" alt="Leo normal" />
+          <img :src="base + '_normal.png'" alt="Leo" />
           <span>LEO</span>
         </button>
         <button class="icon-btn" @click="go('hard')">
-          <img :src="base + '_hard.png'" alt="Draco hard" />
+          <img :src="base + '_hard.png'" alt="Draco" />
           <span>DRACO</span>
         </button>
       </div>

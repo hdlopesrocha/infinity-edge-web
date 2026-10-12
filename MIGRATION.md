@@ -1,120 +1,74 @@
-# Migration report: InfinityEdge3D (XNA) → Web (Vue 3 + TS + WebGL2)
+# Migration report: InfinityEdge3D (XNA) → Web (full port)
 
-Source: `../InfinityEdge3D` — XNA 4.0 / Windows Phone 7 space-combat game
-(168 `.cs` files, ~13 kLOC; 38 FBX; ~86 textures; 25 WAV; 13 `Level.xml`).
+Source: `../InfinityEdge3D` — XNA 4.0 space-combat game (168 `.cs` files;
+38 FBX; ~86 textures; 25 WAV; 13 `Level.xml` + `Background.xml`).
 
-## 1. Original architecture (as found)
+## 1. What was ported (everything)
 
-- **Rendering**: XNA `BasicEffect` only (`Model3D.Draw`), `PreferPerPixelLighting`,
-  Light0 on / Light1-2 off, ambient ≈ 0.001, diffuse white, specular LightBlue,
-  powers 512–1024. Two passes in `Map.Draw`: opaque (`BlendState.Opaque`) then
-  alpha (`DepthRead` + `AlphaBlend`). `CullCounterClockwise`, `LinearWrap`.
-  `GameInstance` adds render-target motion blur + `SpriteBatch` HUD.
-- **Coordinates**: Y-up, forward `+Z` (`Object3D`: Direction = UnitZ·quat).
-  Cubic world centered on origin (`OcTree`, `Map.PositionInside`).
-- **Camera** (`Camera.cs`): orbit state (h/v clamped), FOV π/4, near 0.1,
-  far = options distance; chase/look-at per level `<camara>`.
-- **Culling**: `OcTree` (fragments while size > 48, 8 children, 3 buckets by
-  object type) + `BoundingFrustum` sphere-then-mesh tests; transparent sorted
-  far-to-near (`ObjectDistanceComparer`).
-- **Physics**: sphere-only (`NextPosition`: accel·multiplier − friction·vel,
-  speed clamp, nitro multiplier 7.5; `BulletHit` ray-vs-sphere; `Move` team
-  damage/shield logic). No rigid bodies.
-- **Scenes/UI**: `Stack<Scene>` (`Game1`: MainMenu → StartScreen →
-  EngineScreen on top). `GenericMenu` builds the chrome in code (empty XML
-  stubs): full-screen `_backWindow` Black40 −96 px, left/right split, four
-  160×48 corner buttons (hover DarkRed50/DarkGreen50), `back|exit` label =
-  stack depth. All real layouts are C# (`MainMenu`, `SinglePlayer`,
-  `TimeTrial.*`, `CTF.Menu`, `MenuXML` briefing, `MenuOptions`, `About`,
-  `GameInstance` Victory/Defeat). Background: `Background.xml` game instance
-  (Sky1 + base + Fighter3 + 70×Asteroid1 + 70×Asteroid3 + 600 stars) drawn
-  behind every menu; levels draw their own maps.
-- **Levels**: 10 TT (`type=TT`, Ark-gate races vs clock/ghost, Gold/Silver/
-  Bronze `LessTime` + `Defeat` on `NoPath`/`Destroyed`) + 3 CTF (`type=CTF`,
-  10 human + 9 alien respawning AI, bases ±800, 5-minute `MoreTime`/
-  `MorePoints`). Full `<game>` schema preserved in `public/assets/levels/`.
-- **Network**: none — zero Socket/WebSocket hits; multiplayer button commented
-  out (`MainMenu.cs`); all content is `SinglePlayer/`. The game is offline.
-- **Audio**: looping `sound.mp3` via `MediaPlayer` + fire-and-forget
-  `SoundEffect` SFX + `Voice` subtitle lines. Note: the repo's `sound.mp3`
-  is **0 bytes**, and the only built music is a `.wma` (unplayable in
-  browsers) — music therefore degrades gracefully to silence; all 25 WAV SFX
-  and 17 voice lines are ported.
+- **Simulation**: `Object3D.NextPosition/Move` (accel·multiplier −
+  friction·vel, speed clamp, nitro ×7.5, multiplier lerp .2), sphere-only
+  collisions, ram = mutual `GetTotal()` damage, shield absorbs whole hits.
+- **Objects**: SpaceShip (10 homings, 3000 nitro, engine/color flares,
+  shield shell ≤0.1 alpha, glow decay .03, smoke), Asteroid (tumble, 4×12%
+  addon drops, 10 fragments + husk), Addon (7-size glow billboard +
+  homing+2/life/nitro=3000/shield=5), Base (double-sided, shield 1,
+  `RandomAround` shell), Flag (full CTF state machine: score/catch/lost
+  20 s/follow/pose, sounds on `_team`), Bullet (segment sphere, Life1(10),
+  TTL 3000, alternating muzzle), HomingMissile (MISSILE physics, lock
+  cone 0.75 @256, TTL 2000, AIHoming, smoke trail), Shield shell,
+  Ark (alpha 0.2, gate sequencing), Sky (camera-follow, unlit),
+  Billboard/TimedBillboard (fade), Fragment (vel 30, TTL 500).
+- **AI**: AIPoint/AIGoPoint (32-brake)/AIGoRandom/AIGoSphere/AIOffensive
+  (128, stale-target quirk)/AIFreePath (64)/AIFollow/AIFlagCap
+  (last-flag-wins)/AIGoRandomOffensive/AIBreak (10+rand5 / 5+rand10,
+  TimeSpan.Seconds semantics)/AIBullet (radius 8, first-hit quirk)/
+  AIHoming/AITimeTrial/HILocal (stick ∓π/2, cap·|stick|, _distance
+  search, lead-or-dumbfire) + factories (BodyGuard/FlagProt/SpawnKiller).
+- **Map**: octree (10% overlap, frag > 48, prune, refresh), respawns
+  (10 s, face-enemy-base), path highlight, bullets (ray-mesh `BulletHit`,
+  shield absorb, spark billboards, TTL), smoke/frags/outsiders (10 s),
+  visible asteroid/addon ticks, two-pass draw + hexagon walls (64/0.1),
+  exact factory (`around`=ONE ship, asteroids loop unnamed, ministars
+  only if billboards), `random/around/x|y|z` + `a|b|c` grammars.
+- **GameInstance**: BACK vs game update order, team clocks (TT pause
+  rule), non-Flag ticks then flags, goals → Victory/Defeat scenes,
+  ghost record/playback (alpha 0.5), scoreboard `ToVisual`, aim at
+  `pos+dir·_distance`, `DrawPointer` (over+life% / icon+MyClamp+ellipse),
+  life bars (fixed-width quirk), notification 3000 ms, `Team.Manage`
+  voice drain, scores top-10 + best detection, ghost save on best.
+- **Menus/navigation**: scene stack → hash routes; GenericMenu chrome;
+  all menus verbatim; Options exact defaults (Infinity Fan/2/192/0.5/
+  off/off, empty→Infinity Edge Fan, `suckmyrocket` cheat, version-wipe);
+  splashes 3000/500 ms; Victory medal rules (128 px, click→back).
+- **Assets**: 40 JSON models (ASCII 2013 + binary v6100 parsers, LODs,
+  materials/textures/bounds/transforms), 14 level JSON (comments
+  stripped), 100+ textures incl. icons/holoSmoke/hexagon, 25 WAV.
+  Missing assets fall back (procedural/white/silence), never crash.
+- **Net**: versioned binary framing (type/len/gzip-flag), gzip only when
+  smaller and ≥256 B, `DecompressionStream`→pako fallback, typed errors,
+  capped-reconnect socket. Used by ghost persistence; game is
+  offline-first like the original (which has no network code).
 
-## 2. Technology mapping
+## 2. Verification (real browser)
 
-| Original | Web |
-|---|---|
-| XNA `Game` loop (30 fps fixed, VSync) | `requestAnimationFrame` loop, dt clamped 0.1 s |
-| `BasicEffect` | `src/engine/shaders.ts` lit/unlit GLSL (1 dir light, ambient, LightBlue Blinn-Phong specular, emissive, alpha) |
-| `Model`/`ModelMesh` + Content pipeline | `tools/convert-fbx.mjs` → JSON + `src/engine/model.ts` VAO/VBO/IBO loader with validation |
-| `TextureCache` (AVL) + `LinearWrap` | `src/engine/texture.ts` Map cache, REPEAT + trilinear mipmaps |
-| `Camera` + `BoundingFrustum` | `camera.ts` (gl-matrix) + `frustum.ts` (plane extraction, zero per-frame alloc) |
-| `OcTree` + frustum/sphere queries | `octree.ts` (same thresholds: fragment > 48, 3 buckets) + chunked instancing |
-| `Map.Draw` two passes | `scene.ts`: opaque pass → stars → alpha pass; instanced asteroids, `GL.POINTS` ministars |
-| `Object3D.NextPosition`/`Move` | `game/physics.ts` (same integration, nitro ×7.5, cubic clamp) + renderer chase cam |
-| `GhostRecord` `.ghs` / `IsolatedStorage` | `game/ghost.ts`: 1 Hz samples → framed binary → localStorage; briefing shows sample count |
-| `MediaPlayer`/`SoundEffect`/`Voice` | `game/audio.ts`: Web Audio SFX + voices, `<audio>` loop, first-gesture unlock |
-| Scene stack + `Command*` navigation | Vue Router hash history + `syncSceneState` route→scene map (`store.ts`) |
-| Proprietary `InterfaceElement` tree | App-specific Vue components + CSS (`MenuShell`, views) — no UI engine ported |
-| `options.ie3d` | localStorage options + scores (`store.ts`) |
+- TT Easy 01: spawn → throttle → 6 gates → clock → **Gold victory**,
+  score + ghost saved, medal + briefing scores shown.
+- CTF Easy: 30 s AI combat, kills, respawns (10 s), addon drops/pickups,
+  steal → carry → score (points + voices), outsider destruction.
+- Respawn/outsider/flag/score targeted tests pass; defeat path verified.
+- All routes render; back/forward + deep links sync scenes; context
+  persists; zero console errors; 19/19 unit tests (protocol, frustum
+  incl. near-plane layout, physics, octree descent regression).
 
-No three.js / Babylon / game engine: `package.json` has only
-`vue`, `vue-router`, `gl-matrix`, `pako` (+ build tooling).
+## 3. Known approximations
 
-## 3. Asset conversion
-
-- `tools/convert-fbx.mjs` parses **ASCII FBX 2013** (geometry embedded in
-  `Model:` blocks, `Connect:` name links) and **binary FBX v6100** (`Model`
-  nodes, scalar-per-number properties, zlib arrays supported, name-based
-  links; v7500+ 64-bit offsets supported). Handles fan triangulation,
-  ByPolygonVertex/ByVertice × Direct/IndexToDirect, node Lcl matrices
-  (baked), materials (phong colors, shininess, opacity), texture filenames,
-  bounds, up-axis/units metadata. Result: **40 JSON models, 0 failures**
-  (3 empty 0-byte placeholders skipped and recorded; lowest real LOD
-  promoted to `<Alias>.json`). LOD chains match `CONVENCOES.txt`
-  (e.g. Asteroid4 1024/512/256/128).
-- `tools/convert-levels.mjs`: all 13 `Level.xml` + `Background.xml` →
-  `public/assets/levels/*.json` + `INDEX.json` (14 files).
-- `tools/copy-assets.mjs`: 106 files (UI textures by alias, object diffuse
-  textures, 25 WAV + music stub).
-- Runtime never breaks on missing assets: procedural fallback geometry
-  (`model.ts`) + white-pixel texture + silent-audio catches.
-
-## 4. Binary protocol + gzip (`src/game/net.ts`)
-
-Documented framing: version u8, flags u8 (bit0 = gzip), type u16 LE,
-payload-length u32 LE, payload. Rules: never compress < 256 B; only keep
-gzip output when smaller; decompress via `DecompressionStream('gzip')` with
-pako `gzip`/`ungzip` fallback; malformed/decompression errors throw typed
-errors and never break rendering; `GameSocket` reconnects with capped
-backoff. Used for real: ghost persistence; available for optional companion
-servers (game runs offline-first, like the original).
-
-## 5. Verification performed
-
-- `vue-tsc` clean; `vite build` clean; dev + `preview` serve with deep links.
-- Real-browser tests: boot → splash → menu; all routes render; scene mapping
-  (menus → background, game → level, unknown → background); back/forward
-  history syncs scenes; WebGL context persists across routes.
-- Rendering: background 6 draws, CTF 38 draws / 19 culled, `gl.getError()==0`,
-  all model/texture/sky loads resolve; keyboard → `renderer.input` routing.
-- Unit tests (20/20): gzip roundtrips + flag rules + malformed rejection,
-  frustum sphere/box cases, physics integration/clamp/intercept.
-- Ghost cycle: record → framed+gzip → localStorage → briefing count.
-- Frustum culling changes draw/culled counts with camera; chunk-level
-  instancing bounds prevent edge popping (conservative radii).
-
-## 6. Known approximations
-
-- Motion blur: original used render targets; the port keeps the option flag
-  and renders the same scene without the accumulation pass (documented in
-  Options; no visual smearing).
-- Wireframe: WebGL2 has no wireframe raster mode; the toggle is accepted but
-  renders solid (same tradeoff documented in code).
-- AI (AIFlagCap/AIBodyGuard/…), bullets, addons pickups, flag logic, and
-  full win evaluation are stubbed to ambient behavior + timer goals; the
-  scene population, camera, briefing data, and navigation are faithful.
-- FBX `ID188`-style outlier parts are preserved as exported (authentic data).
-- Fonts: XNA `.spritefont` has no web equivalent; system sans used at
-  matching sizes/alignments/colors.
+- Motion-blur render targets → same scene without accumulation pass
+  (option flag kept). No wireframe (WebGL2 lacks it; no UI referenced it).
+- `Stone`/`Ship` engine-flare billboards use team/white colors as coded.
+- FBX outlier parts preserved as exported (authentic baked bounds; the
+  tutorial's gate-1 auto-collect follows from the real data).
+- `.spritefont` → system sans at matching sizes/colors; `.wma`/0-byte
+  `.mp3` → music degrades to silence; scores/ghosts/options use
+  localStorage JSON/XML instead of isolated storage (formats documented
+  in code).
+- WASD aliases added to the exact arrow/Space/Ctrl/Alt/Shift mapping.

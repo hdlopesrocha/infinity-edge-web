@@ -1,4 +1,4 @@
-<!-- About: credits from About.cs VerticalList. -->
+<!-- About credits (About.cs). -->
 <script setup lang="ts">
 import MenuShell from '../components/MenuShell.vue';
 </script>
@@ -16,7 +16,7 @@ import MenuShell from '../components/MenuShell.vue';
     </template>
     <template #right>
       <div class="menu-text small">
-        Web recreation of the XNA space combat game: Vue 3 + TypeScript +
+        Web migration of the XNA space combat game — Vue 3 + TypeScript +
         raw WebGL2. Original content by the Infinity Edge team.
       </div>
     </template>

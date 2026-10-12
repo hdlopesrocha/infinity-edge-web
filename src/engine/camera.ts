@@ -1,84 +1,98 @@
-// Camera port of IE3D_API/Camera.cs.
-// - Perspective FOV pi/4, near 0.1, far = options._distance (default 2048-ish).
-// - Orbit state (h/v angles + lookAt), clamped like Camera.Update.
-// - view/proj matrices + BoundingFrustum equivalent via frustum.ts.
-// Uses gl-matrix (column-major); world convention kept: Y-up, +Z forward.
+// Camera port: IE3D_API/Camera.cs + CommandLookAtObject +
+// CommandLookAtPositionAuto (Core/Commands/CommandLookAt*.cs).
+// Perspective FOV pi/4, near 0.1, far = options distance.
 
-import { mat4, vec3 } from 'gl-matrix';
+import { mat4, quat, vec3, ypr } from './math';
 
-export type CameraMode = 'lookAtObject' | 'lookAtPosition' | 'orbit';
+export interface ControlState {
+  stickX: number; // -1..1 (AnalogStick.Value)
+  stickY: number; // -1..1
+}
 
 export class Camera {
   position = vec3.fromValues(16, 32, 16);
   lookAt = vec3.fromValues(0, 0, 0);
   up = vec3.fromValues(0, 1, 0);
-  /** horizontal orbit angle degrees, vertical angle degrees (Camera._h/_v). */
-  h = 45;
-  v = 45;
+  direction = vec3.fromValues(0, 0, 1);
+  side = vec3.fromValues(1, 0, 0);
   fov = Math.PI / 4;
   near = 0.1;
-  far = 4096;
+  far = 192; // Options._distance default
   aspect = 16 / 9;
-  mode: CameraMode = 'lookAtObject';
-
   view = mat4.create();
   proj = mat4.create();
   viewProj = mat4.create();
-  /** world matrix for attached effects (mirrors camera._world). */
   world = mat4.create();
-
-  orbitDistance = 48;
-
-  constructor() {
-    this.update(16 / 9);
-  }
+  orbitAngle = 0; // CommandLookAtPositionAuto._angle (degrees, 1/frame)
 
   setAspect(aspect: number): void {
     this.aspect = aspect;
-    this.update(aspect);
+    this.updateMatrices();
   }
 
-  /** Chase a target position (GameInstance camera follows HS1). */
-  follow(target: vec3, dist = 14, height = 5): void {
-    // Place camera behind+above target relative to current orbit angles.
-    const h = (this.h * Math.PI) / 180;
-    const v = Math.max(5, Math.min(85, this.v));
-    const vr = (v * Math.PI) / 180;
-    const cp = Math.cos(vr) * dist;
-    this.position[0] = target[0] - Math.sin(h) * cp;
-    this.position[1] = target[1] + Math.sin(vr) * dist * 0.5 + height * 0.4;
-    this.position[2] = target[2] - Math.cos(h) * cp;
-    vec3.copy(this.lookAt, target);
-    this.update(this.aspect);
-  }
-
-  orbit(dh: number, dv: number): void {
-    this.h = ((this.h + dh) % 360 + 360) % 360;
-    this.v = Math.max(1, Math.min(179, this.v + dv));
-    this.update(this.aspect);
-  }
-
-  update(aspect?: number): void {
-    if (aspect !== undefined) this.aspect = aspect;
-    // Clamp like Camera.Update.
-    if (this.v < 1) this.v = 1;
-    if (this.v > 179) this.v = 179;
-    this.h = ((this.h % 360) + 360) % 360;
+  updateMatrices(): void {
     mat4.lookAt(this.view, this.position, this.lookAt, this.up);
     mat4.perspective(this.proj, this.fov, this.aspect, this.near, this.far);
     mat4.multiply(this.viewProj, this.proj, this.view);
-    mat4.identity(this.world);
+    vec3.subtract(this.direction, this.lookAt, this.position);
+    vec3.normalize(this.direction, this.direction);
+    vec3.cross(this.side, this.direction, this.up);
+    if (vec3.length(this.side) < 1e-6) vec3.set(this.side, 1, 0, 0);
+    vec3.normalize(this.side, this.side);
   }
 
-  /** Direction/ side vectors (Object3D uses UnitZ*quat etc.; here view-derived). */
-  direction(out: vec3): vec3 {
-    vec3.subtract(out, this.lookAt, this.position);
-    return vec3.normalize(out, out);
+  /**
+   * CommandLookAtObject: follow-cam 6 units behind the object, lookahead
+   * _distance along its direction, banked up vector; stick orbits ±pi/24
+   * with +pi/16 pitch bias; axis invert options flip the sign.
+   */
+  lookAtObject(
+    objPos: vec3, objDir: vec3, objSide: vec3, objRot: quat,
+    stick: ControlState, invX: boolean, invY: boolean, distance: number,
+  ): void {
+    const angle = Math.PI / 24;
+    const q = quat.create();
+    ypr(
+      q,
+      (invX ? -1 : 1) * stick.stickX * angle,
+      (invY ? -1 : 1) * stick.stickY * angle + Math.PI / 16,
+      0,
+    );
+    quat.multiply(q, objRot, q); // quat = obj._rot * YPR(...)
+    const dir = vec3.fromValues(0, 0, 1);
+    vec3.transformQuat(dir, dir, q);
+    vec3.normalize(dir, dir);
+    // cam._position = obj.pos - 6*dir
+    vec3.scaleAndAdd(this.position, objPos, dir, -6);
+    // cam._lookAt = obj.pos + obj.dir * distance
+    vec3.scaleAndAdd(this.lookAt, objPos, objDir, distance);
+    // side = cross(dirNorm, obj.dir); up = reflect(norm(cross(side, dirNorm)), obj.side)
+    const side = vec3.create();
+    vec3.cross(side, dir, objDir);
+    vec3.normalize(side, side);
+    const up = vec3.create();
+    vec3.cross(up, side, dir);
+    vec3.normalize(up, up);
+    // reflect across obj.side plane: up - 2*dot(up,side)*side... original
+    // Reflect(Norm(Cross(side,dirNorm)), obj._side): reflect vector across
+    // plane with normal obj.side.
+    const d = vec3.dot(up, objSide);
+    vec3.scaleAndAdd(up, up, objSide, -2 * d);
+    vec3.normalize(up, up);
+    vec3.copy(this.up, up);
+    this.updateMatrices();
   }
-
-  side(out: vec3, dir?: vec3): vec3 {
-    const d = dir ?? vec3.subtract(vec3.create(), this.lookAt, this.position);
-    vec3.cross(out, d, this.up);
-    return vec3.normalize(out, out);
+  lookAtPositionAuto(target: vec3, dtMs: number): void {
+    this.orbitAngle = (this.orbitAngle + (dtMs / 16.6667)) % 360;
+    const a = (this.orbitAngle * Math.PI) / 180;
+    vec3.set(
+      this.position,
+      target[0] - 6 * Math.sin(a),
+      target[1] + 3,
+      target[2] - 6 * Math.cos(a),
+    );
+    vec3.set(this.lookAt, target[0], target[1] + 1, target[2]);
+    vec3.set(this.up, 0, 1, 0);
+    this.updateMatrices();
   }
 }

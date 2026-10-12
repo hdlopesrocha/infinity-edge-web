@@ -1,125 +1,84 @@
-// Central app store: options (Options.cs), navigation->scene mapping,
-// scores, notifications. Vue-reactive; the Renderer reads plain snapshots.
+// Vue-side store: UI-bound options mirror, navigation state, scores.
+// The simulation (GameInstance) owns authoritative state; views read it
+// directly each frame for HUD data.
 
 import { reactive } from 'vue';
+import { defaultOptions, clearGameData as rcClearGameData, saveOptions as rcSaveOptions } from './resources';
+import type { Options } from './resources';
+import { GameScore } from './team';
+import type { ScoreEntry } from './team';
 
-export interface Options {
-  username: string;
-  distance: number; // camera far plane (128..512, default like XM_Camara)
-  detail: number; // 0..4 VeryHigh..VeryLow
-  musicVolume: number; // 0..1
-  billboards: boolean;
-  motionBlur: boolean;
-  invX: boolean;
-  invY: boolean;
+export function saveOptions(o: Options): void {
+  rcSaveOptions(o);
 }
 
-export interface ScoreEntry {
-  user: string;
-  time: string;
-}
-
-const OPTIONS_KEY = 'ie3d.options';
-const SCORE_PREFIX = 'ie3d.score.';
-
-function loadOptions(): Options {
-  const defaults: Options = {
-    username: '',
-    distance: 512,
-    detail: 2,
-    musicVolume: 0.7,
-    billboards: true,
-    motionBlur: true,
-    invX: false,
-    invY: false,
-  };
-  try {
-    const raw = localStorage.getItem(OPTIONS_KEY);
-    if (raw) return { ...defaults, ...(JSON.parse(raw) as Partial<Options>) };
-  } catch {
-    /* keep defaults */
-  }
-  return defaults;
+export function clearGameData(): string[] {
+  return rcClearGameData();
 }
 
 export const store = reactive({
-  options: loadOptions(),
-  /** Current route name (mirrors vue-router for HUD/scene mapping). */
+  options: defaultOptions() as Options,
   route: 'boot' as string,
-  /** Active background scene key: 'background' | level key. */
   sceneKey: 'background' as string,
-  /** Whether the 3D scene is interactive (game route) or ambient (menu). */
+  levelKey: '' as string,
   interactive: false,
   notification: '' as string,
-  scores: {} as Record<string, ScoreEntry[]>,
+  notificationVisible: false as boolean,
+  username: '' as string,
+  result: null as { won: boolean; reward: string; message: string | null; level: string } | null,
 });
 
-export function saveOptions(): void {
-  try {
-    localStorage.setItem(OPTIONS_KEY, JSON.stringify(store.options));
-  } catch {
-    /* storage may be unavailable */
-  }
+export function syncOptionsFromRC(o: Options): void {
+  store.options = { ...o };
+  store.username = o.username;
 }
-
-export function clearGameData(): void {
-  try {
-    const keys: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && (k.startsWith(SCORE_PREFIX) || k.startsWith('ie3d.ghost.'))) keys.push(k);
-    }
-    keys.forEach((k) => localStorage.removeItem(k));
-  } catch {
-    /* ignore */
-  }
-  store.scores = {};
-}
-
-export function loadScores(save: string): ScoreEntry[] {
-  if (store.scores[save]) return store.scores[save];
-  try {
-    const raw = localStorage.getItem(SCORE_PREFIX + save);
-    if (raw) {
-      store.scores[save] = JSON.parse(raw) as ScoreEntry[];
-      return store.scores[save];
-    }
-  } catch {
-    /* ignore */
-  }
-  return [];
-}
-
-export function recordScore(save: string, user: string, time: string): void {
-  const list = loadScores(save).slice();
-  list.push({ user, time });
-  list.sort((a, b) => (a.time < b.time ? -1 : 1));
-  const top = list.slice(0, 10);
-  store.scores[save] = top;
-  try {
-    localStorage.setItem(SCORE_PREFIX + save, JSON.stringify(top));
-  } catch {
-    /* ignore */
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Navigation -> background scene mapping (explicit, single place).
-// Original: GenericMenu/MenuXML draw rc._background (Background.xml);
-// GameInstance draws its own level map; EngineScreen draws its own splash.
-// ---------------------------------------------------------------------------
 
 export function sceneForRoute(routeName: string, param?: string): string {
-  if (routeName === 'game' && param) return param; // level key
+  if (routeName === 'game' && param) return param;
   return 'background';
-}
-
-export function isInteractiveRoute(routeName: string): boolean {
-  return routeName === 'game';
 }
 
 export function syncSceneState(routeName: string, param?: string): void {
   store.route = routeName;
   store.sceneKey = sceneForRoute(routeName, param);
-  store.interactive = isInteractiveRoute(routeName);
+  store.levelKey = routeName === 'game' || routeName === 'briefing' || routeName === 'victory' || routeName === 'defeat'
+    ? (param ?? '')
+    : '';
+  store.interactive = routeName === 'game';
+}
+
+// ---- scores (GameScore XML <-> JSON localStorage mapping) ----
+function readScores(savefile: string): GameScore[] {
+  try {
+    const raw = localStorage.getItem(savefile);
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as { scores: ScoreEntry[] }[];
+    return arr.map((g) => new GameScore(g.scores));
+  } catch {
+    return [];
+  }
+}
+
+function writeScores(savefile: string, list: GameScore[]): void {
+  try {
+    localStorage.setItem(savefile, JSON.stringify(list.slice(0, 10).map((g) => ({ scores: g.scores }))));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** LoadScores verbatim: sorted ascending by HashCode (best first). */
+export function loadScores(type: 'TT' | 'CTF', savefile: string): GameScore[] {
+  const list = readScores(savefile);
+  list.sort((a, b) => a.hashCode(type) - b.hashCode(type));
+  return list.slice(0, 10);
+}
+
+/** AddScore verbatim: insert, persist top 10, true if new best (Leftest). */
+export function addScore(gs: GameScore, type: 'TT' | 'CTF', savefile: string): boolean {
+  const list = readScores(savefile);
+  list.push(gs);
+  list.sort((a, b) => a.hashCode(type) - b.hashCode(type));
+  writeScores(savefile, list);
+  return list[0] === gs || (list.length > 0 && list[0].scores === gs.scores);
 }

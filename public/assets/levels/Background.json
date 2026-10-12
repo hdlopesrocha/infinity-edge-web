@@ -1,12 +1,12 @@
 {
   "source": "Background.xml",
   "description": {
-    "type": "",
-    "name": "",
+    "type": "BACK",
+    "name": "Background",
     "save": "",
-    "sky": "",
-    "size": 2048,
-    "text": ""
+    "sky": "Sky1",
+    "size": 512,
+    "text": "This is the default background for generic menus"
   },
   "imports": [
     "Content/Import/ModelConfig.xml",
@@ -19,8 +19,7 @@
       "type": "base",
       "model": "Base",
       "position": "0|0|0",
-      "name": "HB",
-      "life": ""
+      "name": "HB"
     },
     {
       "team": "human",
@@ -35,7 +34,6 @@
       "type": "asteroid",
       "model": "Asteroid1",
       "position": "random",
-      "name": "",
       "life": "50",
       "amount": 70
     },
@@ -44,7 +42,6 @@
       "type": "asteroid",
       "model": "Asteroid3",
       "position": "random",
-      "name": "",
       "life": "50",
       "amount": 70
     },
@@ -53,8 +50,6 @@
       "type": "miniStar",
       "model": "",
       "position": "random",
-      "name": "",
-      "life": "",
       "amount": 600
     }
   ],

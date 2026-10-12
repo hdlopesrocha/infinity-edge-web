@@ -27,113 +27,85 @@
       "team": "human",
       "type": "base",
       "model": "Base",
-      "position": "0|0|0",
-      "name": "",
-      "life": ""
+      "position": "0|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|32",
-      "name": "",
-      "life": ""
+      "position": "0|0|32"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|64",
-      "name": "",
-      "life": ""
+      "position": "0|0|64"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|96",
-      "name": "",
-      "life": ""
+      "position": "0|0|96"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|128",
-      "name": "",
-      "life": ""
+      "position": "0|0|128"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|160",
-      "name": "",
-      "life": ""
+      "position": "0|0|160"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "9,37|0|182,62",
-      "name": "",
-      "life": ""
+      "position": "9,37|0|182,62"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "32|0|192",
-      "name": "",
-      "life": ""
+      "position": "32|0|192"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "54,62|0|182,62",
-      "name": "",
-      "life": ""
+      "position": "54,62|0|182,62"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "64|0|160",
-      "name": "",
-      "life": ""
+      "position": "64|0|160"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "54,62|0|137,37",
-      "name": "",
-      "life": ""
+      "position": "54,62|0|137,37"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "32|0|128",
-      "name": "",
-      "life": ""
+      "position": "32|0|128"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "9,37|0|137,37",
-      "name": "",
-      "life": ""
+      "position": "9,37|0|137,37"
     },
     {
       "team": "ambient",
       "type": "miniStar",
       "model": "",
       "position": "random",
-      "name": "",
-      "life": "",
       "amount": 10000
     }
   ],

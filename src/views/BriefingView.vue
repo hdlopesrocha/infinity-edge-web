@@ -1,52 +1,55 @@
-<!-- MenuXML briefing: high scores (LoadScores) left, description.text right,
-     _buttonRU "start" launches the level. -->
+<!-- MenuXML briefing: high scores left, description right, start button. -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
-import { LEVELS, trackLabel } from '../game/levels';
+import { loadLevel, trackLabel } from '../game/levels';
+import type { LevelDef } from '../game/levels';
 import { loadScores } from '../game/store';
-import { GhostRecorder } from '../game/ghost';
+import { hasGhostFile } from '../game/ghost';
 import { audio } from '../game/audio';
 
 const route = useRoute();
 const router = useRouter();
-const key = computed(() => String(route.params.level ?? ''));
-const level = computed(() => LEVELS[key.value]);
-const scores = computed(() => (level.value ? loadScores(level.value.save) : []));
-const ghostSamples = ref(-1);
+const key = String(route.params.level ?? '');
+const level = ref<LevelDef | null>(null);
+const scores = ref<string[]>([]);
+const ghostNote = ref('');
 
 onMounted(async () => {
-  if (!key.value) return;
-  if (!GhostRecorder.has(key.value)) {
-    ghostSamples.value = 0;
-    return;
+  try {
+    const def = await loadLevel(key);
+    level.value = def;
+    const type = def.description.type === 'TT' ? 'TT' : 'CTF';
+    scores.value = loadScores(type, def.description.save).map((g) => g.toVisual(type));
+    if (def.importGhost && hasGhostFile(def.importGhost)) {
+      ghostNote.value = 'Ghost: active rival recording.';
+    }
+  } catch {
+    level.value = null;
   }
-  const g = await GhostRecorder.load(key.value);
-  ghostSamples.value = g ? g.samples.length : 0;
 });
 
 function start(): void {
   audio.unlock();
-  void audio.play('button');
-  void router.push('/game/' + key.value);
+  void audio.sfx('button');
+  void router.push('/game/' + key);
 }
 </script>
 
 <template>
   <MenuShell v-if="level" primary="start" :on-primary="start">
     <template #left>
-      <div class="menu-title">{{ level.type }} — {{ level.type === 'TT' ? trackLabel(level.key) : level.title }}</div>
+      <div class="menu-title">{{ level.description.type }} — {{ level.description.type === 'TT' ? trackLabel(level.key) : level.description.name }}</div>
       <div class="menu-text">High Scores</div>
       <div class="menu-text small">
         <div v-if="!scores.length">No scores yet — fly!</div>
-        <div v-for="(s, i) in scores" :key="i">{{ i + 1 }}. {{ s.user }} — {{ s.time }}</div>
-        <div v-if="ghostSamples > 0">Ghost: {{ ghostSamples }} samples loaded.</div>
-        <div v-else-if="ghostSamples === 0">Ghost: none recorded yet.</div>
+        <div v-for="(s, i) in scores" :key="i">{{ i + 1 }}. {{ s }}</div>
+        <div v-if="ghostNote">{{ ghostNote }}</div>
       </div>
     </template>
     <template #right>
-      <div class="menu-text">{{ level.text }}</div>
+      <div class="menu-text">{{ level.description.text }}</div>
       <div class="menu-text small">
         <div v-for="(g, i) in level.goals" :key="i">
           {{ g.reward }}<span v-if="g.message">: {{ g.message }}</span>

@@ -1,33 +1,19 @@
 // WebSocket binary protocol with application-level gzip framing.
-//
-// NOTE on fidelity: the original XNA game has NO network/multiplayer code
-// (verified: zero Socket/WebSocket/Network hits; the multiplayer button is
-// commented out in MainMenu.cs). This module therefore preserves that
-// behavior — the game runs fully offline — while providing the documented
-// binary+gzip transport the web build uses for optional scene/asset data
-// transfer (e.g. fetching converted level blobs from a companion server).
-//
-// Wire format (all integers little-endian):
-//   byte 0:     version (currently 1)
-//   byte 1:     flags bit0 = 1 means payload is gzip-compressed
-//   bytes 2-3:  message type (uint16)
-//   bytes 4-7:  payload length in bytes (uint32, length of the FRAMED payload,
-//               i.e. after compression when the gzip flag is set)
-//   bytes 8..:  payload (raw or gzip bytes)
-//
-// Tiny payloads (< GZIP_THRESHOLD) are never compressed: the gzip header
-// overhead would exceed the benefit. Decompression uses pako (portable) with
-// a DecompressionStream('gzip') fast path where available.
+// Wire format (little-endian): version u8 | flags u8 (bit0=gzip) |
+// type u16 | payload-length u32 | payload (raw or gzip).
+// Rules: never compress < 256 B; keep gzip only when smaller; decode via
+// DecompressionStream('gzip') with pako gzip/ungzip fallback; malformed
+// input throws; connection is async with capped backoff and never blocks
+// rendering. The game runs offline-first (like the original); the socket is
+// the optional transport for scene/asset data.
 
-import { ungzip, gzip } from 'pako';
+import { gzip, ungzip } from 'pako';
 
 export const PROTOCOL_VERSION = 1;
 export const FLAG_GZIP = 0x01;
 export const GZIP_THRESHOLD = 256;
 export const HEADER_SIZE = 8;
 
-/** Message types. Plain (non-const) enum so it exists at runtime under
- * isolatedModules/esbuild single-file transpilation. */
 export enum MsgType {
   Hello = 1,
   LevelRequest = 2,
@@ -45,7 +31,7 @@ export interface DecodedMessage {
   version: number;
   type: number;
   compressed: boolean;
-  payload: Uint8Array; // always decompressed
+  payload: Uint8Array;
 }
 
 function hasDecompressionStream(): boolean {
@@ -66,19 +52,13 @@ async function gunzip(data: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
   return ungzip(data) as Uint8Array<ArrayBuffer>;
 }
 
-/** Encode a message; compresses with gzip when beneficial and allowed. */
-export function encodeMessage(
-  type: number,
-  payload: Uint8Array,
-  opts: { compress?: boolean } = {},
-): Uint8Array {
+export function encodeMessage(type: number, payload: Uint8Array, opts: { compress?: boolean } = {}): Uint8Array {
   let body = payload;
   let compressed = false;
   if (opts.compress !== false && payload.length >= GZIP_THRESHOLD) {
     try {
       const gz = gzip(payload);
-      // Only keep compression when it actually shrinks the payload.
-      if (gz.length + HEADER_SIZE < payload.length + HEADER_SIZE) {
+      if (gz.length < payload.length) {
         body = gz;
         compressed = true;
       }
@@ -96,7 +76,6 @@ export function encodeMessage(
   return out;
 }
 
-/** Decode one framed message; throws on malformed input. */
 export async function decodeMessage(data: ArrayBuffer | Uint8Array): Promise<DecodedMessage> {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   if (bytes.length < HEADER_SIZE) throw new Error('net: truncated header');
@@ -131,26 +110,18 @@ export async function decodeJson<T>(msg: DecodedMessage): Promise<T> {
   return JSON.parse(textDecoder.decode(msg.payload)) as T;
 }
 
-// ---------------------------------------------------------------------------
-// Connection wrapper: async, non-blocking, auto-reconnect with backoff.
-// Not required for gameplay (offline-first); used opportunistically.
-// ---------------------------------------------------------------------------
-
 export type MsgHandler = (msg: DecodedMessage) => void;
 
 export class GameSocket {
   private ws: WebSocket | null = null;
-  private url: string;
-  private handler: MsgHandler;
   private retries = 0;
   private closed = false;
-  private maxRetries: number;
 
-  constructor(url: string, handler: MsgHandler, maxRetries = 3) {
-    this.url = url;
-    this.handler = handler;
-    this.maxRetries = maxRetries;
-  }
+  constructor(
+    private url: string,
+    private handler: MsgHandler,
+    private maxRetries = 3,
+  ) {}
 
   connect(): void {
     if (this.closed || typeof WebSocket === 'undefined') return;
@@ -165,17 +136,17 @@ export class GameSocket {
       this.send(MsgType.Hello, textEncoder.encode('infinity-edge-web/1'));
     };
     this.ws.onmessage = (ev) => {
-      const data = ev.data as ArrayBuffer;
-      decodeMessage(data).then(this.handler).catch(() => {
-        /* malformed message: ignore, keep rendering */
-      });
+      decodeMessage(ev.data as ArrayBuffer)
+        .then(this.handler)
+        .catch(() => {
+          /* malformed: ignore, keep rendering */
+        });
     };
     this.ws.onclose = () => {
       this.ws = null;
       if (!this.closed && this.retries < this.maxRetries) {
         this.retries++;
-        const backoff = Math.min(5000, 500 * 2 ** this.retries);
-        window.setTimeout(() => this.connect(), backoff);
+        window.setTimeout(() => this.connect(), Math.min(5000, 500 * 2 ** this.retries));
       }
     };
     this.ws.onerror = () => {
@@ -192,7 +163,7 @@ export class GameSocket {
     try {
       this.ws.send(encodeMessage(type, payload, { compress }));
     } catch {
-      /* ignore send errors */
+      /* ignore */
     }
   }
 

@@ -27,328 +27,247 @@
       "team": "human",
       "type": "base",
       "model": "Base",
-      "position": "0|0|0",
-      "name": "",
-      "life": ""
+      "position": "0|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|128",
-      "name": "",
-      "life": ""
+      "position": "0|0|128"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|192",
-      "name": "",
-      "life": ""
+      "position": "0|0|192"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|272",
-      "name": "",
-      "life": ""
+      "position": "0|0|272"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|304",
-      "name": "",
-      "life": ""
+      "position": "0|0|304"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "16|0|320",
-      "name": "",
-      "life": ""
+      "position": "16|0|320"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "48|0|320",
-      "name": "",
-      "life": ""
+      "position": "48|0|320"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "128|0|320",
-      "name": "",
-      "life": ""
+      "position": "128|0|320"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "192|0|320",
-      "name": "",
-      "life": ""
+      "position": "192|0|320"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "256|0|320",
-      "name": "",
-      "life": ""
+      "position": "256|0|320"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "272|0|336",
-      "name": "",
-      "life": ""
+      "position": "272|0|336"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "272|0|384",
-      "name": "",
-      "life": ""
+      "position": "272|0|384"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "272|0|448",
-      "name": "",
-      "life": ""
+      "position": "272|0|448"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "272|0|512",
-      "name": "",
-      "life": ""
+      "position": "272|0|512"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "272|0|544",
-      "name": "",
-      "life": ""
+      "position": "272|0|544"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "288|0|560",
-      "name": "",
-      "life": ""
+      "position": "288|0|560"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "304|0|560",
-      "name": "",
-      "life": ""
+      "position": "304|0|560"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "368|0|560",
-      "name": "",
-      "life": ""
+      "position": "368|0|560"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "432|0|560",
-      "name": "",
-      "life": ""
+      "position": "432|0|560"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "512|0|560",
-      "name": "",
-      "life": ""
+      "position": "512|0|560"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|544",
-      "name": "",
-      "life": ""
+      "position": "528|0|544"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|512",
-      "name": "",
-      "life": ""
+      "position": "528|0|512"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|448",
-      "name": "",
-      "life": ""
+      "position": "528|0|448"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|384",
-      "name": "",
-      "life": ""
+      "position": "528|0|384"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|336",
-      "name": "",
-      "life": ""
+      "position": "528|0|336"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|272",
-      "name": "",
-      "life": ""
+      "position": "528|0|272"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|208",
-      "name": "",
-      "life": ""
+      "position": "528|0|208"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|144",
-      "name": "",
-      "life": ""
+      "position": "528|0|144"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|80",
-      "name": "",
-      "life": ""
+      "position": "528|0|80"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "528|0|16",
-      "name": "",
-      "life": ""
+      "position": "528|0|16"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "512|0|0",
-      "name": "",
-      "life": ""
+      "position": "512|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "496|0|0",
-      "name": "",
-      "life": ""
+      "position": "496|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "432|0|0",
-      "name": "",
-      "life": ""
+      "position": "432|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "384|0|0",
-      "name": "",
-      "life": ""
+      "position": "384|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "320|0|0",
-      "name": "",
-      "life": ""
+      "position": "320|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "256|0|0",
-      "name": "",
-      "life": ""
+      "position": "256|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "192|0|0",
-      "name": "",
-      "life": ""
+      "position": "192|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "128|0|0",
-      "name": "",
-      "life": ""
+      "position": "128|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "64|0|0",
-      "name": "",
-      "life": ""
+      "position": "64|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|0",
-      "name": "",
-      "life": ""
+      "position": "0|0|0"
     },
     {
       "team": "ambient",
       "type": "asteroid",
       "model": "Asteroid2",
       "position": "random",
-      "name": "",
       "life": "50",
       "amount": 8000
     },
@@ -357,7 +276,6 @@
       "type": "asteroid",
       "model": "Asteroid4",
       "position": "random",
-      "name": "",
       "life": "50",
       "amount": 8000
     },
@@ -366,8 +284,6 @@
       "type": "miniStar",
       "model": "",
       "position": "random",
-      "name": "",
-      "life": "",
       "amount": 10000
     }
   ],

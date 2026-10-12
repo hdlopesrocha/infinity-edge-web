@@ -1,60 +1,50 @@
-<!-- GenericMenu recreation: _backWindow + _leftSide/_rightSide split + four
-     160x48 corner buttons. _buttonLU pops history (back/exit label like
-     GenericMenu.Update), _buttonRU is the primary action slot. -->
+<!-- GenericMenu chrome: _backWindow + split sides + 160x48 corner buttons.
+     _buttonLU pops history (exit when alone); _buttonRU is the action slot. -->
 <script setup lang="ts">
+import { useRoute, useRouter } from 'vue-router';
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
 import { audio } from '../game/audio';
-import { store } from '../game/store';
 
 const props = withDefaults(
   defineProps<{
-    /** Primary (RU) button label; empty hides it. */
     primary?: string;
-    /** Route name (or path) the primary button navigates to. */
     primaryTo?: string;
-    /** Called instead of navigation when provided. */
     onPrimary?: (() => void) | null;
-    /** Bottom-left / bottom-right decorative labels. */
     ldLabel?: string;
     rdLabel?: string;
-    /** Hide the back button (splash screens). */
     noBack?: boolean;
   }>(),
   { primary: '', primaryTo: '', onPrimary: null, ldLabel: '', rdLabel: '', noBack: false },
 );
 
 const router = useRouter();
-const backLabel = computed(() =>
-  window.history.length > 1 ? 'back' : 'exit',
-);
+const route = useRoute();
+const backLabel = computed(() => {
+  const n = String(route.name ?? '');
+  return n === 'menu' || n === 'engine' || n === 'start' || n === 'boot' ? 'exit' : 'back';
+});
 
 function goBack(): void {
   audio.unlock();
-  void audio.play('button');
-  if (window.history.length > 1) router.back();
+  void audio.sfx('button');
+  if (backLabel.value === 'exit') void router.push('/');
+  else if (window.history.length > 1) router.back();
   else void router.push('/menu');
 }
 
 function goPrimary(): void {
   audio.unlock();
-  void audio.play('button');
+  void audio.sfx('button');
   if (props.onPrimary) {
     props.onPrimary();
     return;
   }
   if (props.primaryTo) void router.push(props.primaryTo);
 }
-
-function unlock(): void {
-  audio.unlock();
-}
-
-void store;
 </script>
 
 <template>
-  <div class="menu-window" @pointerdown="unlock">
+  <div class="menu-window" @pointerdown="audio.unlock()">
     <div class="menu-left"><slot name="left" /></div>
     <div class="menu-right"><slot name="right" /></div>
   </div>

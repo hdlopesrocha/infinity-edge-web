@@ -1,16 +1,15 @@
-<!-- SinglePlayer menu: CTF vs TimeTrial (multiplayer stays disabled, as in
-     the original where the button is commented out). -->
+<!-- SinglePlayer: CTF vs TimeTrial. -->
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
 import { audio } from '../game/audio';
 
 const router = useRouter();
-const base = import.meta.env.BASE_URL + 'assets/textures/';
+const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
 
 function go(path: string): void {
   audio.unlock();
-  void audio.play('button');
+  void audio.sfx('button');
   void router.push(path);
 }
 </script>

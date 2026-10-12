@@ -27,73 +27,49 @@
       "team": "human",
       "type": "base",
       "model": "Base",
-      "position": "0|0|0",
-      "name": "",
-      "life": ""
-    },
-    {
-      "team": "ambient",
-      "type": "spaceShip",
-      "model": "Fighter3",
-      "position": "4,4,32",
-      "name": "",
-      "life": "1000|1000|1000"
+      "position": "0|0|0"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|64",
-      "name": "",
-      "life": ""
+      "position": "0|0|64"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|128",
-      "name": "",
-      "life": ""
+      "position": "0|0|128"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|192",
-      "name": "",
-      "life": ""
+      "position": "0|0|192"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|256",
-      "name": "",
-      "life": ""
+      "position": "0|0|256"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|320",
-      "name": "",
-      "life": ""
+      "position": "0|0|320"
     },
     {
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|0|384",
-      "name": "",
-      "life": ""
+      "position": "0|0|384"
     },
     {
       "team": "ambient",
       "type": "miniStar",
       "model": "",
       "position": "random",
-      "name": "",
-      "life": "",
       "amount": 10000
     }
   ],

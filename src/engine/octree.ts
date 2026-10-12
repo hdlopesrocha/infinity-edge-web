@@ -1,179 +1,278 @@
-// Octree spatial partition, port of IE3D_API/OcTree.cs.
-// Cubic bounds, fragments while size > 48, 8 children with slight overlap,
-// three buckets by ObjectType (mirrors UNC.../ENVIRONMENT/INTERACTIVE split).
-// Used for frustum + sphere queries on large maps (CTF: 8000 asteroids).
+// Faithful port of IE3D_API/OcTree.cs.
+// Cubic root (size/2 extents), 10% child overlap clamped to parent,
+// fragments while X-extent > 48, per-node _count/_interactiveCount,
+// prune-on-empty, RefreshObject reinsertion, typed select queries.
+// Sim objects register themselves via node refs (obj._octNode).
 
-import { vec3 } from 'gl-matrix';
+import { boxVisible, rayBox, raySphere, sphereContainsBox, spheresIntersect } from './frustum';
 import type { FrustumPlanes } from './frustum';
-import { boxVisible, sphereVisible } from './frustum';
 
-export enum ObType {
+export enum ObKind {
   Uncollidable = 0,
   Environment = 1,
   Interactive = 2,
 }
 
-export interface SpatialItem {
-  id: number;
-  type: ObType;
-  /** World-space bounding sphere. */
-  center: vec3;
-  radius: number;
-  min: vec3;
-  max: vec3;
+export interface OctItem {
+  _octNode: OctNode | null;
+  kind: ObKind;
+  active: boolean;
+  // world bounding sphere (updated by obj.update())
+  sx: number;
+  sy: number;
+  sz: number;
+  sradius: number;
 }
 
-const FRAG_SIZE = 48;
-const OVERLAP = 0.05;
-
-export class Octree {
-  min: vec3;
-  max: vec3;
-  center: vec3;
-  size: number;
-  children: Octree[] | null = null;
-  buckets: SpatialItem[][] = [[], [], []];
+export class OctNode {
+  minx: number;
+  miny: number;
+  minz: number;
+  maxx: number;
+  maxy: number;
+  maxz: number;
+  childs: (OctNode | null)[] = [null, null, null, null, null, null, null, null];
+  parent: OctNode | null = null;
+  index = 0;
+  environment: OctItem[] = [];
+  uncollidable: OctItem[] = [];
+  interactive: OctItem[] = [];
   count = 0;
+  interactiveCount = 0;
 
-  constructor(min: vec3, max: vec3) {
-    this.min = vec3.clone(min);
-    this.max = vec3.clone(max);
-    this.center = vec3.create();
-    vec3.add(this.center, min, max);
-    vec3.scale(this.center, this.center, 0.5);
-    this.size = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+  constructor(size: number);
+  constructor(min: number[], max: number[], parent: OctNode, index: number);
+  constructor(a: number | number[], b?: number[] | OctNode, c?: OctNode | number, d?: number) {
+    if (typeof a === 'number') {
+      const size = a / 2;
+      this.minx = -size; this.miny = -size; this.minz = -size;
+      this.maxx = size; this.maxy = size; this.maxz = size;
+      this.parent = null;
+    } else {
+      const min = a, max = b as number[];
+      const parent = c as OctNode;
+      // 10% overlap, clamped to parent
+      const vx = (max[0] - min[0]) * 0.1;
+      const vy = (max[1] - min[1]) * 0.1;
+      const vz = (max[2] - min[2]) * 0.1;
+      this.minx = Math.max(min[0] - vx, parent.minx);
+      this.miny = Math.max(min[1] - vy, parent.miny);
+      this.minz = Math.max(min[2] - vz, parent.minz);
+      this.maxx = Math.min(max[0] + vx, parent.maxx);
+      this.maxy = Math.min(max[1] + vy, parent.maxy);
+      this.maxz = Math.min(max[2] + vz, parent.maxz);
+      this.parent = parent;
+      this.index = d as number;
+    }
   }
 
-  private static contains(box: { min: vec3; max: vec3 }, it: SpatialItem): boolean {
+  canFrag(): boolean {
+    return this.maxx - this.minx > 48;
+  }
+
+  private fragment(index: number): OctNode {
+    const cx = (this.minx + this.maxx) / 2;
+    const cy = (this.miny + this.maxy) / 2;
+    const cz = (this.minz + this.maxz) / 2;
+    const mn = this, mx = this;
+    switch (index) {
+      case 0: return new OctNode([cx, cy, cz], [mx.maxx, mx.maxy, mx.maxz], this, 0);
+      case 1: return new OctNode([mn.minx, cy, cz], [cx, mx.maxy, mx.maxz], this, 1);
+      case 2: return new OctNode([mn.minx, cy, mn.minz], [cx, mx.maxy, cz], this, 2);
+      case 3: return new OctNode([cx, cy, mn.minz], [mx.maxx, mx.maxy, cz], this, 3);
+      case 4: return new OctNode([cx, mn.miny, cz], [mx.maxx, cy, mx.maxz], this, 4);
+      case 5: return new OctNode([mn.minx, mn.miny, cz], [cx, cy, mx.maxz], this, 5);
+      case 6: return new OctNode([mn.minx, mn.miny, mn.minz], [cx, cy, cz], this, 6);
+      default: return new OctNode([cx, mn.miny, mn.minz], [mx.maxx, cy, cz], this, 7);
+    }
+  }
+
+  private boxContainsSphere(sx: number, sy: number, sz: number, r: number): boolean {
+    // BoundingBox.Contains(BoundingSphere): sphere fully inside the box.
     return (
-      it.min[0] >= box.min[0] && it.max[0] <= box.max[0] &&
-      it.min[1] >= box.min[1] && it.max[1] <= box.max[1] &&
-      it.min[2] >= box.min[2] && it.max[2] <= box.max[2]
+      sx - r >= this.minx && sx + r <= this.maxx &&
+      sy - r >= this.miny && sy + r <= this.maxy &&
+      sz - r >= this.minz && sz + r <= this.maxz
     );
   }
 
-  private fragment(): void {
-    const { min, max, center } = this;
-    this.children = [];
-    for (let xi = 0; xi < 2; xi++) {
-      for (let yi = 0; yi < 2; yi++) {
-        for (let zi = 0; zi < 2; zi++) {
-          const cmin = vec3.fromValues(
-            xi === 0 ? min[0] : center[0] - this.size * OVERLAP,
-            yi === 0 ? min[1] : center[1] - this.size * OVERLAP,
-            zi === 0 ? min[2] : center[2] - this.size * OVERLAP,
-          );
-          const cmax = vec3.fromValues(
-            xi === 0 ? center[0] + this.size * OVERLAP : max[0],
-            yi === 0 ? center[1] + this.size * OVERLAP : max[1],
-            zi === 0 ? center[2] + this.size * OVERLAP : max[2],
-          );
-          // Clamp to parent bounds.
-          for (let k = 0; k < 3; k++) {
-            if (cmin[k] < min[k]) cmin[k] = min[k];
-            if (cmax[k] > max[k]) cmax[k] = max[k];
-          }
-          this.children.push(new Octree(cmin, cmax));
-        }
-      }
-    }
+  private static nodeContains(node: OctNode, sx: number, sy: number, sz: number, r: number): boolean {
+    return (
+      sx - r >= node.minx && sx + r <= node.maxx &&
+      sy - r >= node.miny && sy + r <= node.maxy &&
+      sz - r >= node.minz && sz + r <= node.maxz
+    );
   }
 
-  insert(it: SpatialItem): void {
-    if (this.children) {
-      for (const ch of this.children) {
-        if (Octree.contains(ch, it)) {
-          ch.insert(it);
-          this.count++;
-          return;
-        }
-      }
-      this.buckets[it.type].push(it);
-      this.count++;
-      return;
-    }
-    this.buckets[it.type].push(it);
-    this.count++;
-    if (this.size > FRAG_SIZE && this.count > 12) {
-      this.fragment();
-      const all = [...this.buckets[0], ...this.buckets[1], ...this.buckets[2]];
-      this.buckets = [[], [], []];
-      const prev = this.count;
-      this.count = 0;
-      for (const o of all) this.insert(o);
-      this.count = prev; // keep total consistent
-    }
-  }
-
-  remove(id: number): boolean {
-    for (const b of this.buckets) {
-      const i = b.findIndex((o) => o.id === id);
-      if (i >= 0) {
-        b.splice(i, 1);
-        this.count--;
-        return true;
-      }
-    }
-    if (this.children) {
-      for (const ch of this.children) {
-        if (ch.remove(id)) {
-          this.count--;
-          // Prune empty children like OcTree.Remove.
-          if (this.children.every((c) => c.count === 0)) this.children = null;
-          return true;
-        }
-      }
+  childContains(sx: number, sy: number, sz: number, r: number): boolean {
+    if (!this.canFrag()) return false;
+    for (let i = 0; i < 8; i++) {
+      const n = this.childs[i] ?? this.fragment(i);
+      if (OctNode.nodeContains(n, sx, sy, sz, r)) return true;
     }
     return false;
   }
 
-  /** Reinsert helper when an object moved bounds (OcTree.Refresh). */
-  refresh(it: SpatialItem, updateBounds: () => void): void {
-    updateBounds();
-    // Simple correct approach: remove + reinsert from root.
-    this.remove(it.id);
-    this.insert(it);
+  insert(obj: OctItem): void {
+    let ptr: OctNode = this;
+    ptr.count++;
+    if (obj.kind === ObKind.Interactive) ptr.interactiveCount++;
+    for (;;) {
+      let contains = false;
+      if (ptr.canFrag()) {
+        for (let i = 0; i < 8; i++) {
+          const n = ptr.childs[i] ?? ptr.fragment(i);
+          if (n.boxContainsSphere(obj.sx, obj.sy, obj.sz, obj.sradius)) {
+            ptr.childs[i] = n;
+            contains = true;
+            ptr = n;
+            ptr.count++;
+            if (obj.kind === ObKind.Interactive) ptr.interactiveCount++;
+            break;
+          }
+        }
+      }
+      if (!contains || !ptr.canFrag()) break;
+    }
+    if (obj.kind === ObKind.Interactive) ptr.interactive.push(obj);
+    else if (obj.kind === ObKind.Environment) ptr.environment.push(obj);
+    else ptr.uncollidable.push(obj);
+    obj._octNode = ptr;
   }
 
-  frustumSelect(f: FrustumPlanes, out: SpatialItem[], types = [0, 1, 2]): void {
-    // Coarse box test for this node.
-    if (!boxVisible(f, this.min, this.max)) return;
-    for (const t of types) {
-      const b = this.buckets[t];
-      for (let i = 0; i < b.length; i++) {
-        const it = b[i];
-        if (sphereVisible(f, it.center, it.radius)) out.push(it);
+  remove(obj: OctItem): void {
+    const ptr = obj._octNode;
+    if (!ptr) return;
+    removeFrom(ptr, obj);
+    obj._octNode = null;
+    let p: OctNode | null = ptr;
+    while (p) {
+      p.count--;
+      if (obj.kind === ObKind.Interactive) p.interactiveCount--;
+      if (p.count === 0 && p.parent) p.parent.childs[p.index] = null;
+      p = p.parent;
+    }
+  }
+
+  refresh(obj: OctItem): void {
+    const ptr = obj._octNode;
+    if (!ptr) return;
+    const chCon = ptr.childContains(obj.sx, obj.sy, obj.sz, obj.sradius);
+    const thisCon = ptr.boxContainsSphere(obj.sx, obj.sy, obj.sz, obj.sradius);
+    if (!thisCon || chCon) {
+      removeFrom(ptr, obj);
+      if (chCon) {
+        ptr.count--;
+        if (obj.kind === ObKind.Interactive) ptr.interactiveCount--;
+        ptr.insert(obj);
+      } else {
+        let p: OctNode | null = ptr;
+        while (p && !OctNode.nodeContains(p, obj.sx, obj.sy, obj.sz, obj.sradius)) {
+          p.count--;
+          if (obj.kind === ObKind.Interactive) p.interactiveCount--;
+          if (p.count === 0 && p.parent) p.parent.childs[p.index] = null;
+          p = p.parent;
+        }
+        if (!p) this.insert(obj);
+        else {
+          p.count--;
+          if (obj.kind === ObKind.Interactive) p.interactiveCount--;
+          p.insert(obj);
+        }
       }
     }
-    if (this.children) {
-      for (const ch of this.children) ch.frustumSelect(f, out, types);
-    }
   }
 
-  sphereSelect(center: vec3, radius: number, out: SpatialItem[]): void {
-    // Node sphere vs query sphere (coarse AABB check first).
-    const cx = Math.max(this.min[0], Math.min(center[0], this.max[0]));
-    const cy = Math.max(this.min[1], Math.min(center[1], this.max[1]));
-    const cz = Math.max(this.min[2], Math.min(center[2], this.max[2]));
-    const dx = cx - center[0];
-    const dy = cy - center[1];
-    const dz = cz - center[2];
-    if (dx * dx + dy * dy + dz * dz > radius * radius) return;
-    for (const b of this.buckets) {
-      for (const it of b) {
-        const ddx = it.center[0] - center[0];
-        const ddy = it.center[1] - center[1];
-        const ddz = it.center[2] - center[2];
-        const rr = radius + it.radius;
-        if (ddx * ddx + ddy * ddy + ddz * ddz <= rr * rr) out.push(it);
+  frustumSelect(f: FrustumPlanes, out: OctItem[]): void {
+    for (const o of this.uncollidable) {
+      if (o.active && sphereVisibleFrustum(f, o)) out.push(o);
+    }
+    for (const o of this.environment) {
+      if (sphereVisibleFrustum(f, o)) out.push(o);
+    }
+    for (const o of this.interactive) {
+      if (sphereVisibleFrustum(f, o)) out.push(o);
+    }
+    for (const ch of this.childs) {
+      if (ch && boxVisible(f, ch.minx, ch.miny, ch.minz, ch.maxx, ch.maxy, ch.maxz)) {
+        ch.frustumSelect(f, out);
       }
     }
-    if (this.children) for (const ch of this.children) ch.sphereSelect(center, radius, out);
   }
 
-  clear(): void {
-    this.buckets = [[], [], []];
-    this.children = null;
-    this.count = 0;
+  sphereSelectInteractive(sx: number, sy: number, sz: number, r: number, out: OctItem[]): void {
+    for (const o of this.interactive) {
+      if (o.active && spheresIntersect(sx, sy, sz, r, o.sx, o.sy, o.sz, o.sradius)) out.push(o);
+    }
+    for (const ch of this.childs) {
+      if (
+        ch &&
+        ch.interactiveCount > 0 &&
+        spheresIntersect(sx, sy, sz, r, (ch.minx + ch.maxx) / 2, (ch.miny + ch.maxy) / 2, (ch.minz + ch.maxz) / 2,
+          Math.hypot(ch.maxx - ch.minx, ch.maxy - ch.miny, ch.maxz - ch.minz) / 2)
+      ) {
+        // note: original tests sphere-vs-box; sphere-vs-bounds-sphere is a
+        // conservative superset — refine with the exact box test below.
+        if (sphereBoxIntersect(sx, sy, sz, r, ch)) ch.sphereSelectInteractive(sx, sy, sz, r, out);
+      }
+    }
+  }
+
+  sphereSelect(sx: number, sy: number, sz: number, r: number, out: OctItem[]): void {
+    for (const o of this.interactive) {
+      if (o.active && spheresIntersect(sx, sy, sz, r, o.sx, o.sy, o.sz, o.sradius)) out.push(o);
+    }
+    for (const o of this.environment) {
+      if (o.active && spheresIntersect(sx, sy, sz, r, o.sx, o.sy, o.sz, o.sradius)) out.push(o);
+    }
+    for (const ch of this.childs) {
+      if (ch && sphereBoxIntersect(sx, sy, sz, r, ch)) ch.sphereSelect(sx, sy, sz, r, out);
+    }
+  }
+
+  raySelect(
+    ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, d: number, out: OctItem[],
+  ): void {
+    for (const o of this.interactive) {
+      const t = raySphere(ox, oy, oz, dx, dy, dz, o.sx, o.sy, o.sz, o.sradius);
+      if (o.active && t !== null && t <= d) out.push(o);
+    }
+    for (const o of this.environment) {
+      const t = raySphere(ox, oy, oz, dx, dy, dz, o.sx, o.sy, o.sz, o.sradius);
+      if (o.active && t !== null && t <= d) out.push(o);
+    }
+    for (const ch of this.childs) {
+      if (!ch) continue;
+      const t = rayBox(ox, oy, oz, dx, dy, dz, ch.minx, ch.miny, ch.minz, ch.maxx, ch.maxy, ch.maxz);
+      if (t !== null && t <= d) ch.raySelect(ox, oy, oz, dx, dy, dz, d, out);
+    }
   }
 }
+
+function removeFrom(ptr: OctNode, obj: OctItem): void {
+  const arr =
+    obj.kind === ObKind.Interactive
+      ? ptr.interactive
+      : obj.kind === ObKind.Environment
+        ? ptr.environment
+        : ptr.uncollidable;
+  const i = arr.indexOf(obj);
+  if (i >= 0) arr.splice(i, 1);
+}
+
+function sphereVisibleFrustum(f: FrustumPlanes, o: OctItem): boolean {
+  for (let i = 0; i < 6; i++) {
+    if (f[i * 4] * o.sx + f[i * 4 + 1] * o.sy + f[i * 4 + 2] * o.sz + f[i * 4 + 3] < -o.sradius) return false;
+  }
+  return true;
+}
+
+function sphereBoxIntersect(sx: number, sy: number, sz: number, r: number, ch: OctNode): boolean {
+  const nx = Math.max(ch.minx, Math.min(sx, ch.maxx));
+  const ny = Math.max(ch.miny, Math.min(sy, ch.maxy));
+  const nz = Math.max(ch.minz, Math.min(sz, ch.maxz));
+  const dx = nx - sx, dy = ny - sy, dz = nz - sz;
+  return dx * dx + dy * dy + dz * dz <= r * r;
+}
+
+export { boxVisible };

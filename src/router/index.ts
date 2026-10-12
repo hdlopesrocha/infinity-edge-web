@@ -1,7 +1,6 @@
-// Hash-based navigation (works without server route config).
-// Route map mirrors the original scene stack:
-// EngineScreen -> StartScreen -> MainMenu -> SinglePlayer -> TT/CTF menus ->
-// track list -> briefing (MenuXML) -> game (GameInstance) -> victory/defeat.
+// Hash-based navigation mirroring the scene stack:
+// engine -> start -> menu -> single -> tt/ctf -> tracks -> briefing ->
+// game -> victory/defeat, plus options/about.
 
 import { createRouter, createWebHashHistory } from 'vue-router';
 import type { RouteRecordRaw } from 'vue-router';
@@ -33,11 +32,6 @@ export const router = createRouter({
 
 router.afterEach((to) => {
   const name = String(to.name ?? 'notfound');
-  const param =
-    typeof to.params.level === 'string'
-      ? to.params.level
-      : typeof to.params.diff === 'string' && name === 'game'
-        ? to.params.diff
-        : undefined;
+  const param = typeof to.params.level === 'string' ? to.params.level : undefined;
   syncSceneState(name, param);
 });

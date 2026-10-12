@@ -1,54 +1,32 @@
 // FBX -> JSON converter for InfinityEdge3D assets.
 // Usage: node tools/convert-fbx.mjs [--check]
 // Reads:  ../InfinityEdge3D/InfinityEdge/InfinityEdgeContent/Objects/*/model*.fbx
-// Writes: public/assets/models/<Alias>.json (+ <Alias>_lod<N>.json for LODs)
-//         public/assets/models/MANIFEST.json
+// Writes: public/assets/models/<Alias>.json (+ <Alias>_lod<N>.json), MANIFEST.json
 //
-// Handles the two FBX flavors present in the tree:
-//  - ASCII FBX 2013 (e.g. Fighter3/model0.fbx): geometry embedded in
-//    `Model: "Model::name", "Mesh"` blocks, name-based `Connect:` links.
-//  - Binary FBX v6100 (e.g. Sky/Asteroids): geometry embedded in `Model`
-//    nodes, name-based `Connect` links.
-// (Older v6-style separate `Geometry:` nodes with numeric ids are handled
-// too, for robustness.) Full node/property decoding, zlib array support,
-// polygon fan-triangulation, ByPolygonVertex/ByVertice x Direct/IndexToDirect
-// mapping. Preserves: positions, normals, UVs, indices, bounds, materials +
-// texture refs, node transforms, up-axis/units metadata.
-//
-// LOD convention (Objects/CONVENCOES.txt): 0=master(2048) .. 4(128 faces).
+// Handles ASCII FBX 2013 (geometry in `Model:` blocks, `Connect:` name links)
+// and binary FBX v6100+ (geometry in `Model` nodes, scalar-per-number props,
+// zlib arrays, name- or id-based links). Sources are CRLF: all line splitting
+// is CR-safe. Preserves positions/normals/UVs/indices, bounds, phong
+// materials + texture refs, node Lcl transforms, up-axis/units metadata.
+// Empty 0-byte placeholders are skipped; the lowest real LOD becomes
+// <Alias>.json (CONVENCOES.txt: model 0 is master).
 
 import { inflateSync } from 'node:zlib';
-import {
-  existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, '..');
-const objectsDir = join(
-  webRoot, '..', 'InfinityEdge3D', 'InfinityEdge', 'InfinityEdgeContent', 'Objects',
-);
+const objectsDir = join(webRoot, '..', 'InfinityEdge3D', 'InfinityEdge', 'InfinityEdgeContent', 'Objects');
 const outDir = join(webRoot, 'public', 'assets', 'models');
-
 const CHECK = process.argv.includes('--check');
 
-// ---------------------------------------------------------------------------
-// Shared mesh builder
-// ---------------------------------------------------------------------------
-
+// ---------------- mesh builder ----------------
 function buildMesh(geom) {
   const { vertices, pvi, normalLayer, uvLayer } = geom;
-  const positions = [];
-  const normals = [];
-  const uvs = [];
-  const indices = [];
+  const positions = [], normals = [], uvs = [], indices = [];
   const seen = new Map();
-  const nData = normalLayer?.data;
-  const nIndex = normalLayer?.index ?? [];
-  const uData = uvLayer?.data;
-  const uIndex = uvLayer?.index ?? [];
-
   const attr = (layer, data, indexArr, corner, ctrl, isUV) => {
     if (!data || !data.length) return null;
     const m = (layer.mapping || 'ByPolygonVertex').toLowerCase();
@@ -68,57 +46,37 @@ function buildMesh(geom) {
     if (m === 'allthesame') return 0;
     return null;
   };
-
-  // Per-corner (pvi-order) triangle list: fan-triangulate each polygon so
-  // ByPolygonVertex attributes resolve to the right corner.
   const triCorners = [];
   {
-    let poly = [];
-    let ci = 0;
+    let poly = [], ci = 0;
     for (const raw of pvi) {
       const ctrl = raw < 0 ? ~raw : raw;
-      poly.push({ ctrl, corner: ci });
-      ci++;
+      poly.push({ ctrl, corner: ci++ });
       if (raw < 0) {
-        for (let i = 1; i < poly.length - 1; i++) {
-          triCorners.push(poly[0], poly[i], poly[i + 1]);
-        }
+        for (let i = 1; i < poly.length - 1; i++) triCorners.push(poly[0], poly[i], poly[i + 1]);
         poly = [];
       }
     }
   }
   for (const { ctrl, corner } of triCorners) {
-    const px = vertices[ctrl * 3] ?? 0;
-    const py = vertices[ctrl * 3 + 1] ?? 0;
-    const pz = vertices[ctrl * 3 + 2] ?? 0;
-    let nx = 0;
-    let ny = 1;
-    let nz = 0;
-    if (normalLayer && nData && nData.length) {
-      const o = attr(normalLayer, nData, nIndex, corner, ctrl, false);
-      if (o !== null && nData[o] !== undefined) {
-        nx = nData[o];
-        ny = nData[o + 1];
-        nz = nData[o + 2];
+    const px = vertices[ctrl * 3] ?? 0, py = vertices[ctrl * 3 + 1] ?? 0, pz = vertices[ctrl * 3 + 2] ?? 0;
+    let nx = 0, ny = 1, nz = 0;
+    if (normalLayer?.data?.length) {
+      const o = attr(normalLayer, normalLayer.data, normalLayer.index ?? [], corner, ctrl, false);
+      if (o !== null && normalLayer.data[o] !== undefined) {
+        nx = normalLayer.data[o]; ny = normalLayer.data[o + 1]; nz = normalLayer.data[o + 2];
       }
     }
-    let uu = 0;
-    let vv = 0;
-    if (uvLayer && uData && uData.length) {
-      const o = attr(uvLayer, uData, uIndex, corner, ctrl, true);
-      if (o !== null && uData[o] !== undefined) {
-        uu = uData[o];
-        vv = uData[o + 1];
-      }
+    let uu = 0, vv = 0;
+    if (uvLayer?.data?.length) {
+      const o = attr(uvLayer, uvLayer.data, uvLayer.index ?? [], corner, ctrl, true);
+      if (o !== null && uvLayer.data[o] !== undefined) { uu = uvLayer.data[o]; vv = uvLayer.data[o + 1]; }
     }
     const key = `${px.toFixed(5)},${py.toFixed(5)},${pz.toFixed(5)}|${nx.toFixed(4)},${ny.toFixed(4)},${nz.toFixed(4)}|${uu.toFixed(5)},${vv.toFixed(5)}`;
     let vi = seen.get(key);
     if (vi === undefined) {
-      vi = positions.length / 3;
-      seen.set(key, vi);
-      positions.push(px, py, pz);
-      normals.push(nx, ny, nz);
-      uvs.push(uu, vv);
+      vi = positions.length / 3; seen.set(key, vi);
+      positions.push(px, py, pz); normals.push(nx, ny, nz); uvs.push(uu, vv);
     }
     indices.push(vi);
   }
@@ -126,15 +84,13 @@ function buildMesh(geom) {
 }
 
 function boundsOf(positions) {
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < positions.length; i += 3) {
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 3)
     for (let k = 0; k < 3; k++) {
       const v = positions[i + k];
       if (v < min[k]) min[k] = v;
       if (v > max[k]) max[k] = v;
     }
-  }
   const center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
   let radius = 0;
   for (let i = 0; i < positions.length; i += 3) {
@@ -144,15 +100,10 @@ function boundsOf(positions) {
   return { min, max, center, radius };
 }
 
-// Compose a local matrix from Lcl Translation/Rotation(Euler XYZ deg)/Scaling.
 function composeLocal(t, rDeg, s) {
   const [rx, ry, rz] = rDeg.map((d) => (d * Math.PI) / 180);
-  const cx = Math.cos(rx);
-  const sx = Math.sin(rx);
-  const cy = Math.cos(ry);
-  const sy = Math.sin(ry);
-  const cz = Math.cos(rz);
-  const sz = Math.sin(rz);
+  const cx = Math.cos(rx), sx = Math.sin(rx), cy = Math.cos(ry), sy = Math.sin(ry);
+  const cz = Math.cos(rz), sz = Math.sin(rz);
   const R = [
     [cy * cz, -cy * sz, sy],
     [sx * sy * cz + cx * sz, -sx * sy * sz + cx * cz, -sx * cy],
@@ -166,15 +117,13 @@ function composeLocal(t, rDeg, s) {
   ];
   const out = [];
   for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) out.push(M[r][c]);
-  return out; // column-major
+  return out;
 }
 
 function applyMatrixToMesh(mesh, M) {
   const p = mesh.positions;
   for (let i = 0; i < p.length; i += 3) {
-    const x = p[i];
-    const y = p[i + 1];
-    const z = p[i + 2];
+    const x = p[i], y = p[i + 1], z = p[i + 2];
     p[i] = M[0] * x + M[4] * y + M[8] * z + M[12];
     p[i + 1] = M[1] * x + M[5] * y + M[9] * z + M[13];
     p[i + 2] = M[2] * x + M[6] * y + M[10] * z + M[14];
@@ -185,35 +134,23 @@ function applyMatrixToMesh(mesh, M) {
     const ny = M[1] * n[i] + M[5] * n[i + 1] + M[9] * n[i + 2];
     const nz = M[2] * n[i] + M[6] * n[i + 1] + M[10] * n[i + 2];
     const l = Math.hypot(nx, ny, nz) || 1;
-    n[i] = nx / l;
-    n[i + 1] = ny / l;
-    n[i + 2] = nz / l;
+    n[i] = nx / l; n[i + 1] = ny / l; n[i + 2] = nz / l;
   }
 }
-
 const identity = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const round3 = (arr) => arr.map((v) => Math.round(v * 1000) / 1000);
 
-// ---------------------------------------------------------------------------
-// ASCII FBX (v2013 style: Model-embedded geometry, name-based Connect links;
-// also tolerates v6-style separate Geometry blocks with numeric ids)
-// ---------------------------------------------------------------------------
-
+// ---------------- ASCII ----------------
 function asciiBlocks(text, kind) {
-  // `Kind: "name", "subtype" { ... }` or `Kind: id, "name", "subtype" { ... }`
   const out = [];
-  const re = new RegExp(`^\\s*${kind}:\\s*(?:(\\d+),\\s*)?\"([^\"]*)\"\\s*,\\s*\"([^\"]*)\"\\s*\\{`, 'gm');
+  const re = new RegExp(`^\\s*${kind}:\\s*(?:(\\d+),\\s*)?"([^"]*)"\\s*,\\s*"([^"]*)"\\s*\\{`, 'gm');
   let m;
   while ((m = re.exec(text))) {
-    let depth = 0;
-    let i = m.index + m[0].length - 1;
+    let depth = 0, i = m.index + m[0].length - 1;
     const start = i;
     for (; i < text.length; i++) {
       if (text[i] === '{') depth++;
-      else if (text[i] === '}') {
-        depth--;
-        if (depth === 0) break;
-      }
+      else if (text[i] === '}') { depth--; if (depth === 0) break; }
     }
     out.push({ id: m[1] !== undefined ? Number(m[1]) : null, name: m[2], subtype: m[3], body: text.slice(start + 1, i) });
     re.lastIndex = i;
@@ -222,49 +159,35 @@ function asciiBlocks(text, kind) {
 }
 
 function asciiArray(body, key) {
-  // `Key: <csv numbers...>` spanning continuation lines until the next
-  // `Word:` line, a `}` line, or a nested `Word: ... {` line.
-  // NOTE: FBX sources are CRLF; split on \r?\n so trailing \r cannot break
-  // the `$`-anchored matchers below.
   const lines = body.split(/\r?\n/);
-  let collecting = false;
-  let text = '';
+  let collecting = false, text = '';
   for (const line of lines) {
     if (!collecting) {
       const m = line.match(new RegExp(`^\\s*${key}:\\s*(.*)$`));
-      if (m) {
-        collecting = true;
-        text += ' ' + m[1];
-      }
+      if (m) { collecting = true; text += ' ' + m[1]; }
     } else {
       if (/^\s*[A-Za-z][A-Za-z0-9_]*\s*:.*$/.test(line) || /^\s*\}.*$/.test(line) || /^\s*\{.*$/.test(line)) break;
       text += ' ' + line;
     }
   }
   if (!collecting) return [];
-  // Strip array-size markers like "*123 {" ... "a:" (v6 style).
   text = text.replace(/\*\d+\s*\{/g, ' ').replace(/\ba\s*:/g, ' ').replace(/[{}]/g, ' ');
   return text.split(/[\s,]+/).filter((s) => s.length).map(Number).filter((n) => !Number.isNaN(n));
 }
 
 function asciiString(body, key) {
-  const m = body.match(new RegExp(`${key}:\\s*\"([^\"]*)\"`));
+  const m = body.match(new RegExp(`${key}:\\s*"([^"]*)"`));
   return m ? m[1] : '';
 }
 
 function asciiLayer(body, prefix, dataKey, indexKey) {
-  const re = new RegExp(`^\\s*${prefix}:\\s*\\d+\\s*\\{`, 'm');
-  const m = body.match(re);
+  const m = body.match(new RegExp(`^\\s*${prefix}:\\s*\\d+\\s*\\{`, 'm'));
   if (!m || m.index === undefined) return null;
-  let depth = 0;
-  let i = m.index + m[0].length - 1;
+  let depth = 0, i = m.index + m[0].length - 1;
   const start = i;
   for (; i < body.length; i++) {
     if (body[i] === '{') depth++;
-    else if (body[i] === '}') {
-      depth--;
-      if (depth === 0) break;
-    }
+    else if (body[i] === '}') { depth--; if (depth === 0) break; }
   }
   const block = body.slice(start + 1, i);
   return {
@@ -276,16 +199,12 @@ function asciiLayer(body, prefix, dataKey, indexKey) {
 }
 
 function asciiLcl(body, prop, fallback) {
-  // v2013: Property: "Lcl Translation", "Lcl Translation", "A+",x,y,z
-  // v6:     P: "Lcl Translation", ..., "A",x,y,z
-  let m = body.match(new RegExp(`(?:Property|P):\\s*\"${prop}\"[^\\n]*?\"A\\+?\"\\s*,\\s*([-\\d.eE+]+)\\s*,\\s*([-\\d.eE+]+)\\s*,\\s*([-\\d.eE+]+)`));
-  if (!m) return fallback;
-  return [Number(m[1]), Number(m[2]), Number(m[3])];
+  const m = body.match(new RegExp(`(?:Property|P):\\s*"${prop}"[^\\n]*?"A\\+?"\\s*,\\s*([-\\d.eE+]+)\\s*,\\s*([-\\d.eE+]+)\\s*,\\s*([-\\d.eE+]+)`));
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : fallback;
 }
 
 function asciiMatProp(body, prop) {
-  // Property: "DiffuseColor", "ColorRGB", "",r,g,b
-  const m = body.match(new RegExp(`(?:Property|P):\\s*\"${prop}\"[^\\n]*?\"\"\\s*,\\s*([^\\n]+)`));
+  const m = body.match(new RegExp(`(?:Property|P):\\s*"${prop}"[^\\n]*?""\\s*,\\s*([^\\n]+)`));
   if (!m) return null;
   const nums = m[1].split(',').map((s) => Number(String(s).trim())).filter((n) => !Number.isNaN(n));
   return nums.length ? nums : null;
@@ -294,17 +213,18 @@ function asciiMatProp(body, prop) {
 function parseAscii(buf) {
   const text = buf.toString('utf8');
   const mver = text.match(/FBXVersion:\s*(\d+)/);
-  const version = mver ? Number(mver[1]) : 0;
-
-  const meshHolders = []; // {key, name, body, matrix, geom?}
+  const meshHolders = [];
   for (const b of asciiBlocks(text, 'Model')) {
     if (b.subtype !== 'Mesh') continue;
-    const key = b.id !== null ? String(b.id) : b.name;
-    const t = asciiLcl(b.body, 'Lcl Translation', [0, 0, 0]);
-    const r = asciiLcl(b.body, 'Lcl Rotation', [0, 0, 0]);
-    const s = asciiLcl(b.body, 'Lcl Scaling', [1, 1, 1]);
     const holder = {
-      key, name: b.name.replace(/^Model::/, ''), matrix: composeLocal(t, r, s), geom: null,
+      key: b.id !== null ? String(b.id) : b.name,
+      name: b.name.replace(/^Model::/, ''),
+      matrix: composeLocal(
+        asciiLcl(b.body, 'Lcl Translation', [0, 0, 0]),
+        asciiLcl(b.body, 'Lcl Rotation', [0, 0, 0]),
+        asciiLcl(b.body, 'Lcl Scaling', [1, 1, 1]),
+      ),
+      geom: null,
     };
     const verts = asciiArray(b.body, 'Vertices');
     if (verts.length) {
@@ -317,7 +237,6 @@ function parseAscii(buf) {
     }
     meshHolders.push(holder);
   }
-  // v6-style standalone Geometry blocks.
   const standalone = [];
   for (const b of asciiBlocks(text, 'Geometry')) {
     if (b.subtype !== 'Mesh') continue;
@@ -329,7 +248,6 @@ function parseAscii(buf) {
       uvLayer: asciiLayer(b.body, 'LayerElementUV', 'UV', 'UVIndex'),
     });
   }
-
   const mats = new Map();
   for (const b of asciiBlocks(text, 'Material')) {
     const key = b.id !== null ? String(b.id) : b.name;
@@ -344,36 +262,25 @@ function parseAscii(buf) {
       shininess: shin[0] ?? 32, alpha: opac[0] ?? 1,
     });
   }
-
   const texFiles = new Map();
   for (const b of asciiBlocks(text, 'Texture')) {
     const key = b.id !== null ? String(b.id) : b.name;
-    const f = b.body.match(/FileName:\s*\"([^\"]*)\"/);
+    const f = b.body.match(/FileName:\s*"([^"]*)"/);
     if (f) texFiles.set(key, f[1].replace(/\\/g, '/').split('/').pop());
   }
-
   const conns = [];
-  const reC = /C(?:onnect)?:\s*\"([^\"]*)\"\s*,\s*\"?([^\",\s]+)\"?\s*,\s*\"?([^\",\s]+)\"?/g;
+  const reC = /C(?:onnect)?:\s*"([^"]*)"\s*,\s*"?([^",\s]+)"?\s*,\s*"?([^",\s]+)"?/g;
   let c;
-  while ((c = reC.exec(text))) {
-    // Normalize: strip quotes; numeric ids stay numeric strings.
-    conns.push({ type: c[1], from: c[2], to: c[3] });
-  }
-  return { version, upAxis: 'Y', unitScale: 1, meshHolders, standalone, mats, texFiles, conns };
+  while ((c = reC.exec(text))) conns.push({ type: c[1], from: c[2], to: c[3] });
+  return { version: mver ? Number(mver[1]) : 0, upAxis: 'Y', unitScale: 1, meshHolders, standalone, mats, texFiles, conns };
 }
 
-// ---------------------------------------------------------------------------
-// Binary FBX (v5800–v7500+): Model-embedded geometry, name- or id-based links
-// ---------------------------------------------------------------------------
-
+// ---------------- Binary ----------------
 function parseBinaryNodes(buf, version) {
-  const is64 = version >= 7500;
-  const step = is64 ? 8 : 4;
+  const is64 = version >= 7500, step = is64 ? 8 : 4;
   const readUInt = (o) => (is64 ? Number(buf.readBigUInt64LE(o)) : buf.readUInt32LE(o));
-
   function readProp(o) {
-    const type = String.fromCharCode(buf[o]);
-    o += 1;
+    const type = String.fromCharCode(buf[o]); o += 1;
     switch (type) {
       case 'Y': return { v: buf.readInt16LE(o), o: o + 2 };
       case 'C': return { v: buf[o] !== 0, o: o + 1 };
@@ -381,20 +288,12 @@ function parseBinaryNodes(buf, version) {
       case 'F': return { v: buf.readFloatLE(o), o: o + 4 };
       case 'D': return { v: buf.readDoubleLE(o), o: o + 8 };
       case 'L': return { v: Number(buf.readBigInt64LE(o)), o: o + 8 };
-      case 'f':
-      case 'd':
-      case 'l':
-      case 'i':
-      case 'b': {
-        const len = buf.readUInt32LE(o);
-        const enc = buf.readUInt32LE(o + 4);
-        const compLen = buf.readUInt32LE(o + 8);
+      case 'f': case 'd': case 'l': case 'i': case 'b': {
+        const len = buf.readUInt32LE(o), enc = buf.readUInt32LE(o + 4), compLen = buf.readUInt32LE(o + 8);
         o += 12;
-        let raw = buf.subarray(o, o + compLen);
-        o += compLen;
+        let raw = buf.subarray(o, o + compLen); o += compLen;
         if (enc === 1) raw = inflateSync(raw);
-        const rb = Buffer.from(raw);
-        const out = new Array(len);
+        const rb = Buffer.from(raw), out = new Array(len);
         let p = 0;
         for (let k = 0; k < len; k++) {
           if (type === 'f') { out[k] = rb.readFloatLE(p); p += 4; }
@@ -407,8 +306,7 @@ function parseBinaryNodes(buf, version) {
       }
       case 'S': {
         const len = buf.readUInt32LE(o);
-        const s = buf.subarray(o + 4, o + 4 + len).toString('binary');
-        return { v: s, o: o + 4 + len };
+        return { v: buf.subarray(o + 4, o + 4 + len).toString('binary'), o: o + 4 + len };
       }
       case 'R': {
         const len = buf.readUInt32LE(o);
@@ -417,42 +315,27 @@ function parseBinaryNodes(buf, version) {
       default: throw new Error('unknown FBX property type: ' + type);
     }
   }
-
   function readNode(o) {
-    const endOffset = readUInt(o);
-    const numProps = readUInt(o + step);
-    const nameLen = buf[o + 3 * step];
+    const endOffset = readUInt(o), numProps = readUInt(o + step), nameLen = buf[o + 3 * step];
     if (endOffset === 0) return { node: null, o: o + 3 * step + 1 };
     const name = buf.subarray(o + 3 * step + 1, o + 3 * step + 1 + nameLen).toString('ascii');
     let p = o + 3 * step + 1 + nameLen;
     const props = [];
-    for (let k = 0; k < numProps; k++) {
-      const r = readProp(p);
-      props.push(r.v);
-      p = r.o;
-    }
+    for (let k = 0; k < numProps; k++) { const r = readProp(p); props.push(r.v); p = r.o; }
     const children = [];
     if (p < endOffset) {
       while (p < endOffset) {
-        const r = readNode(p);
-        p = r.o;
-        if (r.node) children.push(r.node);
-        else break;
+        const r = readNode(p); p = r.o;
+        if (r.node) children.push(r.node); else break;
       }
     }
     return { node: { name, props, children }, o: endOffset };
   }
-
   const nodes = [];
-  let o = 27; // past magic + version
-  let guard = 0;
+  let o = 27, guard = 0;
   while (o + 13 <= buf.length && guard++ < 100000) {
     let r;
-    try {
-      r = readNode(o);
-    } catch {
-      break; // file footer / padding: stop.
-    }
+    try { r = readNode(o); } catch { break; }
     o = r.o;
     if (r.node) nodes.push(r.node);
     else if (o + 32 > buf.length) break;
@@ -466,9 +349,6 @@ const findKid = (node, name) => (node.children || []).find((c) => c.name === nam
 function kidNumbers(node, name) {
   const k = findKid(node, name);
   if (!k || !k.props.length) return [];
-  // Binary FBX v6x stores each component as a separate scalar property
-  // (numProps == count); newer files use a single array property.
-  // If every prop is numeric, the whole list is the data.
   if (k.props.every((p) => typeof p === 'number')) return k.props.slice();
   const v = k.props[k.props.length - 1];
   return Array.isArray(v) ? v : [v];
@@ -486,23 +366,21 @@ function kidString(node, name) {
   return '';
 }
 
-/** Canonical object key: numeric id when present, else name::class. */
 function binKey(firstProp) {
   if (typeof firstProp === 'number') return String(firstProp);
-  const s = String(firstProp);
-  const parts = s.split('\x00');
-  const name = (parts[0] || s).replace(/\0.*$/, '');
-  const cls = parts.length > 1 ? parts[parts.length - 1].replace(/[^\x20-\x7e]/g, '') : '';
+  const s = String(firstProp), parts = s.split('');
+  void parts;
+  const chunks = s.split('\x00');
+  const name = chunks[0] || s;
+  const cls = chunks.length > 1 ? chunks[chunks.length - 1].replace(/[^\x20-\x7e]/g, '') : '';
   return cls ? `${name}::${cls}` : name;
 }
 
 function binPropVals(propNode) {
-  // Property/P node: [name, ..., values...] — values are trailing numbers.
   const vals = [];
   for (let i = propNode.props.length - 1; i >= 0; i--) {
     const v = propNode.props[i];
-    if (typeof v === 'number') vals.unshift(v);
-    else break;
+    if (typeof v === 'number') vals.unshift(v); else break;
   }
   return vals;
 }
@@ -519,18 +397,41 @@ function binLcl(modelNode, prop, fallback) {
   return fallback;
 }
 
+function binLayers(node) {
+  const layers = [];
+  for (const ln of findKids(node, 'LayerElementNormal')) {
+    layers.push({
+      kind: 'n',
+      mapping: kidString(ln, 'MappingInformationType') || 'ByPolygonVertex',
+      reference: kidString(ln, 'ReferenceInformationType') || 'Direct',
+      data: kidNumbers(ln, 'Normals'),
+      index: kidNumbers(ln, 'NormalsIndex').map((n) => Math.trunc(n)),
+    });
+  }
+  for (const ln of findKids(node, 'LayerElementUV')) {
+    layers.push({
+      kind: 'u',
+      mapping: kidString(ln, 'MappingInformationType') || 'ByPolygonVertex',
+      reference: kidString(ln, 'ReferenceInformationType') || 'IndexToDirect',
+      data: kidNumbers(ln, 'UV'),
+      index: kidNumbers(ln, 'UVIndex').map((n) => Math.trunc(n)),
+    });
+  }
+  const n = layers.find((l) => l.kind === 'n'), u = layers.find((l) => l.kind === 'u');
+  return {
+    normalLayer: n ? { mapping: n.mapping, reference: n.reference, data: n.data, index: n.index } : null,
+    uvLayer: u ? { mapping: u.mapping, reference: u.reference, data: u.data, index: u.index } : null,
+  };
+}
+
 function parseBinary(buf) {
   const version = buf.readUInt32LE(23);
   const top = parseBinaryNodes(buf, version);
   const objects = top.find((n) => n.name === 'Objects');
   const connects = top.find((n) => n.name === 'Connections');
-  const meshHolders = [];
-  const standalone = [];
-  const mats = new Map();
-  const texFiles = new Map();
-  let upAxis = 'Y';
-  let unitScale = 1;
-
+  const meshHolders = [], standalone = [], conns = [];
+  const mats = new Map(), texFiles = new Map();
+  let upAxis = 'Y', unitScale = 1;
   if (objects) {
     for (const child of objects.children || []) {
       if (child.name === 'GlobalSettings') {
@@ -540,9 +441,7 @@ function parseBinary(buf) {
             if (p.props[0] === 'UpAxis') {
               const v = binPropVals(p).pop();
               upAxis = v === 2 ? 'Z' : v === 0 ? 'X' : 'Y';
-            } else if (p.props[0] === 'UnitScaleFactor') {
-              unitScale = binPropVals(p).pop() || 1;
-            }
+            } else if (p.props[0] === 'UnitScaleFactor') unitScale = binPropVals(p).pop() || 1;
           }
         }
         continue;
@@ -550,40 +449,24 @@ function parseBinary(buf) {
       if (child.name === 'Model') {
         const subtype = String(child.props[child.props.length - 1]).replace(/\0.*$/, '');
         const key = binKey(child.props[0]);
-        const name = String(child.props[0]).split('\x00')[0];
-        const t = binLcl(child, 'Lcl Translation', [0, 0, 0]);
-        const r = binLcl(child, 'Lcl Rotation', [0, 0, 0]);
-        const s = binLcl(child, 'Lcl Scaling', [1, 1, 1]);
-        const holder = { key, name: name.replace(/^Model::/, ''), matrix: composeLocal(t, r, s), geom: null };
+        const holder = {
+          key,
+          name: String(child.props[0]).split('\x00')[0].replace(/^Model::/, ''),
+          matrix: composeLocal(
+            binLcl(child, 'Lcl Translation', [0, 0, 0]),
+            binLcl(child, 'Lcl Rotation', [0, 0, 0]),
+            binLcl(child, 'Lcl Scaling', [1, 1, 1]),
+          ),
+          geom: null,
+        };
         if (subtype === 'Mesh') {
           const verts = kidNumbers(child, 'Vertices');
           if (verts.length) {
-            const layers = [];
-            for (const ln of findKids(child, 'LayerElementNormal')) {
-              layers.push({
-                kind: 'n',
-                mapping: kidString(ln, 'MappingInformationType') || 'ByPolygonVertex',
-                reference: kidString(ln, 'ReferenceInformationType') || 'Direct',
-                data: kidNumbers(ln, 'Normals'),
-                index: kidNumbers(ln, 'NormalsIndex').map((n) => Math.trunc(n)),
-              });
-            }
-            for (const ln of findKids(child, 'LayerElementUV')) {
-              layers.push({
-                kind: 'u',
-                mapping: kidString(ln, 'MappingInformationType') || 'ByPolygonVertex',
-                reference: kidString(ln, 'ReferenceInformationType') || 'IndexToDirect',
-                data: kidNumbers(ln, 'UV'),
-                index: kidNumbers(ln, 'UVIndex').map((n) => Math.trunc(n)),
-              });
-            }
-            const n = layers.find((l) => l.kind === 'n');
-            const u = layers.find((l) => l.kind === 'u');
+            const L = binLayers(child);
             holder.geom = {
               vertices: verts,
               pvi: kidNumbers(child, 'PolygonVertexIndex').map((n) => Math.trunc(n)),
-              normalLayer: n ? { mapping: n.mapping, reference: n.reference, data: n.data, index: n.index } : null,
-              uvLayer: u ? { mapping: u.mapping, reference: u.reference, data: u.data, index: u.index } : null,
+              ...L,
             };
           }
         }
@@ -591,33 +474,12 @@ function parseBinary(buf) {
       } else if (child.name === 'Geometry') {
         const subtype = String(child.props[child.props.length - 1]).replace(/\0.*$/, '');
         if (subtype !== 'Mesh') continue;
-        const layers = [];
-        for (const ln of findKids(child, 'LayerElementNormal')) {
-          layers.push({
-            kind: 'n',
-            mapping: kidString(ln, 'MappingInformationType') || 'ByPolygonVertex',
-            reference: kidString(ln, 'ReferenceInformationType') || 'Direct',
-            data: kidNumbers(ln, 'Normals'),
-            index: kidNumbers(ln, 'NormalsIndex').map((n) => Math.trunc(n)),
-          });
-        }
-        for (const ln of findKids(child, 'LayerElementUV')) {
-          layers.push({
-            kind: 'u',
-            mapping: kidString(ln, 'MappingInformationType') || 'ByPolygonVertex',
-            reference: kidString(ln, 'ReferenceInformationType') || 'IndexToDirect',
-            data: kidNumbers(ln, 'UV'),
-            index: kidNumbers(ln, 'UVIndex').map((n) => Math.trunc(n)),
-          });
-        }
-        const n = layers.find((l) => l.kind === 'n');
-        const u = layers.find((l) => l.kind === 'u');
+        const L = binLayers(child);
         standalone.push({
           key: binKey(child.props[0]),
           vertices: kidNumbers(child, 'Vertices'),
           pvi: kidNumbers(child, 'PolygonVertexIndex').map((n) => Math.trunc(n)),
-          normalLayer: n ? { mapping: n.mapping, reference: n.reference, data: n.data, index: n.index } : null,
-          uvLayer: u ? { mapping: u.mapping, reference: u.reference, data: u.data, index: u.index } : null,
+          ...L,
         });
       } else if (child.name === 'Material') {
         const key = binKey(child.props[0]);
@@ -629,8 +491,7 @@ function parseBinary(buf) {
         const holder = findKid(child, 'Properties70') ?? findKid(child, 'Properties60');
         if (holder) {
           for (const p of findKids(holder, 'P').concat(findKids(holder, 'Property'))) {
-            const nm = p.props[0];
-            const vals = binPropVals(p);
+            const nm = p.props[0], vals = binPropVals(p);
             if ((nm === 'DiffuseColor' || nm === 'Diffuse') && vals.length >= 3) mat.diffuse = vals.slice(-3);
             else if ((nm === 'Emissive' || nm === 'EmissiveColor') && vals.length >= 3) mat.emissive = vals.slice(-3);
             else if ((nm === 'Specular' || nm === 'SpecularColor') && vals.length >= 3) mat.specular = vals.slice(-3);
@@ -653,42 +514,30 @@ function parseBinary(buf) {
       }
     }
   }
-  const conns = [];
   if (connects) {
     for (const c of findKids(connects, 'C').concat(findKids(connects, 'Connect'))) {
       const kind = String(c.props[0]).replace(/\0.*$/, '');
-      const a = c.props[1];
-      const b = c.props[2];
       const norm = (v) => (typeof v === 'number' ? String(v) : binKey(v));
-      conns.push({ type: kind, from: norm(a), to: norm(b) });
+      conns.push({ type: kind, from: norm(c.props[1]), to: norm(c.props[2]) });
     }
   }
   return { version, upAxis, unitScale, meshHolders, standalone, mats, texFiles, conns };
 }
 
-// ---------------------------------------------------------------------------
-// Assemble one file
-// ---------------------------------------------------------------------------
-
+// ---------------- assemble ----------------
 function assemble(parsed, fbxName, folder) {
   const { meshHolders, standalone, mats, texFiles, conns } = parsed;
-
-  // Resolve model -> [materials], material -> texture via OO connections.
-  const modelToMats = new Map();
-  const matToTex = new Map();
-  const geoToModel = new Map();
+  const modelToMats = new Map(), matToTex = new Map(), geoToModel = new Map();
+  const holderKeys = new Set(meshHolders.map((h) => h.key));
+  const standKeys = new Set(standalone.map((g) => g.key));
   for (const c of conns) {
     if (c.type !== 'OO') continue;
-    const fromIsModel = meshHolders.some((h) => h.key === c.from);
-    const toIsModel = meshHolders.some((h) => h.key === c.to);
-    if (mats.has(c.from) && toIsModel) {
+    if (mats.has(c.from) && holderKeys.has(c.to)) {
       if (!modelToMats.has(c.to)) modelToMats.set(c.to, []);
       modelToMats.get(c.to).push(c.from);
     }
     if (texFiles.has(c.from) && mats.has(c.to)) matToTex.set(c.to, texFiles.get(c.from));
-    if (texFiles.has(c.from) && toIsModel) {
-      // Direct texture->model link (common in these files): synthesize a
-      // material entry so the texture reference is preserved.
+    if (texFiles.has(c.from) && holderKeys.has(c.to)) {
       const synth = `__tex_${c.from}`;
       if (!mats.has(synth)) {
         mats.set(synth, {
@@ -700,16 +549,10 @@ function assemble(parsed, fbxName, folder) {
       if (!modelToMats.has(c.to)) modelToMats.set(c.to, []);
       modelToMats.get(c.to).push(synth);
     }
-    void fromIsModel;
-    const standKeys = new Set(standalone.map((g) => g.key));
-    if (standKeys.has(c.from) && toIsModel) geoToModel.set(c.from, c.to);
+    if (standKeys.has(c.from) && holderKeys.has(c.to)) geoToModel.set(c.from, c.to);
   }
-
-  const meshes = [];
-  const materials = [];
+  const meshes = [], materials = [], nodes = [];
   const matNameToIndex = new Map();
-  const nodes = [];
-
   const pushMaterial = (matKey, texture) => {
     if (matNameToIndex.has(matKey)) return matNameToIndex.get(matKey);
     const def = mats.get(matKey);
@@ -726,14 +569,12 @@ function assemble(parsed, fbxName, folder) {
     materials.push(entry);
     return materials.length - 1;
   };
-
   const emitMesh = (name, geom, localMatrix, matKeys) => {
     if (!geom || !geom.vertices.length || !geom.pvi.length) return;
     const built = buildMesh(geom);
     if (!built.indices.length) return;
     if (localMatrix) applyMatrixToMesh(built, localMatrix);
-    let matKey = matKeys && matKeys.length ? matKeys[0] : null;
-    let texture = matKey ? matToTex.get(matKey) : undefined;
+    let matKey = matKeys?.length ? matKeys[0] : null;
     if (!matKey) {
       matKey = 'mat_default';
       if (!mats.has(matKey)) {
@@ -743,19 +584,14 @@ function assemble(parsed, fbxName, folder) {
         });
       }
     }
-    const idx = pushMaterial(matKey, texture);
+    const idx = pushMaterial(matKey, matToTex.get(matKey));
     meshes.push({
-      name,
-      positions: round3(built.positions),
-      normals: round3(built.normals),
-      uvs: round3(built.uvs),
-      indices: built.indices,
-      material: materials[idx].name,
+      name, positions: round3(built.positions), normals: round3(built.normals),
+      uvs: round3(built.uvs), indices: built.indices, material: materials[idx].name,
       ...(localMatrix ? { localMatrix: round3(localMatrix) } : {}),
     });
     nodes.push({ name, parent: null, matrix: localMatrix ?? identity() });
   };
-
   for (const h of meshHolders) {
     if (h.geom) emitMesh(h.name || `mesh_${h.key}`, h.geom, h.matrix, modelToMats.get(h.key));
   }
@@ -764,73 +600,51 @@ function assemble(parsed, fbxName, folder) {
     const holder = meshHolders.find((h) => h.key === modelKey);
     emitMesh(`mesh_${g.key}`, g, holder?.matrix ?? null, modelKey ? modelToMats.get(modelKey) : null);
   }
-
   if (!meshes.length) throw new Error('no Mesh geometries found');
-
   const all = meshes.flatMap((mm) => mm.positions);
   const b = boundsOf(all);
   return {
-    version: 1,
-    source: `Objects/${folder}/${fbxName}`,
-    generator: 'tools/convert-fbx.mjs',
-    fbxVersion: parsed.version,
-    upAxis: parsed.upAxis,
-    units: `fbx-unit-scale-${parsed.unitScale}`,
+    version: 1, source: `Objects/${folder}/${fbxName}`, generator: 'tools/convert-fbx.mjs',
+    fbxVersion: parsed.version, upAxis: parsed.upAxis, units: `fbx-unit-scale-${parsed.unitScale}`,
     boundingSphere: { center: b.center, radius: b.radius },
-    boundingBox: { min: b.min, max: b.max },
-    meshes,
-    materials,
-    nodes,
+    boundingBox: { min: b.min, max: b.max }, meshes, materials, nodes,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
+// ---------------- main ----------------
 if (!existsSync(objectsDir)) {
   console.error('convert-fbx: content dir not found:', objectsDir);
   process.exit(1);
 }
 mkdirSync(outDir, { recursive: true });
-
 const manifest = { generator: 'tools/convert-fbx.mjs', models: {} };
 let ok = 0;
 const failed = [];
-
 for (const folder of readdirSync(objectsDir)) {
   const dir = join(objectsDir, folder);
   if (!statSync(dir).isDirectory()) continue;
   const fbxs = readdirSync(dir).filter((f) => /\.fbx$/i.test(f)).sort();
   if (!fbxs.length) continue;
-  // Primary = model0 (CONVENCOES.txt: model 0 is master); others are LODs.
-  // Empty (0-byte) placeholders are skipped; the lowest-numbered real file
-  // is promoted to <Alias>.json so every alias resolves at runtime.
   const usable = fbxs.filter((file) => {
-    try {
-      return statSync(join(dir, file)).size > 32;
-    } catch {
-      return false;
-    }
+    try { return statSync(join(dir, file)).size > 32; } catch { return false; }
   });
-  const skipped = fbxs.filter((file) => !usable.includes(file));
-  for (const file of skipped) {
-    manifest.models[`${folder}__${file}.placeholder`] = { source: `Objects/${folder}/${file}`, empty: true };
-    console.log(`skip ${folder}/${file}: empty placeholder`);
+  for (const file of fbxs) {
+    if (!usable.includes(file)) {
+      manifest.models[`${folder}__${file}.placeholder`] = { source: `Objects/${folder}/${file}`, empty: true };
+      console.log(`skip ${folder}/${file}: empty placeholder`);
+    }
   }
   usable.forEach((file, k) => {
     const outName = k === 0 ? `${folder}.json` : `${folder}_lod${k}.json`;
-    const outPath = join(outDir, outName);
     try {
       const buf = readFileSync(join(dir, file));
       const isBinary = buf.subarray(0, 18).toString('binary').startsWith('Kaydara FBX Binary');
-      const parsed = isBinary ? parseBinary(buf) : parseAscii(buf);
-      const json = assemble(parsed, file, folder);
-      if (!CHECK) writeFileSync(outPath, JSON.stringify(json));
+      const json = assemble(isBinary ? parseBinary(buf) : parseAscii(buf), file, folder);
+      if (!CHECK) writeFileSync(join(outDir, outName), JSON.stringify(json));
       const tris = json.meshes.reduce((n, mm) => n + mm.indices.length / 3, 0);
       manifest.models[outName] = {
-        source: json.source, meshes: json.meshes.length,
-        triangles: tris, materials: json.materials.map((m) => m.name),
+        source: json.source, meshes: json.meshes.length, triangles: tris,
+        materials: json.materials.map((m) => m.name),
       };
       ok++;
       console.log(`ok ${outName}: ${json.meshes.length} mesh(es), ${tris} tris`);
@@ -840,10 +654,6 @@ for (const folder of readdirSync(objectsDir)) {
     }
   });
 }
-
 if (!CHECK) writeFileSync(join(outDir, 'MANIFEST.json'), JSON.stringify(manifest, null, 2) + '\n');
 console.log(`\nconvert-fbx: ${ok} converted, ${failed.length} failed`);
-if (failed.length) {
-  console.log('failed:\n - ' + failed.join('\n - '));
-  process.exitCode = 1;
-}
+if (failed.length) { console.log('failed:\n - ' + failed.join('\n - ')); process.exitCode = 1; }

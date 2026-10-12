@@ -1,43 +1,15 @@
-// Audio: Web Audio API for SFX + voices, <audio> for looping music.
-// Port of ResourceCenter audio (MediaPlayer looping Song + SoundEffect.Play +
-// Voice text lines). Autoplay policy: everything unlocks on first user gesture.
+// Audio: Web Audio API for SFX + voices, <audio> loop for music.
+// Port of MediaPlayer (looping Song) + SoundEffect.Play(v,pan) + Voice.
+// Autoplay policy: unlock() on first user gesture (Game1.GameHasControl).
 
-export const SFX = [
-  'button', 'bulletSound', 'missileSound', 'hitSound', 'addonSound',
-  'absorbSound', 'closeExplosion', 'farExplosion',
-] as const;
+import { SFX, VOICES } from './config';
 
-export const VOICES = [
-  'Welcome', 'Warning', 'TargetAquired', 'MissileIncoming',
-  'IncomingHomingMissile', 'CriticalDamage', 'NewEnemyWave', 'Teleported',
-  'YouWereTeleported', 'LeavingFieldOfBattle', 'ObjectiveCompleted', 'YouLost',
-  'OurFlagWasStolen', 'OurTeamHasTheFlag', 'EnemyTeamHasTheFlag',
-  'OurTeamRecoveredTheFlag', 'EnemyTeamRecoveredTheFlag',
-] as const;
+function soundUrl(name: string): string {
+  return (import.meta.env.BASE_URL + `assets/sounds/${name}.wav`).replace(/([^:])\/\//g, '$1/');
+}
 
-export const VOICE_TEXT: Record<string, string> = {
-  Welcome: 'Welcome to Infinity Edge',
-  Warning: 'Warning',
-  TargetAquired: 'Target acquired',
-  MissileIncoming: 'Missile incoming',
-  IncomingHomingMissile: 'Incoming homing missile',
-  CriticalDamage: 'Critical damage',
-  NewEnemyWave: 'New enemy wave',
-  Teleported: 'Teleported',
-  YouWereTeleported: 'You were teleported',
-  LeavingFieldOfBattle: 'Leaving field of battle',
-  ObjectiveCompleted: 'Objective completed',
-  YouLost: 'You lost',
-  OurFlagWasStolen: 'Our flag was stolen',
-  OurTeamHasTheFlag: 'Our team has the flag',
-  EnemyTeamHasTheFlag: 'Enemy team has the flag',
-  OurTeamRecoveredTheFlag: 'Our team recovered the flag',
-  EnemyTeamRecoveredTheFlag: 'Enemy team recovered the flag',
-};
-
-function assetUrl(kind: 'sfx' | 'music', name: string): string {
-  const ext = kind === 'music' ? 'mp3' : 'wav';
-  return import.meta.env.BASE_URL + `assets/sounds/${name}.${ext}`;
+function musicUrl(): string {
+  return (import.meta.env.BASE_URL + 'assets/sounds/sound.mp3').replace(/([^:])\/\//g, '$1/');
 }
 
 class AudioManager {
@@ -45,36 +17,38 @@ class AudioManager {
   private buffers = new Map<string, AudioBuffer>();
   private musicEl: HTMLAudioElement | null = null;
   private unlocked = false;
-  musicVolume = 0.7;
+  musicVolume = 0.5;
   muted = false;
 
-  /** Must be called from a user gesture at least once. */
   unlock(): void {
-    if (this.unlocked) return;
-    this.unlocked = true;
-    try {
-      if (!this.ctx) this.ctx = new AudioContext();
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
-    } catch {
-      /* no audio */
+    if (!this.unlocked) {
+      this.unlocked = true;
+      try {
+        if (!this.ctx) this.ctx = new AudioContext();
+        if (this.ctx.state === 'suspended') void this.ctx.resume();
+      } catch {
+        /* no audio */
+      }
     }
-    // Start looping music like Game1.LoadContent (MediaPlayer, IsRepeating).
+    // Looping music like Game1.LoadContent (IsRepeating, musicVolume).
     try {
       if (!this.musicEl) {
-        this.musicEl = new Audio(assetUrl('music', 'sound'));
+        this.musicEl = new Audio(musicUrl());
         this.musicEl.loop = true;
         this.musicEl.volume = this.muted ? 0 : this.musicVolume;
         const p = this.musicEl.play();
-        if (p) p.catch(() => {
-          /* still blocked; retry on next gesture */
-          this.unlocked = false;
-        });
+        if (p) {
+          p.catch(() => {
+            this.unlocked = false; // still blocked; retry on next gesture
+            this.musicEl = null;
+          });
+        }
       } else if (this.musicEl.paused) {
         this.musicEl.volume = this.muted ? 0 : this.musicVolume;
         void this.musicEl.play().catch(() => undefined);
       }
     } catch {
-      /* ignore */
+      /* unplayable asset (repo sound.mp3 is 0 bytes): stay silent */
     }
   }
 
@@ -88,9 +62,10 @@ class AudioManager {
     const hit = this.buffers.get(name);
     if (hit) return hit;
     try {
-      const res = await fetch(assetUrl('sfx', name));
+      const res = await fetch(soundUrl(name));
       if (!res.ok) return null;
       const data = await res.arrayBuffer();
+      if (data.byteLength === 0) return null;
       const buf = await this.ctx.decodeAudioData(data);
       this.buffers.set(name, buf);
       return buf;
@@ -99,9 +74,10 @@ class AudioManager {
     }
   }
 
-  /** Fire-and-forget SFX (SoundEffect.Play). */
-  async play(name: string, volume = 1): Promise<void> {
+  /** SoundEffect.Play(volume, pitch, pan) — pitch unused (always 0 in code). */
+  async sfx(name: string, volume = 1, pan = 0): Promise<void> {
     if (!this.unlocked || this.muted) return;
+    if (!(SFX as readonly string[]).includes(name) && !VOICES.some((v) => v.file === name)) return;
     try {
       if (!this.ctx) this.ctx = new AudioContext();
       if (this.ctx.state === 'suspended') await this.ctx.resume();
@@ -110,18 +86,26 @@ class AudioManager {
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
       const g = this.ctx.createGain();
-      g.gain.value = volume;
-      src.connect(g).connect(this.ctx.destination);
+      g.gain.value = Math.max(0, Math.min(1, volume));
+      const p = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+      if (p) {
+        p.pan.value = Math.max(-1, Math.min(1, pan));
+        src.connect(g).connect(p).connect(this.ctx.destination);
+      } else {
+        src.connect(g).connect(this.ctx.destination);
+      }
       src.start();
     } catch {
       /* ignore */
     }
   }
 
-  /** Voice line + subtitle text (Voice.Play + GetText). Returns subtitle. */
-  async speak(name: string): Promise<string> {
-    void this.play(name, 1);
-    return VOICE_TEXT[name] ?? name;
+  /** Voice.Play + GetText: plays the line, returns subtitle text. */
+  voice(field: string): string {
+    const v = VOICES.find((x) => x.field === field);
+    if (!v) return field;
+    void this.sfx(v.file, 1, 0);
+    return v.text;
   }
 }
 

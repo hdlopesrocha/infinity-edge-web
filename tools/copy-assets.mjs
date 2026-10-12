@@ -1,17 +1,15 @@
-// Copy UI/3D textures + sounds from the XNA content tree into public/assets.
-// Sources: ../InfinityEdge3D/InfinityEdge/InfinityEdgeContent/{System,Control,Sounds}.
-// Textures keep their alias names (<alias>.<ext>); the runtime probes .png
-// then .jpg (see texture.ts loadTextureAny). Run: npm run copy:assets
+// Copy textures + sounds + model icons from the XNA content tree.
+// Usage: node tools/copy-assets.mjs
+// UI textures keep alias names; object diffuse textures are namespaced
+// <Folder>__<file>; model icons become <Alias>_icon.png (DrawPointer markers).
 
+import { basename, dirname, join } from 'node:path';
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, '..');
-const content = join(
-  webRoot, '..', 'InfinityEdge3D', 'InfinityEdge', 'InfinityEdgeContent',
-);
+const content = join(webRoot, '..', 'InfinityEdge3D', 'InfinityEdge', 'InfinityEdgeContent');
 
 const TEXTURE_ALIASES = {
   _menubtn: 'System/menubtn', _buttonLU: 'System/buttonLU', _buttonRU: 'System/buttonRU',
@@ -26,7 +24,11 @@ const TEXTURE_ALIASES = {
   _hex: 'System/hex', _hex1: 'System/hex1', _easy: 'System/easy',
   _normal: 'System/normal', _hard: 'System/hard', _key: 'System/key',
   _over: 'System/over', _engineLogo: 'System/engineLogo', _gameLogo: 'System/logo',
-  _arcade: 'System/arcade', _logo: 'System/logo',
+  _arcade: 'System/arcade', _hexagon: 'System/hexagon',
+  _holoSmoke1: 'System/holoSmoke1', _holoSmoke2: 'System/holoSmoke2',
+  _holoSmoke3: 'System/holoSmoke3', _holoSmoke4: 'System/holoSmoke4',
+  _holoSmoke5: 'System/holoSmoke5', _holoSmoke6: 'System/holoSmoke6',
+  _holoSmoke7: 'System/holoSmoke7',
   _backAnalog: 'Control/backAnalog', _stickAnalog: 'Control/stickAnalog',
   _fireButton: 'Control/fire', _fireButtonHM: 'Control/fireHM',
   _accelAnalog: 'Control/accelAnalog', _nitro: 'Control/nitro',
@@ -38,78 +40,56 @@ function findFile(baseNoExt) {
     const p = join(content, baseNoExt + ext);
     if (existsSync(p)) return p;
   }
-  // Bare name variants (engineLogo.png etc. sometimes differ in case).
   try {
     const dir = join(content, dirname(baseNoExt));
     const want = basename(baseNoExt).toLowerCase();
     for (const f of readdirSync(dir)) {
-      if (f.toLowerCase().startsWith(want) && /\.(png|jpe?g)$/i.test(f)) {
-        return join(dir, f);
-      }
+      if (f.toLowerCase().startsWith(want) && /\.(png|jpe?g)$/i.test(f)) return join(dir, f);
     }
   } catch { /* missing dir */ }
   return null;
 }
 
-import { basename } from 'node:path';
-
 const texOut = join(webRoot, 'public', 'assets', 'textures');
 mkdirSync(texOut, { recursive: true });
-
 let copied = 0;
 const missing = [];
 for (const [alias, rel] of Object.entries(TEXTURE_ALIASES)) {
   const src = findFile(rel);
-  if (!src) {
-    missing.push(rel);
-    continue;
-  }
+  if (!src) { missing.push(rel); continue; }
   const ext = src.slice(src.lastIndexOf('.')).toLowerCase();
   const normExt = ext === '.jpeg' ? '.jpg' : ext;
   copyFileSync(src, join(texOut, alias + normExt));
-  // The runtime first probes `<alias>.png`; also provide that name when the
-  // source is a jpg so hash-stable URLs keep working offline.
   if (normExt !== '.png') copyFileSync(src, join(texOut, alias + '.png'));
   copied++;
 }
 
-// 3D object diffuse textures (referenced by converted materials).
-const objOut = join(webRoot, 'public', 'assets', 'textures', 'objects');
+const objOut = join(texOut, 'objects');
 mkdirSync(objOut, { recursive: true });
 try {
-  const objectsDir = join(content, 'Objects');
-  for (const folder of readdirSync(objectsDir)) {
-    const dir = join(objectsDir, folder);
+  for (const folder of readdirSync(join(content, 'Objects'))) {
+    const dir = join(content, 'Objects', folder);
     let files = [];
-    try {
-      files = readdirSync(dir);
-    } catch { continue; }
+    try { files = readdirSync(dir); } catch { continue; }
     for (const f of files) {
-      if (/\.(png|jpe?g)$/i.test(f)) {
-        copyFileSync(join(dir, f), join(objOut, `${folder}__${f}`));
-        copied++;
-      }
+      if (!/\.(png|jpe?g)$/i.test(f)) continue;
+      copyFileSync(join(dir, f), join(objOut, `${folder}__${f}`));
+      if (/^icon\./i.test(f)) copyFileSync(join(dir, f), join(texOut, `${folder}_icon.png`));
+      copied++;
     }
   }
 } catch { /* no objects dir */ }
 
-// Sounds: all .wav + sound.mp3.
 const sndOut = join(webRoot, 'public', 'assets', 'sounds');
 mkdirSync(sndOut, { recursive: true });
 try {
   for (const f of readdirSync(join(content, 'Sounds'))) {
-    if (/\.(wav|mp3|wma)$/i.test(f)) {
-      copyFileSync(join(content, 'Sounds', f), join(sndOut, f));
-      copied++;
-    }
+    if (/\.(wav|mp3|wma)$/i.test(f)) { copyFileSync(join(content, 'Sounds', f), join(sndOut, f)); copied++; }
   }
 } catch { /* no sounds dir */ }
 try {
   const mp3 = join(content, 'sound.mp3');
-  if (existsSync(mp3)) {
-    copyFileSync(mp3, join(sndOut, 'sound.mp3'));
-    copied++;
-  }
+  if (existsSync(mp3)) { copyFileSync(mp3, join(sndOut, 'sound.mp3')); copied++; }
 } catch { /* ignore */ }
 
 console.log(`copy-assets: copied ${copied} files, missing ${missing.length}`);

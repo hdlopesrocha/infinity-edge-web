@@ -1,87 +1,130 @@
-// GLSL shaders reproducing XNA BasicEffect behavior used by the original game:
-// Model3D.Draw sets PreferPerPixelLighting=true, one directional light (Light0),
-// ambient ~0.001, diffuse white * texture, specular LightBlue, emissive add, alpha.
-// Draws.cs primitives use LightingEnabled=false -> unlit textured path.
-// Coordinate note: XNA row-major World*View*Proj == GLSL column-major proj*view*world.
+// GLSL reproducing XNA BasicEffect (Model3D.Draw: per-pixel, 1 dir light,
+// ambient, LightBlue specular, emissive, alpha) + unlit path (Draws.cs,
+// Sky.Draw with LightingEnabled=false) + instanced environment + points
+// (ministars) + camera-facing billboards (DrawBillBoard/TextureSquare).
 
 export const LIT_VERT = `#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
-uniform mat4 uWorld;
-uniform mat4 uView;
-uniform mat4 uProj;
-uniform mat4 uWorldInvT; // inverse-transpose for correct normal transform
-out vec3 vNormalW;
-out vec3 vPosW;
-out vec2 vUV;
+uniform mat4 uWorld; uniform mat4 uView; uniform mat4 uProj; uniform mat4 uWorldInvT;
+out vec3 vN; out vec3 vW; out vec2 vUV;
 void main() {
   vec4 w = uWorld * vec4(aPos, 1.0);
-  vPosW = w.xyz;
-  vNormalW = mat3(uWorldInvT) * aNormal;
-  vUV = aUV;
+  vW = w.xyz; vN = mat3(uWorldInvT) * aNormal; vUV = aUV;
   gl_Position = uProj * uView * w;
 }`;
 
 export const LIT_FRAG = `#version 300 es
 precision highp float;
-in vec3 vNormalW;
-in vec3 vPosW;
-in vec2 vUV;
-uniform sampler2D uTex;
-uniform bool uHasTex;
-uniform vec3 uDiffuse;      // BasicEffect.DiffuseColor
-uniform vec3 uEmissive;     // BasicEffect.EmissiveColor
-uniform vec3 uAmbient;      // BasicEffect.AmbientLightColor
-uniform vec3 uLightDir;     // direction TO light, world space (DirectionalLight0)
-uniform vec3 uLightDiffuse;
-uniform vec3 uLightSpec;
-uniform float uShininess;   // SpecularPower mapped to Blinn-Phong range
-uniform vec3 uCamPos;
-uniform float uAlpha;       // BasicEffect.Alpha
+in vec3 vN; in vec3 vW; in vec2 vUV;
+uniform sampler2D uTex; uniform bool uHasTex;
+uniform vec3 uDiffuse; uniform vec3 uEmissive; uniform vec3 uAmbient;
+uniform vec3 uLightDir; uniform vec3 uLightDiffuse; uniform vec3 uLightSpec;
+uniform float uShininess; uniform vec3 uCamPos; uniform float uAlpha;
 out vec4 oColor;
 void main() {
   vec3 base = uDiffuse;
-  if (uHasTex) base *= texture(uTex, vUV).rgb;
-  vec3 N = normalize(vNormalW);
+  vec4 sampled = uHasTex ? texture(uTex, vUV) : vec4(1.0);
+  base *= sampled.rgb;
+  vec3 N = normalize(vN);
   vec3 L = normalize(uLightDir);
   float nd = max(dot(N, L), 0.0);
-  vec3 V = normalize(uCamPos - vPosW);
+  vec3 V = normalize(uCamPos - vW);
   vec3 H = normalize(L + V);
   float spec = pow(max(dot(N, H), 0.0), uShininess) * step(0.001, nd);
   vec3 col = base * (uAmbient + uLightDiffuse * nd) + uLightSpec * spec + uEmissive;
-  float a = uAlpha;
-  if (uHasTex) a *= texture(uTex, vUV).a;
-  oColor = vec4(col, a);
+  oColor = vec4(col, uAlpha * sampled.a);
 }`;
 
 export const UNLIT_VERT = `#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
-uniform mat4 uWorld;
-uniform mat4 uView;
-uniform mat4 uProj;
+uniform mat4 uWorld; uniform mat4 uView; uniform mat4 uProj;
 out vec2 vUV;
-void main() {
-  vUV = aUV;
-  gl_Position = uProj * uView * uWorld * vec4(aPos, 1.0);
-}`;
+void main() { vUV = aUV; gl_Position = uProj * uView * uWorld * vec4(aPos, 1.0); }`;
 
 export const UNLIT_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUV;
-uniform sampler2D uTex;
-uniform bool uHasTex;
-uniform vec3 uColor;
-uniform float uAlpha;
+uniform sampler2D uTex; uniform bool uHasTex; uniform vec3 uColor; uniform float uAlpha;
 out vec4 oColor;
 void main() {
   vec4 t = uHasTex ? texture(uTex, vUV) : vec4(1.0);
   oColor = vec4(uColor * t.rgb, uAlpha * t.a);
 }`;
 
-export function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
+export const INST_VERT = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNormal;
+layout(location=2) in vec2 aUV;
+layout(location=3) in vec4 iM0; layout(location=4) in vec4 iM1;
+layout(location=5) in vec4 iM2; layout(location=6) in vec4 iM3;
+uniform mat4 uView; uniform mat4 uProj;
+out vec3 vN; out vec3 vW; out vec2 vUV;
+void main() {
+  mat4 W = mat4(iM0, iM1, iM2, iM3);
+  vec4 w = W * vec4(aPos, 1.0);
+  vW = w.xyz; vN = mat3(W) * aNormal; vUV = aUV;
+  gl_Position = uProj * uView * w;
+}`;
+
+export const INST_FRAG = `#version 300 es
+precision highp float;
+in vec3 vN; in vec3 vW; in vec2 vUV;
+uniform sampler2D uTex; uniform bool uHasTex;
+uniform vec3 uDiffuse; uniform vec3 uAmbient; uniform vec3 uLightDir;
+uniform vec3 uLightDiffuse; uniform float uAlpha;
+out vec4 oColor;
+void main() {
+  vec4 t = uHasTex ? texture(uTex, vUV) : vec4(1.0);
+  vec3 base = uDiffuse * t.rgb;
+  float nd = max(dot(normalize(vN), normalize(uLightDir)), 0.0);
+  oColor = vec4(base * (uAmbient + uLightDiffuse * nd), uAlpha * t.a);
+}`;
+
+export const STAR_VERT = `#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uView; uniform mat4 uProj; uniform float uSize;
+void main() {
+  gl_Position = uProj * uView * vec4(aPos, 1.0);
+  gl_PointSize = clamp(uSize * 900.0 / max(1.0, length(aPos)), 1.0, 5.0);
+}`;
+
+export const STAR_FRAG = `#version 300 es
+precision highp float;
+uniform vec3 uColor; uniform float uAlpha;
+out vec4 oColor;
+void main() {
+  float m = smoothstep(0.5, 0.15, length(gl_PointCoord - vec2(0.5)));
+  oColor = vec4(uColor, uAlpha * m);
+}`;
+
+export const BB_VERT = `#version 300 es
+// Camera-facing quad: aCorner in [-1,1]^2 from a shared static VBO.
+layout(location=0) in vec2 aCorner;
+uniform vec3 uCenter; uniform float uSize;
+uniform vec3 uRight; uniform vec3 uUp;
+uniform mat4 uView; uniform mat4 uProj;
+out vec2 vUV;
+void main() {
+  vec3 w = uCenter + (uRight * aCorner.x + uUp * aCorner.y) * (uSize * 0.5);
+  vUV = aCorner * 0.5 + 0.5;
+  gl_Position = uProj * uView * vec4(w, 1.0);
+}`;
+
+export const BB_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uTex; uniform bool uHasTex; uniform vec3 uColor; uniform float uAlpha;
+out vec4 oColor;
+void main() {
+  vec4 t = uHasTex ? texture(uTex, vUV) : vec4(1.0);
+  oColor = vec4(uColor * t.rgb, uAlpha * t.a);
+}`;
+
+function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
   const s = gl.createShader(type)!;
   gl.shaderSource(s, src);
   gl.compileShader(s);
@@ -93,11 +136,10 @@ export function compileShader(gl: WebGL2RenderingContext, type: number, src: str
   return s;
 }
 
-export function linkProgram(gl: WebGL2RenderingContext, vs: WebGLShader, fs: WebGLShader): WebGLProgram {
+export function linkProgram(gl: WebGL2RenderingContext, vsSrc: string, fsSrc: string): WebGLProgram {
   const p = gl.createProgram()!;
-  gl.attachShader(p, vs);
-  gl.attachShader(p, fs);
-  // Attribute locations are fixed via layout(location=) in GLSL; still bind for safety.
+  gl.attachShader(p, compileShader(gl, gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compileShader(gl, gl.FRAGMENT_SHADER, fsSrc));
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
     const log = gl.getProgramInfoLog(p);
@@ -107,80 +149,8 @@ export function linkProgram(gl: WebGL2RenderingContext, vs: WebGLShader, fs: Web
   return p;
 }
 
-export interface LitProgram {
-  prog: WebGLProgram;
-  uWorld: WebGLUniformLocation | null;
-  uView: WebGLUniformLocation | null;
-  uProj: WebGLUniformLocation | null;
-  uWorldInvT: WebGLUniformLocation | null;
-  uTex: WebGLUniformLocation | null;
-  uHasTex: WebGLUniformLocation | null;
-  uDiffuse: WebGLUniformLocation | null;
-  uEmissive: WebGLUniformLocation | null;
-  uAmbient: WebGLUniformLocation | null;
-  uLightDir: WebGLUniformLocation | null;
-  uLightDiffuse: WebGLUniformLocation | null;
-  uLightSpec: WebGLUniformLocation | null;
-  uShininess: WebGLUniformLocation | null;
-  uCamPos: WebGLUniformLocation | null;
-  uAlpha: WebGLUniformLocation | null;
-}
-
-export interface UnlitProgram {
-  prog: WebGLProgram;
-  uWorld: WebGLUniformLocation | null;
-  uView: WebGLUniformLocation | null;
-  uProj: WebGLUniformLocation | null;
-  uTex: WebGLUniformLocation | null;
-  uHasTex: WebGLUniformLocation | null;
-  uColor: WebGLUniformLocation | null;
-  uAlpha: WebGLUniformLocation | null;
-}
-
-function U(gl: WebGL2RenderingContext, p: WebGLProgram, n: string) {
-  return gl.getUniformLocation(p, n);
-}
-
-export function createLitProgram(gl: WebGL2RenderingContext): LitProgram {
-  const prog = linkProgram(
-    gl,
-    compileShader(gl, gl.VERTEX_SHADER, LIT_VERT),
-    compileShader(gl, gl.FRAGMENT_SHADER, LIT_FRAG),
-  );
-  return {
-    prog,
-    uWorld: U(gl, prog, 'uWorld'),
-    uView: U(gl, prog, 'uView'),
-    uProj: U(gl, prog, 'uProj'),
-    uWorldInvT: U(gl, prog, 'uWorldInvT'),
-    uTex: U(gl, prog, 'uTex'),
-    uHasTex: U(gl, prog, 'uHasTex'),
-    uDiffuse: U(gl, prog, 'uDiffuse'),
-    uEmissive: U(gl, prog, 'uEmissive'),
-    uAmbient: U(gl, prog, 'uAmbient'),
-    uLightDir: U(gl, prog, 'uLightDir'),
-    uLightDiffuse: U(gl, prog, 'uLightDiffuse'),
-    uLightSpec: U(gl, prog, 'uLightSpec'),
-    uShininess: U(gl, prog, 'uShininess'),
-    uCamPos: U(gl, prog, 'uCamPos'),
-    uAlpha: U(gl, prog, 'uAlpha'),
-  };
-}
-
-export function createUnlitProgram(gl: WebGL2RenderingContext): UnlitProgram {
-  const prog = linkProgram(
-    gl,
-    compileShader(gl, gl.VERTEX_SHADER, UNLIT_VERT),
-    compileShader(gl, gl.FRAGMENT_SHADER, UNLIT_FRAG),
-  );
-  return {
-    prog,
-    uWorld: U(gl, prog, 'uWorld'),
-    uView: U(gl, prog, 'uView'),
-    uProj: U(gl, prog, 'uProj'),
-    uTex: U(gl, prog, 'uTex'),
-    uHasTex: U(gl, prog, 'uHasTex'),
-    uColor: U(gl, prog, 'uColor'),
-    uAlpha: U(gl, prog, 'uAlpha'),
-  };
+export function uniforms(gl: WebGL2RenderingContext, p: WebGLProgram, names: string[]): Record<string, WebGLUniformLocation | null> {
+  const out: Record<string, WebGLUniformLocation | null> = {};
+  for (const n of names) out[n] = gl.getUniformLocation(p, n);
+  return out;
 }

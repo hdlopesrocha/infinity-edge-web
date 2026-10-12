@@ -1,4 +1,4 @@
-<!-- Unknown routes handled gracefully (back to menu). -->
+<!-- Unknown routes: graceful fallback, background unchanged. -->
 <script setup lang="ts">
 import MenuShell from '../components/MenuShell.vue';
 </script>

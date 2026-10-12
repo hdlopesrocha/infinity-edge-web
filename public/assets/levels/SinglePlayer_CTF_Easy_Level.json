@@ -19,32 +19,26 @@
       "type": "base",
       "model": "Base",
       "position": "800|800|800",
-      "name": "HB",
-      "life": ""
+      "name": "HB"
     },
     {
       "team": "alien",
       "type": "base",
       "model": "Base",
       "position": "-800|-800|-800",
-      "name": "AB",
-      "life": ""
+      "name": "AB"
     },
     {
       "team": "human",
       "type": "flag",
       "model": "Flag",
-      "position": "",
-      "name": "",
-      "life": ""
+      "position": ""
     },
     {
       "team": "alien",
       "type": "flag",
       "model": "Flag",
-      "position": "",
-      "name": "",
-      "life": ""
+      "position": ""
     },
     {
       "team": "human",
@@ -203,7 +197,6 @@
       "type": "asteroid",
       "model": "Asteroid1",
       "position": "random",
-      "name": "",
       "life": "50",
       "amount": 4000
     },
@@ -212,7 +205,6 @@
       "type": "asteroid",
       "model": "Asteroid3",
       "position": "random",
-      "name": "",
       "life": "50",
       "amount": 4000
     },
@@ -221,8 +213,6 @@
       "type": "miniStar",
       "model": "",
       "position": "random",
-      "name": "",
-      "life": "",
       "amount": 10000
     }
   ],
