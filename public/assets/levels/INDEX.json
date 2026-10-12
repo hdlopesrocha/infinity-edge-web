@@ -1,0 +1,86 @@
+[
+  {
+    "file": "Background.json",
+    "source": "Background.xml",
+    "type": "",
+    "objects": 5
+  },
+  {
+    "file": "SinglePlayer_CTF_Easy_Level.json",
+    "source": "SinglePlayer/CTF/Easy/Level.xml",
+    "type": "CTF",
+    "objects": 26
+  },
+  {
+    "file": "SinglePlayer_CTF_Hard_Level.json",
+    "source": "SinglePlayer/CTF/Hard/Level.xml",
+    "type": "CTF",
+    "objects": 41
+  },
+  {
+    "file": "SinglePlayer_CTF_Normal_Level.json",
+    "source": "SinglePlayer/CTF/Normal/Level.xml",
+    "type": "CTF",
+    "objects": 33
+  },
+  {
+    "file": "SinglePlayer_TT_Easy_01_Level.json",
+    "source": "SinglePlayer/TT/Easy/01/Level.xml",
+    "type": "TT",
+    "objects": 10
+  },
+  {
+    "file": "SinglePlayer_TT_Easy_02_Level.json",
+    "source": "SinglePlayer/TT/Easy/02/Level.xml",
+    "type": "TT",
+    "objects": 9
+  },
+  {
+    "file": "SinglePlayer_TT_Easy_03_Level.json",
+    "source": "SinglePlayer/TT/Easy/03/Level.xml",
+    "type": "TT",
+    "objects": 15
+  },
+  {
+    "file": "SinglePlayer_TT_Easy_04_Level.json",
+    "source": "SinglePlayer/TT/Easy/04/Level.xml",
+    "type": "TT",
+    "objects": 15
+  },
+  {
+    "file": "SinglePlayer_TT_Easy_05_Level.json",
+    "source": "SinglePlayer/TT/Easy/05/Level.xml",
+    "type": "TT",
+    "objects": 27
+  },
+  {
+    "file": "SinglePlayer_TT_Hard_01_Level.json",
+    "source": "SinglePlayer/TT/Hard/01/Level.xml",
+    "type": "TT",
+    "objects": 44
+  },
+  {
+    "file": "SinglePlayer_TT_Normal_01_Level.json",
+    "source": "SinglePlayer/TT/Normal/01/Level.xml",
+    "type": "TT",
+    "objects": 15
+  },
+  {
+    "file": "SinglePlayer_TT_Normal_02_Level.json",
+    "source": "SinglePlayer/TT/Normal/02/Level.xml",
+    "type": "TT",
+    "objects": 15
+  },
+  {
+    "file": "SinglePlayer_TT_Normal_03_Level.json",
+    "source": "SinglePlayer/TT/Normal/03/Level.xml",
+    "type": "TT",
+    "objects": 27
+  },
+  {
+    "file": "SinglePlayer_TT_Normal_04_Level.json",
+    "source": "SinglePlayer/TT/Normal/04/Level.xml",
+    "type": "TT",
+    "objects": 25
+  }
+]

@@ -1,17 +1,16 @@
-<script setup>
-// Root app: 3D viewport layer + HTML UI layer (Vue screens mounted on top).
+<!-- Root: persistent WebGL canvas behind the routed Vue UI overlay. -->
+<script setup lang="ts">
+import { RouterView } from 'vue-router';
+import GameCanvas from './components/GameCanvas.vue';
 </script>
 
 <template>
   <div class="app-root">
-    <div class="viewport-layer" />
-    <div class="ui-layer" />
+    <div class="viewport-layer">
+      <GameCanvas />
+    </div>
+    <div class="ui-layer">
+      <RouterView />
+    </div>
   </div>
 </template>
-
-<style>
-.app-root { position: absolute; inset: 0; }
-.viewport-layer { position: absolute; inset: 0; }
-.ui-layer { position: absolute; inset: 0; pointer-events: none; }
-.ui-layer :deep(button) { pointer-events: auto; }
-</style>

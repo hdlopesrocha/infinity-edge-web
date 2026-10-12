@@ -1,0 +1,67 @@
+{
+  "source": "Background.xml",
+  "description": {
+    "type": "",
+    "name": "",
+    "save": "",
+    "sky": "",
+    "size": 2048,
+    "text": ""
+  },
+  "imports": [
+    "Content/Import/ModelConfig.xml",
+    "Content/Import/TextureConfig.xml",
+    "Content/Import/TeamConfig.xml"
+  ],
+  "objects": [
+    {
+      "team": "human",
+      "type": "base",
+      "model": "Base",
+      "position": "0|0|0",
+      "name": "HB",
+      "life": ""
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "0|0|0",
+      "name": "HS1",
+      "life": "100|100|100"
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid1",
+      "position": "random",
+      "name": "",
+      "life": "50",
+      "amount": 70
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid3",
+      "position": "random",
+      "name": "",
+      "life": "50",
+      "amount": 70
+    },
+    {
+      "team": "ambient",
+      "type": "miniStar",
+      "model": "",
+      "position": "random",
+      "name": "",
+      "life": "",
+      "amount": 600
+    }
+  ],
+  "camara": {
+    "name": "LookAtPosition",
+    "value": "0|0|0"
+  },
+  "actions": [],
+  "goals": []
+}

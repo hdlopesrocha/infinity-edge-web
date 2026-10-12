@@ -1,0 +1,441 @@
+{
+  "source": "SinglePlayer/TT/Hard/01/Level.xml",
+  "description": {
+    "type": "TT",
+    "name": "Level 01",
+    "save": "TT_H_01.svg",
+    "sky": "Sky3",
+    "size": 2048,
+    "text": "Closed circuit with sharp turns. Moderate your velocity while turning. Watch out some asteroids."
+  },
+  "imports": [
+    "Content/Import/ModelConfig.xml",
+    "Content/Import/TextureConfig.xml",
+    "Content/Import/TeamConfig.xml"
+  ],
+  "importGhost": "TT_H_01.ghs",
+  "objects": [
+    {
+      "team": "human",
+      "type": "spaceShip",
+      "model": "Fighter3",
+      "position": "0|0|0",
+      "name": "HS1",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "base",
+      "model": "Base",
+      "position": "0|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|128",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|192",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|272",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|304",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "16|0|320",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "48|0|320",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "128|0|320",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "192|0|320",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "256|0|320",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "272|0|336",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "272|0|384",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "272|0|448",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "272|0|512",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "272|0|544",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "288|0|560",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "304|0|560",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "368|0|560",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "432|0|560",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "512|0|560",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|544",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|512",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|448",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|384",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|336",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|272",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|208",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|144",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|80",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "528|0|16",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "512|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "496|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "432|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "384|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "320|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "256|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "192|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "128|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "64|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|0",
+      "name": "",
+      "life": ""
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid2",
+      "position": "random",
+      "name": "",
+      "life": "50",
+      "amount": 8000
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid4",
+      "position": "random",
+      "name": "",
+      "life": "50",
+      "amount": 8000
+    },
+    {
+      "team": "ambient",
+      "type": "miniStar",
+      "model": "",
+      "position": "random",
+      "name": "",
+      "life": "",
+      "amount": 10000
+    }
+  ],
+  "camara": {
+    "name": "LookAtObject",
+    "value": "HS1"
+  },
+  "actions": [
+    {
+      "name": "HILocal",
+      "from": "HS1"
+    }
+  ],
+  "goals": [
+    {
+      "reward": "Gold",
+      "goals": [
+        {
+          "name": "NoPath"
+        },
+        {
+          "name": "LessTime",
+          "value": "00:00:34"
+        }
+      ]
+    },
+    {
+      "reward": "Silver",
+      "goals": [
+        {
+          "name": "NoPath"
+        },
+        {
+          "name": "LessTime",
+          "value": "00:00:38"
+        }
+      ]
+    },
+    {
+      "reward": "Bronze",
+      "goals": [
+        {
+          "name": "NoPath"
+        },
+        {
+          "name": "LessTime",
+          "value": "00:00:42"
+        }
+      ]
+    },
+    {
+      "reward": "Defeat",
+      "message": "Not fast enough!",
+      "goals": [
+        {
+          "name": "NoPath"
+        }
+      ]
+    },
+    {
+      "reward": "Defeat",
+      "message": "Your spaceship was destroyed!",
+      "goals": [
+        {
+          "name": "Destroyed",
+          "value": "HS1"
+        }
+      ]
+    }
+  ]
+}

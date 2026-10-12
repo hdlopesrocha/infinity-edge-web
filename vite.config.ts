@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// InfinityEdge Web — Vue 3 + three.js (WebGL)
+// InfinityEdge Web — Vue 3 + TypeScript + raw WebGL2 (no game engine).
 export default defineConfig({
   base: './',
   plugins: [vue()],

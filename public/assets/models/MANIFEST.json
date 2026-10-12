@@ -1,0 +1,338 @@
+{
+  "generator": "tools/convert-fbx.mjs",
+  "models": {
+    "AddonHomingMissile.json": {
+      "source": "Objects/AddonHomingMissile/model0.fbx",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "AddonMultiply2.json": {
+      "source": "Objects/AddonMultiply2/model0.fbx",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "AddonNitro.json": {
+      "source": "Objects/AddonNitro/model0.fbx",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "AddonRepair.json": {
+      "source": "Objects/AddonRepair/model0.fbx",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "AddonShield.json": {
+      "source": "Objects/AddonShield/model0.fbx",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "AddonTime.json": {
+      "source": "Objects/AddonTime/model0.fbx",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Ark.json": {
+      "source": "Objects/Ark/model0.fbx",
+      "meshes": 1,
+      "triangles": 1000,
+      "materials": [
+        "default"
+      ]
+    },
+    "Asteroid1__model0.fbx.placeholder": {
+      "source": "Objects/Asteroid1/model0.fbx",
+      "empty": true
+    },
+    "Asteroid1.json": {
+      "source": "Objects/Asteroid1/model1.fbx",
+      "meshes": 1,
+      "triangles": 1024,
+      "materials": [
+        "Material #25"
+      ]
+    },
+    "Asteroid1_lod1.json": {
+      "source": "Objects/Asteroid1/model2.fbx",
+      "meshes": 1,
+      "triangles": 256,
+      "materials": [
+        "Material #25"
+      ]
+    },
+    "Asteroid1_lod2.json": {
+      "source": "Objects/Asteroid1/model3.fbx",
+      "meshes": 1,
+      "triangles": 64,
+      "materials": [
+        "Material #25"
+      ]
+    },
+    "Asteroid2__model0.fbx.placeholder": {
+      "source": "Objects/Asteroid2/model0.fbx",
+      "empty": true
+    },
+    "Asteroid2.json": {
+      "source": "Objects/Asteroid2/model1.fbx",
+      "meshes": 1,
+      "triangles": 1024,
+      "materials": [
+        "Material #27"
+      ]
+    },
+    "Asteroid2_lod1.json": {
+      "source": "Objects/Asteroid2/model2.fbx",
+      "meshes": 1,
+      "triangles": 256,
+      "materials": [
+        "Material #27"
+      ]
+    },
+    "Asteroid2_lod2.json": {
+      "source": "Objects/Asteroid2/model3.FBX",
+      "meshes": 1,
+      "triangles": 64,
+      "materials": [
+        "Material #27"
+      ]
+    },
+    "Asteroid3__model0.fbx.placeholder": {
+      "source": "Objects/Asteroid3/model0.fbx",
+      "empty": true
+    },
+    "Asteroid3.json": {
+      "source": "Objects/Asteroid3/model1.fbx",
+      "meshes": 1,
+      "triangles": 1024,
+      "materials": [
+        "Material #30"
+      ]
+    },
+    "Asteroid3_lod1.json": {
+      "source": "Objects/Asteroid3/model2.fbx",
+      "meshes": 1,
+      "triangles": 256,
+      "materials": [
+        "Material #30"
+      ]
+    },
+    "Asteroid3_lod2.json": {
+      "source": "Objects/Asteroid3/model3.fbx",
+      "meshes": 1,
+      "triangles": 64,
+      "materials": [
+        "Material #30"
+      ]
+    },
+    "Asteroid4.json": {
+      "source": "Objects/Asteroid4/model0.FBX",
+      "meshes": 1,
+      "triangles": 1024,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Asteroid4_lod1.json": {
+      "source": "Objects/Asteroid4/model1.FBX",
+      "meshes": 1,
+      "triangles": 512,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Asteroid4_lod2.json": {
+      "source": "Objects/Asteroid4/model2.FBX",
+      "meshes": 1,
+      "triangles": 256,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Asteroid4_lod3.json": {
+      "source": "Objects/Asteroid4/model3.FBX",
+      "meshes": 1,
+      "triangles": 128,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Base.json": {
+      "source": "Objects/Base/color0.fbx",
+      "meshes": 1,
+      "triangles": 2556,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Bullet.json": {
+      "source": "Objects/Bullet/model0.fbx",
+      "meshes": 1,
+      "triangles": 128,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Fighter1.json": {
+      "source": "Objects/Fighter1/model0.fbx",
+      "meshes": 1,
+      "triangles": 254,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Fighter2.json": {
+      "source": "Objects/Fighter2/model0.fbx",
+      "meshes": 1,
+      "triangles": 526,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Fighter3.json": {
+      "source": "Objects/Fighter3/model0.fbx",
+      "meshes": 15,
+      "triangles": 934,
+      "materials": [
+        "mat_default",
+        "Color_004_"
+      ]
+    },
+    "Flag.json": {
+      "source": "Objects/Flag/color0.fbx",
+      "meshes": 1,
+      "triangles": 238,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Flag_lod1.json": {
+      "source": "Objects/Flag/model0.FBX",
+      "meshes": 8,
+      "triangles": 208,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "HomingMissile.json": {
+      "source": "Objects/HomingMissile/model0.fbx",
+      "meshes": 7,
+      "triangles": 218,
+      "materials": [
+        "material"
+      ]
+    },
+    "HomingMissile2.json": {
+      "source": "Objects/HomingMissile2/model0.fbx",
+      "meshes": 1,
+      "triangles": 109,
+      "materials": [
+        "default_ncl1_2"
+      ]
+    },
+    "Planet1.json": {
+      "source": "Objects/Planet1/model0.fbx",
+      "meshes": 1,
+      "triangles": 960,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Planet1_lod1.json": {
+      "source": "Objects/Planet1/model1.fbx",
+      "meshes": 1,
+      "triangles": 960,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Planet2.json": {
+      "source": "Objects/Planet2/model0.fbx",
+      "meshes": 1,
+      "triangles": 960,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Planet2_lod1.json": {
+      "source": "Objects/Planet2/model1.fbx",
+      "meshes": 1,
+      "triangles": 32,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Planet3.json": {
+      "source": "Objects/Planet3/model0.fbx",
+      "meshes": 1,
+      "triangles": 960,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Planet3_lod1.json": {
+      "source": "Objects/Planet3/model1.fbx",
+      "meshes": 1,
+      "triangles": 32,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Planet3_lod2.json": {
+      "source": "Objects/Planet3/model2.fbx",
+      "meshes": 1,
+      "triangles": 960,
+      "materials": [
+        "mat_default"
+      ]
+    },
+    "Sky1.json": {
+      "source": "Objects/Sky1/model0.fbx",
+      "meshes": 1,
+      "triangles": 224,
+      "materials": [
+        "01 - Default"
+      ]
+    },
+    "Sky2.json": {
+      "source": "Objects/Sky2/model0.fbx",
+      "meshes": 1,
+      "triangles": 224,
+      "materials": [
+        "01 - Default"
+      ]
+    },
+    "Sky3.json": {
+      "source": "Objects/Sky3/model0.fbx",
+      "meshes": 1,
+      "triangles": 224,
+      "materials": [
+        "01 - Default"
+      ]
+    },
+    "Wheel.json": {
+      "source": "Objects/Wheel/model0.fbx",
+      "meshes": 2,
+      "triangles": 288,
+      "materials": [
+        "mat_default"
+      ]
+    }
+  }
+}
