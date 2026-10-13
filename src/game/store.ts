@@ -27,6 +27,7 @@ export function clearGameData(): string[] {
 
 export function sceneForRoute(routeName: string, param?: string): string {
   if (routeName === 'game' && param) return param;
+  if (routeName === 'engine') return 'engine';
   return 'background';
 }
 

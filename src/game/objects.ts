@@ -464,9 +464,13 @@ export class SpaceShip extends SpaceObject {
     const camDir = d.rc.renderer.camera.direction;
     const facing = camDir[0] * this.dir[0] + camDir[1] * this.dir[1] + camDir[2] * this.dir[2];
     const flare3 = d.rc.tex('flare3');
+    // XNA: (Matrix.CreateTranslation(v) * CreateFromQuaternion(rot)).Translation
+    // -> the offset is rotated by the ship's rotation, then scaled by radius.
+    const vr = vec3.create();
     for (const v of f.engine) {
+      vec3.transformQuat(vr, v as unknown as vec3, this.rot);
       draw.drawBillboard(
-        flare3, this.pos[0] + r * v[0], this.pos[1] + r * v[1], this.pos[2] + r * v[2],
+        flare3, this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
         2, [1, 1, 1], facing * accelFrac, view, proj,
       );
       d.rc.renderer.trackDraws();
@@ -474,8 +478,9 @@ export class SpaceShip extends SpaceObject {
     const flare1 = d.rc.tex('flare1');
     const pulse = (1 + Math.sin(this.lol)) / 2;
     for (const v of f.color) {
+      vec3.transformQuat(vr, v as unknown as vec3, this.rot);
       draw.drawBillboard(
-        flare1, this.pos[0] + r * v[0], this.pos[1] + r * v[1], this.pos[2] + r * v[2],
+        flare1, this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
         0.35, this.team.color, pulse, view, proj,
       );
       d.rc.renderer.trackDraws();

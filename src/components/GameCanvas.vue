@@ -3,6 +3,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { Renderer } from '../engine/renderer';
+import { mat4, vec3 } from '../engine/math';
 import { GameInstance } from '../game/instance';
 import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
@@ -20,10 +21,32 @@ let building = '';
 let buildGen = 0;
 let sceneTimer = 0;
 let menuDrag: { x: number; y: number } | null = null;
+// EngineScreen: wheel model on black, CommandLookAtPositionAuto camera
+// (angle++ per 30 fps frame, radius 6, height 3, lookAt target + Up).
+let engineScene: { gpu: import('../engine/model').GpuModel; tex: import('../engine/texture').TexEntry | null; t: number } | null = null;
+let engineBuilding = false;
+
+async function buildEngineScene(): Promise<void> {
+  if (!rc || engineBuilding || engineScene) return;
+  engineBuilding = true;
+  try {
+    await rc.preload(['Wheel'], []);
+    const m = rc.model('Wheel');
+    const gpu = m?.solid[0] ?? m?.color[0] ?? null;
+    if (gpu) engineScene = { gpu, tex: m?.tex ?? null, t: 0 };
+  } finally {
+    engineBuilding = false;
+  }
+}
 
 async function rebuild(): Promise<void> {
   if (!renderer || !rc) return;
   const key = store.sceneKey;
+  if (key === 'engine') {
+    void buildEngineScene();
+    return;
+  }
+  engineScene = null;
   const token = key + '|' + store.options.billboards;
   if (building === token) return;
   building = token;
@@ -107,6 +130,33 @@ onMounted(() => {
       void rebuild();
     };
     renderer.onFrame = (dtMs) => {
+      if (!renderer) return;
+      if (store.sceneKey === 'engine') {
+        if (!engineScene) {
+          void buildEngineScene();
+          renderer.beginFrame();
+          return;
+        }
+        const s = engineScene;
+        s.t += dtMs;
+        const total = 3000, trans = 500;
+        const a = Math.max(0, Math.min(1, Math.min(s.t / trans, (total - s.t) / trans)));
+        const rad = ((s.t / (1000 / 30)) * Math.PI) / 180;
+        const cam = renderer.camera;
+        vec3.set(cam.position, -6 * Math.sin(rad), 3, -6 * Math.cos(rad));
+        vec3.set(cam.lookAt, 0, 1, 0);
+        vec3.set(cam.up, 0, 1, 0);
+        cam.updateMatrices();
+        renderer.beginFrame();
+        const draw = renderer.draw;
+        draw.setOpaque();
+        const world = mat4.create();
+        draw.drawModel(s.gpu, s.tex, world, cam.view, cam.proj, cam.position, {
+          alpha: a, emissive: [0.5019608, 0.5019608, 0.5019608], light: true,
+        });
+        draw.flushBillboards();
+        return;
+      }
       if (!instance || !renderer) return;
       instance.canvasW = canvasRef.value?.clientWidth || 1280;
       instance.canvasH = canvasRef.value?.clientHeight || 720;

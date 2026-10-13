@@ -91,6 +91,32 @@ Source: `../IE3D_37_T` (174 `.cs`, 38 FBX, ~100 textures, 26 sounds, 13 levels,
 
 ## 3. Verification (real browser)
 
+- **Lighting (fix)**: `DirLight0Direction` is the XNA `EnableDefaultLighting`
+  key light `(-0.5265408, -0.5735765, -0.6275069)` (BasicEffect.fx uses
+  `-DirLight0Direction`; the shader receives the negation) and the specular is
+  `Color.LightBlue` = (0.6784, 0.8471, 0.9020); previously the light came from
+  a different direction and the specular blue was 1.0.
+- **Billboards (fix)**: miniStar/cloud billboards are octree objects
+  (`Billboard` ctor `InsertObject`, Billboard.cs) — the C# default
+  `_billboards = false` hides them, while SS1–SS8 and the MonoGame port run
+  show them, so the web build defaults Special Effects **on** (Options still
+  toggles it; the scene rebuilds so stars spawn/despawn like a level reload).
+  Engine/color flares rotate their offsets by the ship quaternion
+  (`(CreateTranslation(v) * CreateFromQuaternion(rot)).Translation`).
+  Drawing is batched per texture (10 000 miniStar + 1 000 cloud billboards ->
+  one draw call per texture): TT/CTF run at 60 fps in software rendering.
+- **Boot screens (fix)**: EngineScreen.xml has no `<background>` -> `/engine`
+  draws the Wheel model (CommandLookAtPositionAuto camera: 1°/frame, radius 6,
+  height 3, lookAt target+Up) under the FLOATING GEAR logo over black;
+  StartScreen.xml references `Content/Background.xml` -> `/start` shows the
+  Background scene under the INFINITY EDGE logo (the opaque black splash was
+  hiding it).
+- **Music (fix)**: `sound.mp3` (5.8 MB, the real song) is copied from the
+  content; playback starts at launch like `Game1.LoadContent` (MediaPlayer
+  looping, volume = `_musicVolume`) and is retried on the first pointer/key
+  gesture because of browser autoplay policies; the Options "Music volume"
+  slider drives the live element (`MediaPlayer.Volume` equivalent).
+- **Fullscreen**: top-right toggle button (web addition, not in the original).
 - **Model matrices (fix)**: geometry now comes from the original compiled
   content and matches the reference screenshots: Fighter3 is a flat horizontal
   dart (wingspan 2.59, length 2.06, nose +Z, centered), Ark rings face the

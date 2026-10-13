@@ -55,7 +55,8 @@ only the scene description swaps (menus share the Background.xml scene).
 Keyboard (Control.cs): arrows steer, Space fire, LeftControl throttle,
 LeftAlt homing, LeftShift nitro (WASD/C/M/N aliases). Touch: left 2/3 stick
 (recenter + deadzone), right throttle slider, fire / homing (count) / nitro (%)
-buttons; Gamepad Back: Esc. Menu: browser back.
+buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
+(web addition) sits below the top-right corner chrome.
 
 ## Layout
 

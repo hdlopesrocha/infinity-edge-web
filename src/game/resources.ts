@@ -25,7 +25,10 @@ export interface Options {
 export function defaultOptions(): Options {
   return {
     username: 'Infinity Fan', wireframe: false, detail: 2, distance: 192,
-    musicVolume: 0.5, billboards: false, motionBlur: false, cheats: false,
+    // C# default is false; the shipped screenshots (SS1–SS8) and the MonoGame
+    // port run show the special effects (star/cloud billboards + engine
+    // flares), so the web build defaults to on.
+    musicVolume: 0.5, billboards: true, motionBlur: false, cheats: false,
     axisX: false, axisY: false,
   };
 }

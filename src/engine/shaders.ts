@@ -74,6 +74,29 @@ void main() {
   oColor = vec4(uColor * t.rgb, uAlpha * t.a);
 }`;
 
+// Batched billboards (same math as Draws.DrawBillBoard, one draw call per texture).
+export const BBQ_VERT = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+layout(location=2) in vec3 aColor;
+layout(location=3) in float aAlpha;
+uniform mat4 uView; uniform mat4 uProj;
+out vec2 vUV; out vec3 vColor; out float vAlpha;
+void main() {
+  vUV = aUV; vColor = aColor; vAlpha = aAlpha;
+  gl_Position = uProj * uView * vec4(aPos, 1.0);
+}`;
+
+export const BBQ_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV; in vec3 vColor; in float vAlpha;
+uniform sampler2D uTex;
+out vec4 oColor;
+void main() {
+  vec4 t = texture(uTex, vUV);
+  oColor = vec4(vColor * t.rgb, vAlpha * t.a);
+}`;
+
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
   const s = gl.createShader(type)!;
   gl.shaderSource(s, src);

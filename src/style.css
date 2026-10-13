@@ -109,9 +109,18 @@ body {
 input[type='range'].drag { width: 192px; pointer-events: auto; accent-color: #fff; }
 .opt-check { pointer-events: auto; accent-color: #fff; }
 
-.splash { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; pointer-events: auto; transition: opacity 500ms ease; }
+.splash { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: transparent; pointer-events: auto; transition: opacity 500ms ease; }
 .splash img { width: 50%; max-width: 560px; height: auto; }
 .splash.fade { opacity: 0; }
+
+.fs-btn {
+  position: fixed; top: 56px; right: 8px; z-index: 60;
+  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.35); color: #d8dde3;
+  border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 4px;
+  cursor: pointer; pointer-events: auto; padding: 0; font: inherit;
+}
+.fs-btn:hover { background: rgba(0, 0, 0, 0.6); color: #fff; }
 
 .kbd { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; max-width: 520px; }
 .kbd button { pointer-events: auto; background: rgba(255,255,255,0.07); color: var(--ink); border: 1px solid rgba(255,255,255,0.2); padding: 6px 0; cursor: pointer; font-family: inherit; }

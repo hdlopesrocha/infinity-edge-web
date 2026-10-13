@@ -2,7 +2,7 @@
 
 import { mat4, vec3 } from './math';
 import {
-  BB_FRAG, BB_VERT, LIT_FRAG, LIT_VERT, UNLIT_FRAG, UNLIT_VERT,
+  BB_FRAG, BB_VERT, BBQ_FRAG, BBQ_VERT, LIT_FRAG, LIT_VERT, UNLIT_FRAG, UNLIT_VERT,
   linkProgram, uniforms,
 } from './shaders';
 import { getFallback } from './texture';
@@ -31,7 +31,17 @@ export class Draw {
   uBb: Record<string, WebGLUniformLocation | null>;
   quadVao: WebGLVertexArrayObject | null = null;
   private invT = mat4.create();
-  lightDir = vec3.fromValues(-0.4, 0.8, 0.45);
+  // BasicEffect.EnableDefaultLighting: DirLight0Direction; the shader uses
+  // -DirLight0Direction (XNA BasicEffect.fx: dot(N, -DirLight0Direction)).
+  lightDir = vec3.fromValues(0.5265408, 0.5735765, 0.6275069);
+  // Batched billboard state (Draws.DrawBillBoard is one quad per call; the
+  // 10k miniStar + 1k cloud billboards are merged per texture instead).
+  private bbq: WebGLProgram;
+  private uBbq: Record<string, WebGLUniformLocation | null>;
+  private bbqVao: WebGLVertexArrayObject | null = null;
+  private bbqVbo: WebGLBuffer | null = null;
+  private bbqVerts: number[] = [];
+  private bbqTex: TexEntry | null = null;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -41,6 +51,26 @@ export class Draw {
     this.uLit = uniforms(gl, this.lit, ['uWorld', 'uView', 'uProj', 'uWorldInvT', 'uTex', 'uHasTex', 'uDiffuse', 'uEmissive', 'uAmbient', 'uLightDir', 'uLightDiffuse', 'uLightSpec', 'uShininess', 'uCamPos', 'uAlpha']);
     this.uUnlit = uniforms(gl, this.unlit, ['uWorld', 'uView', 'uProj', 'uTex', 'uHasTex', 'uColor', 'uAlpha']);
     this.uBb = uniforms(gl, this.bb, ['uCenter', 'uSize', 'uRight', 'uUp', 'uView', 'uProj', 'uTex', 'uHasTex', 'uColor', 'uAlpha']);
+    this.bbq = linkProgram(gl, BBQ_VERT, BBQ_FRAG);
+    this.uBbq = uniforms(gl, this.bbq, ['uView', 'uProj', 'uTex']);
+    {
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      const vbo = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 36, 0);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 36, 12);
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 36, 20);
+      gl.enableVertexAttribArray(3);
+      gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 36, 32);
+      gl.bindVertexArray(null);
+      this.bbqVao = vao;
+      this.bbqVbo = vbo;
+    }
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -54,6 +84,7 @@ export class Draw {
 
   setOpaque(): void {
     const gl = this.gl;
+    this.flushBillboards();
     gl.depthMask(true);
     gl.disable(gl.BLEND);
     gl.enable(gl.CULL_FACE);
@@ -62,6 +93,7 @@ export class Draw {
 
   setTransparent(): void {
     const gl = this.gl;
+    this.flushBillboards();
     gl.depthMask(false);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -69,6 +101,7 @@ export class Draw {
 
   setNoDepth(): void {
     const gl = this.gl;
+    this.flushBillboards();
     gl.depthMask(false);
     gl.disable(gl.DEPTH_TEST);
   }
@@ -98,6 +131,7 @@ export class Draw {
     texes?: (TexEntry | null)[] | null,
   ): void {
     const gl = this.gl;
+    this.flushBillboards();
     gl.useProgram(this.lit);
     const U = this.uLit;
     gl.uniformMatrix4fv(U.uView, false, view as Float32Array);
@@ -111,7 +145,7 @@ export class Draw {
     gl.uniform3f(U.uLightDir, this.lightDir[0], this.lightDir[1], this.lightDir[2]);
     if (opts.light) {
       gl.uniform3f(U.uLightDiffuse, 1, 1, 1);
-      gl.uniform3f(U.uLightSpec, 0.68, 0.85, 1);
+      gl.uniform3f(U.uLightSpec, 0.6784314, 0.8470588, 0.9019608);
     } else {
       gl.uniform3f(U.uLightDiffuse, 0, 0, 0);
       gl.uniform3f(U.uLightSpec, 0, 0, 0);
@@ -142,6 +176,7 @@ export class Draw {
     color: [number, number, number], alpha: number,
   ): void {
     const gl = this.gl;
+    this.flushBillboards();
     gl.useProgram(this.unlit);
     const U = this.uUnlit;
     gl.uniformMatrix4fv(U.uView, false, view as Float32Array);
@@ -167,26 +202,53 @@ export class Draw {
     view: mat4, proj: mat4,
   ): void {
     if (alpha <= 0.001 || size <= 0) return;
-    const gl = this.gl;
-    gl.useProgram(this.bb);
-    const U = this.uBb;
+    if (this.bbqTex !== tex) this.flushBillboards();
+    this.bbqTex = tex;
+    this.bbqView = view;
+    this.bbqProj = proj;
+    // Draws.DrawBillBoard corners: center + size * (-up - side), (up - side),
+    // (-up + side), (up + side) with UV (1,0), (1,1), (0,0), (0,1).
     const v = view as unknown as Float32Array;
-    gl.uniform3f(U.uCenter, cx, cy, cz);
-    gl.uniform1f(U.uSize, size);
-    gl.uniform3f(U.uRight, v[0], v[4], v[8]);
-    gl.uniform3f(U.uUp, v[1], v[5], v[9]);
-    gl.uniformMatrix4fv(U.uView, false, view as Float32Array);
-    gl.uniformMatrix4fv(U.uProj, false, proj as Float32Array);
-    const t = tex ?? getFallback(gl);
+    const sx = v[0], sy = v[4], sz = v[8];
+    const ux = v[1], uy = v[5], uz = v[9];
+    const s = size;
+    const c: [number, number, number][] = [
+      [cx + (-ux - sx) * s, cy + (-uy - sy) * s, cz + (-uz - sz) * s],
+      [cx + (ux - sx) * s, cy + (uy - sy) * s, cz + (uz - sz) * s],
+      [cx + (-ux + sx) * s, cy + (-uy + sy) * s, cz + (-uz + sz) * s],
+      [cx + (ux + sx) * s, cy + (uy + sy) * s, cz + (uz + sz) * s],
+    ];
+    const uv: [number, number][] = [[1, 0], [1, 1], [0, 0], [0, 1]];
+    const idx = [0, 1, 2, 1, 3, 2];
+    for (const i of idx) {
+      this.bbqVerts.push(c[i][0], c[i][1], c[i][2], uv[i][0], uv[i][1], color[0], color[1], color[2], alpha);
+    }
+  }
+
+  private bbqView: mat4 | null = null;
+  private bbqProj: mat4 | null = null;
+
+  flushBillboards(): void {
+    if (!this.bbqVerts.length || !this.bbqView || !this.bbqProj) {
+      this.bbqVerts.length = 0;
+      this.bbqTex = null;
+      return;
+    }
+    const gl = this.gl;
+    gl.useProgram(this.bbq);
+    gl.uniformMatrix4fv(this.uBbq.uView, false, this.bbqView as unknown as Float32Array);
+    gl.uniformMatrix4fv(this.uBbq.uProj, false, this.bbqProj as unknown as Float32Array);
+    const t = this.bbqTex ?? getFallback(gl);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
-    gl.uniform1i(U.uTex, 0);
-    gl.uniform1i(U.uHasTex, tex ? 1 : 0);
-    gl.uniform3f(U.uColor, color[0], color[1], color[2]);
-    gl.uniform1f(U.uAlpha, alpha);
-    gl.bindVertexArray(this.quadVao);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.uniform1i(this.uBbq.uTex, 0);
+    gl.bindVertexArray(this.bbqVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.bbqVbo);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.bbqVerts), gl.DYNAMIC_DRAW);
+    gl.drawArrays(gl.TRIANGLES, 0, this.bbqVerts.length / 9);
     gl.bindVertexArray(null);
+    this.bbqVerts.length = 0;
+    this.bbqTex = null;
   }
 
   /** TextureSquare verbatim UVs: p1 Zero, p2 +Y, p3 One, p4 +X (× tiling). */
@@ -223,6 +285,7 @@ export class Draw {
     view: mat4, proj: mat4, color: [number, number, number], alpha: number,
   ): void {
     const gl = this.gl;
+    this.flushBillboards();
     gl.useProgram(this.unlit);
     const U = this.uUnlit;
     gl.uniformMatrix4fv(U.uView, false, view as Float32Array);
