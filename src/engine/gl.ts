@@ -1,6 +1,3 @@
-// WebGL2 context management: init, resize/DPR, context-loss recovery.
-// Mirrors Game1.Initialize: multisample AA, depth, VSync-driven loop.
-
 export function initGL(canvas: HTMLCanvasElement): WebGL2RenderingContext | null {
   const gl = canvas.getContext('webgl2', {
     antialias: true,

@@ -1,11 +1,4 @@
-// WebSocket binary protocol with application-level gzip framing.
-// Wire format (little-endian): version u8 | flags u8 (bit0=gzip) |
-// type u16 | payload-length u32 | payload (raw or gzip).
-// Rules: never compress < 256 B; keep gzip only when smaller; decode via
-// DecompressionStream('gzip') with pako gzip/ungzip fallback; malformed
-// input throws; connection is async with capped backoff and never blocks
-// rendering. The game runs offline-first (like the original); the socket is
-// the optional transport for scene/asset data.
+// Binary protocol + gzip framing (versioned, explicit compression flag).
 
 import { gzip, ungzip } from 'pako';
 
@@ -45,9 +38,7 @@ async function gunzip(data: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
       const stream = new Blob([data as BlobPart]).stream().pipeThrough(ds);
       const buf = await new Response(stream).arrayBuffer();
       return new Uint8Array(buf);
-    } catch {
-      /* fall through to pako */
-    }
+    } catch { /* fall through */ }
   }
   return ungzip(data) as Uint8Array<ArrayBuffer>;
 }
@@ -101,83 +92,3 @@ export async function decodeMessage(data: ArrayBuffer | Uint8Array): Promise<Dec
 
 export const textEncoder = new TextEncoder();
 export const textDecoder = new TextDecoder();
-
-export function encodeJson(type: number, value: unknown, compress = true): Uint8Array {
-  return encodeMessage(type, textEncoder.encode(JSON.stringify(value)), { compress });
-}
-
-export async function decodeJson<T>(msg: DecodedMessage): Promise<T> {
-  return JSON.parse(textDecoder.decode(msg.payload)) as T;
-}
-
-export type MsgHandler = (msg: DecodedMessage) => void;
-
-export class GameSocket {
-  private ws: WebSocket | null = null;
-  private retries = 0;
-  private closed = false;
-
-  constructor(
-    private url: string,
-    private handler: MsgHandler,
-    private maxRetries = 3,
-  ) {}
-
-  connect(): void {
-    if (this.closed || typeof WebSocket === 'undefined') return;
-    try {
-      this.ws = new WebSocket(this.url);
-    } catch {
-      return;
-    }
-    this.ws.binaryType = 'arraybuffer';
-    this.ws.onopen = () => {
-      this.retries = 0;
-      this.send(MsgType.Hello, textEncoder.encode('infinity-edge-web/1'));
-    };
-    this.ws.onmessage = (ev) => {
-      decodeMessage(ev.data as ArrayBuffer)
-        .then(this.handler)
-        .catch(() => {
-          /* malformed: ignore, keep rendering */
-        });
-    };
-    this.ws.onclose = () => {
-      this.ws = null;
-      if (!this.closed && this.retries < this.maxRetries) {
-        this.retries++;
-        window.setTimeout(() => this.connect(), Math.min(5000, 500 * 2 ** this.retries));
-      }
-    };
-    this.ws.onerror = () => {
-      try {
-        this.ws?.close();
-      } catch {
-        /* ignore */
-      }
-    };
-  }
-
-  send(type: number, payload: Uint8Array, compress = true): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    try {
-      this.ws.send(encodeMessage(type, payload, { compress }));
-    } catch {
-      /* ignore */
-    }
-  }
-
-  close(): void {
-    this.closed = true;
-    try {
-      this.ws?.close();
-    } catch {
-      /* ignore */
-    }
-    this.ws = null;
-  }
-
-  get connected(): boolean {
-    return !!this.ws && this.ws.readyState === WebSocket.OPEN;
-  }
-}

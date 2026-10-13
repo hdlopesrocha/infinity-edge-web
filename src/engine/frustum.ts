@@ -1,10 +1,9 @@
-// View-frustum extraction + tests (BoundingFrustum port).
-// Scratch-plane API: no per-frame allocation in the culling path.
+// Frustum + primitive tests. Plane layout: 0 right, 1 left, 2 bottom,
+// 3 top, 4 far, 5 near.
 
 import type { mat4 } from './math';
-import { vec3 } from './math';
 
-export type FrustumPlanes = Float32Array; // 6 x [a,b,c,d]
+export type FrustumPlanes = Float32Array;
 
 export function createFrustum(): FrustumPlanes {
   return new Float32Array(24);
@@ -31,9 +30,19 @@ export function extractFrustum(vp: mat4, out: FrustumPlanes): FrustumPlanes {
   return out;
 }
 
+export const NEAR_PLANE = 5;
+
 export function sphereVisible(f: FrustumPlanes, cx: number, cy: number, cz: number, radius: number): boolean {
   for (let i = 0; i < 6; i++) {
     if (f[i * 4] * cx + f[i * 4 + 1] * cy + f[i * 4 + 2] * cz + f[i * 4 + 3] < -radius) return false;
+  }
+  return true;
+}
+
+/** MyFrustumContains verbatim (Near/Bottom/Top/Left/Right, far excluded). */
+export function frustumContains(f: FrustumPlanes, px: number, py: number, pz: number): boolean {
+  for (const i of [0, 1, 2, 3, 5]) {
+    if (f[i * 4] * px + f[i * 4 + 1] * py + f[i * 4 + 2] * pz + f[i * 4 + 3] >= 0) return false;
   }
   return true;
 }
@@ -53,7 +62,6 @@ export function boxVisible(
   return true;
 }
 
-/** Ray vs sphere: nearest distance or null (OcTree.RaySelect primitive). */
 export function raySphere(
   ox: number, oy: number, oz: number, dx: number, dy: number, dz: number,
   cx: number, cy: number, cz: number, r: number,
@@ -62,12 +70,10 @@ export function raySphere(
   const tca = ocx * dx + ocy * dy + ocz * dz;
   const d2 = ocx * ocx + ocy * ocy + ocz * ocz - tca * tca;
   if (d2 > r * r) return null;
-  const thc = Math.sqrt(Math.max(0, r * r - d2));
-  const t = tca - thc;
+  const t = tca - Math.sqrt(Math.max(0, r * r - d2));
   return t >= 0 ? t : null;
 }
 
-/** Ray vs AABB slab test, nearest t or null. */
 export function rayBox(
   ox: number, oy: number, oz: number, dx: number, dy: number, dz: number,
   minx: number, miny: number, minz: number, maxx: number, maxy: number, maxz: number,
@@ -80,7 +86,11 @@ export function rayBox(
     } else {
       let t1 = (mn[i] - o[i]) / d[i];
       let t2 = (mx[i] - o[i]) / d[i];
-      if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
+      if (t1 > t2) {
+        const t = t1;
+        t1 = t2;
+        t2 = t;
+      }
       if (t1 > tmin) tmin = t1;
       if (t2 < tmax) tmax = t2;
       if (tmin > tmax) return null;
@@ -89,7 +99,6 @@ export function rayBox(
   return tmin;
 }
 
-/** Sphere-sphere intersection. */
 export function spheresIntersect(
   ax: number, ay: number, az: number, ar: number,
   bx: number, by: number, bz: number, br: number,
@@ -98,30 +107,3 @@ export function spheresIntersect(
   const rr = ar + br;
   return dx * dx + dy * dy + dz * dz <= rr * rr;
 }
-
-/** Sphere contains / disjoint / intersects classification for boxes. */
-export function sphereContainsBox(
-  cx: number, cy: number, cz: number, r: number,
-  minx: number, miny: number, minz: number, maxx: number, maxy: number, maxz: number,
-): 'contains' | 'disjoint' | 'intersects' {
-  // farthest corner inside -> contains; nearest point outside -> disjoint
-  let maxD2 = 0;
-  for (const x of [minx, maxx]) {
-    for (const y of [miny, maxy]) {
-      for (const z of [minz, maxz]) {
-        const dx = x - cx, dy = y - cy, dz = z - cz;
-        const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 > maxD2) maxD2 = d2;
-      }
-    }
-  }
-  if (maxD2 <= r * r) return 'contains';
-  const nx = Math.max(minx, Math.min(cx, maxx));
-  const ny = Math.max(miny, Math.min(cy, maxy));
-  const nz = Math.max(minz, Math.min(cz, maxz));
-  const dx = nx - cx, dy = ny - cy, dz = nz - cz;
-  if (dx * dx + dy * dy + dz * dz > r * r) return 'disjoint';
-  return 'intersects';
-}
-
-export { vec3 };

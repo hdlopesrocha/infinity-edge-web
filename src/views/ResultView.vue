@@ -1,5 +1,5 @@
-<!-- Victory ("Congratulations <user>!" + message + medal unless
-     Victory/None/Defeat) / Defeat (message only). Medal click -> back. -->
+<!-- Victory / Defeat (37_T): "Congratulations <user>!" + message +
+     medal 128px (Gold/Silver/Bronze only) -> back. -->
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -19,6 +19,7 @@ const medal = computed(() => {
   if (r === 'Bronze') return base + '_bronze.png';
   return null;
 });
+const user = computed(() => store.username || store.options.username || 'Infinity Fan');
 
 function back(): void {
   void audio.sfx('button');
@@ -28,17 +29,14 @@ function back(): void {
 </script>
 
 <template>
-  <MenuShell>
+  <MenuShell wide>
     <template #left>
-      <div v-if="won" class="menu-title">Congratulations {{ store.username || 'Infinity Fan' }}!</div>
-      <div v-else class="menu-title">{{ res?.message ?? 'Defeat' }}</div>
-      <div v-if="won && res?.message" class="menu-text">{{ res.message }}</div>
-      <div v-if="won && medal" class="fit-list">
-        <img class="medal" :src="medal" alt="medal" @click="back" />
+      <div v-if="won" class="f-default c-white">Congratulations {{ user }}!</div>
+      <div v-if="won && res?.message" class="f-default c-white">{{ res.message }}</div>
+      <div v-if="!won && res?.message" class="f-default c-white">{{ res.message }}</div>
+      <div v-if="won && medal">
+        <img class="medal" :src="medal" alt="" @click="back" />
       </div>
-    </template>
-    <template #right>
-      <div class="menu-text small">Press the medal or back to return to the briefing.</div>
     </template>
   </MenuShell>
 </template>

@@ -6,48 +6,132 @@
       "meshes": 1,
       "triangles": 192,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 0.02,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.95
+      }
     },
     "AddonMultiply2.json": {
       "source": "Objects/AddonMultiply2/model0.fbx",
       "meshes": 1,
       "triangles": 192,
       "materials": [
-        "mat_default"
-      ]
+        "Material #26"
+      ],
+      "importTransform": {
+        "scale": 0.02,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.95
+      }
     },
     "AddonNitro.json": {
       "source": "Objects/AddonNitro/model0.fbx",
       "meshes": 1,
       "triangles": 192,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 0.02,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.95
+      }
     },
     "AddonRepair.json": {
       "source": "Objects/AddonRepair/model0.fbx",
       "meshes": 1,
       "triangles": 192,
       "materials": [
-        "mat_default"
-      ]
+        "Material #27"
+      ],
+      "importTransform": {
+        "scale": 0.02,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.95
+      }
     },
     "AddonShield.json": {
       "source": "Objects/AddonShield/model0.fbx",
       "meshes": 1,
       "triangles": 192,
       "materials": [
-        "mat_default"
-      ]
+        "Material #26"
+      ],
+      "importTransform": {
+        "scale": 0.02,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.95
+      }
     },
     "AddonTime.json": {
       "source": "Objects/AddonTime/model0.fbx",
       "meshes": 1,
       "triangles": 192,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 0.02,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.95
+      }
     },
     "Ark.json": {
       "source": "Objects/Ark/model0.fbx",
@@ -55,180 +139,530 @@
       "triangles": 1000,
       "materials": [
         "default"
-      ]
-    },
-    "Asteroid1__model0.fbx.placeholder": {
-      "source": "Objects/Asteroid1/model0.fbx",
-      "empty": true
+      ],
+      "importTransform": {
+        "scale": 0.24,
+        "rotX": 0,
+        "rotY": 90,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 6.59
+      }
     },
     "Asteroid1.json": {
+      "source": "Objects/Asteroid1/model0.fbx",
+      "meshes": 1,
+      "triangles": 4000,
+      "materials": [
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 1.6,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0.12,
+          -0.1,
+          -0.47
+        ],
+        "radius": 2.36
+      }
+    },
+    "Asteroid1_lod1.json": {
       "source": "Objects/Asteroid1/model1.fbx",
       "meshes": 1,
       "triangles": 1024,
       "materials": [
         "Material #25"
-      ]
+      ],
+      "importTransform": {
+        "scale": 1.6,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0.12,
+          -0.1,
+          -0.46
+        ],
+        "radius": 2.37
+      }
     },
-    "Asteroid1_lod1.json": {
+    "Asteroid1_lod2.json": {
       "source": "Objects/Asteroid1/model2.fbx",
       "meshes": 1,
       "triangles": 256,
       "materials": [
         "Material #25"
-      ]
+      ],
+      "importTransform": {
+        "scale": 1.6,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0.12,
+          -0.1,
+          -0.46
+        ],
+        "radius": 2.37
+      }
     },
-    "Asteroid1_lod2.json": {
+    "Asteroid1_lod3.json": {
       "source": "Objects/Asteroid1/model3.fbx",
       "meshes": 1,
       "triangles": 64,
       "materials": [
         "Material #25"
-      ]
-    },
-    "Asteroid2__model0.fbx.placeholder": {
-      "source": "Objects/Asteroid2/model0.fbx",
-      "empty": true
+      ],
+      "importTransform": {
+        "scale": 1.6,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0.24,
+          -0.05,
+          -0.51
+        ],
+        "radius": 2.41
+      }
     },
     "Asteroid2.json": {
+      "source": "Objects/Asteroid2/model0.fbx",
+      "meshes": 1,
+      "triangles": 4000,
+      "materials": [
+        "Material #27"
+      ],
+      "importTransform": {
+        "scale": 4,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          -0.55,
+          1.12,
+          0.23
+        ],
+        "radius": 3.56
+      }
+    },
+    "Asteroid2_lod1.json": {
       "source": "Objects/Asteroid2/model1.fbx",
       "meshes": 1,
       "triangles": 1024,
       "materials": [
         "Material #27"
-      ]
+      ],
+      "importTransform": {
+        "scale": 4,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          -0.56,
+          1.13,
+          0.21
+        ],
+        "radius": 3.56
+      }
     },
-    "Asteroid2_lod1.json": {
+    "Asteroid2_lod2.json": {
       "source": "Objects/Asteroid2/model2.fbx",
       "meshes": 1,
       "triangles": 256,
       "materials": [
         "Material #27"
-      ]
+      ],
+      "importTransform": {
+        "scale": 4,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          -0.53,
+          1.17,
+          0.2
+        ],
+        "radius": 3.58
+      }
     },
-    "Asteroid2_lod2.json": {
+    "Asteroid2_lod3.json": {
       "source": "Objects/Asteroid2/model3.FBX",
       "meshes": 1,
       "triangles": 64,
       "materials": [
         "Material #27"
-      ]
-    },
-    "Asteroid3__model0.fbx.placeholder": {
-      "source": "Objects/Asteroid3/model0.fbx",
-      "empty": true
+      ],
+      "importTransform": {
+        "scale": 1,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          -0.12,
+          0.27,
+          0.04
+        ],
+        "radius": 0.88
+      }
     },
     "Asteroid3.json": {
+      "source": "Objects/Asteroid3/model0.fbx",
+      "meshes": 1,
+      "triangles": 4000,
+      "materials": [
+        "Material #30"
+      ],
+      "importTransform": {
+        "scale": 4,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0.11,
+          -0.68,
+          0.44
+        ],
+        "radius": 2.72
+      }
+    },
+    "Asteroid3_lod1.json": {
       "source": "Objects/Asteroid3/model1.fbx",
       "meshes": 1,
       "triangles": 1024,
       "materials": [
         "Material #30"
-      ]
+      ],
+      "importTransform": {
+        "scale": 4,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0.13,
+          -0.68,
+          0.45
+        ],
+        "radius": 2.73
+      }
     },
-    "Asteroid3_lod1.json": {
+    "Asteroid3_lod2.json": {
       "source": "Objects/Asteroid3/model2.fbx",
       "meshes": 1,
       "triangles": 256,
       "materials": [
         "Material #30"
-      ]
+      ],
+      "importTransform": {
+        "scale": 4,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0.03,
+          -0.68,
+          0.45
+        ],
+        "radius": 2.53
+      }
     },
-    "Asteroid3_lod2.json": {
+    "Asteroid3_lod3.json": {
       "source": "Objects/Asteroid3/model3.fbx",
       "meshes": 1,
       "triangles": 64,
       "materials": [
         "Material #30"
-      ]
+      ],
+      "importTransform": {
+        "scale": 4,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0.04,
+          -0.52,
+          0.68
+        ],
+        "radius": 2.44
+      }
     },
     "Asteroid4.json": {
       "source": "Objects/Asteroid4/model0.FBX",
       "meshes": 1,
       "triangles": 1024,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 1,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          6.41,
+          2.54,
+          2.91
+        ],
+        "radius": 73.86
+      }
     },
     "Asteroid4_lod1.json": {
       "source": "Objects/Asteroid4/model1.FBX",
       "meshes": 1,
       "triangles": 512,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 1,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          5.5,
+          1.99,
+          2.91
+        ],
+        "radius": 72.93
+      }
     },
     "Asteroid4_lod2.json": {
       "source": "Objects/Asteroid4/model2.FBX",
       "meshes": 1,
       "triangles": 256,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 1,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          5.5,
+          1.99,
+          2.91
+        ],
+        "radius": 70.47
+      }
     },
     "Asteroid4_lod3.json": {
       "source": "Objects/Asteroid4/model3.FBX",
       "meshes": 1,
       "triangles": 128,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 1,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          7.47,
+          1.94,
+          4.08
+        ],
+        "radius": 72.02
+      }
     },
-    "Base.json": {
+    "Base_color.json": {
       "source": "Objects/Base/color0.fbx",
       "meshes": 1,
       "triangles": 2556,
       "materials": [
-        "mat_default"
-      ]
+        "Material #27"
+      ],
+      "importTransform": {
+        "scale": 0.11,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 5
+      }
     },
     "Bullet.json": {
       "source": "Objects/Bullet/model0.fbx",
       "meshes": 1,
       "triangles": 128,
       "materials": [
-        "mat_default"
-      ]
+        "01 - Default"
+      ],
+      "importTransform": {
+        "scale": 0.005,
+        "rotX": 90,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.11
+      }
     },
     "Fighter1.json": {
       "source": "Objects/Fighter1/model0.fbx",
       "meshes": 1,
       "triangles": 254,
       "materials": [
-        "mat_default"
-      ]
+        "Material #35"
+      ],
+      "importTransform": {
+        "scale": 0.0014,
+        "rotX": 0,
+        "rotY": 180,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          -0.09
+        ],
+        "radius": 0.46
+      }
     },
     "Fighter2.json": {
       "source": "Objects/Fighter2/model0.fbx",
       "meshes": 1,
       "triangles": 526,
       "materials": [
-        "mat_default"
-      ]
+        "Material #29"
+      ],
+      "importTransform": {
+        "scale": 0.002,
+        "rotX": 0,
+        "rotY": -90,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          -0.05,
+          0,
+          -0.09
+        ],
+        "radius": 0.53
+      }
     },
     "Fighter3.json": {
       "source": "Objects/Fighter3/model0.fbx",
       "meshes": 15,
       "triangles": 934,
       "materials": [
-        "mat_default",
-        "Color_004_"
-      ]
+        "Material #46",
+        "Color_004_",
+        "Material #47",
+        "Material #45"
+      ],
+      "importTransform": {
+        "scale": 0.011,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          -0.01,
+          -0.48,
+          -0.31
+        ],
+        "radius": 0.51
+      }
     },
     "Flag.json": {
-      "source": "Objects/Flag/color0.fbx",
-      "meshes": 1,
-      "triangles": 238,
-      "materials": [
-        "mat_default"
-      ]
-    },
-    "Flag_lod1.json": {
       "source": "Objects/Flag/model0.FBX",
       "meshes": 8,
       "triangles": 208,
       "materials": [
-        "mat_default"
-      ]
+        "Material #50"
+      ],
+      "importTransform": {
+        "scale": 0.001,
+        "rotX": 0,
+        "rotY": 90,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.96
+      }
+    },
+    "Flag_color.json": {
+      "source": "Objects/Flag/color0.fbx",
+      "meshes": 1,
+      "triangles": 238,
+      "materials": [
+        "01 - Default"
+      ],
+      "importTransform": {
+        "scale": 0.001,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.52
+      }
     },
     "HomingMissile.json": {
       "source": "Objects/HomingMissile/model0.fbx",
@@ -236,7 +670,21 @@
       "triangles": 218,
       "materials": [
         "material"
-      ]
+      ],
+      "importTransform": {
+        "scale": 0.02,
+        "rotX": 90,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.46
+      }
     },
     "HomingMissile2.json": {
       "source": "Objects/HomingMissile2/model0.fbx",
@@ -244,63 +692,175 @@
       "triangles": 109,
       "materials": [
         "default_ncl1_2"
-      ]
+      ],
+      "importTransform": {
+        "scale": 0.002,
+        "rotX": 0,
+        "rotY": -90,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.39
+      }
     },
     "Planet1.json": {
       "source": "Objects/Planet1/model0.fbx",
       "meshes": 1,
       "triangles": 960,
       "materials": [
-        "mat_default"
-      ]
+        "Material #26"
+      ],
+      "importTransform": {
+        "scale": 0.01,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.65
+      }
     },
     "Planet1_lod1.json": {
       "source": "Objects/Planet1/model1.fbx",
       "meshes": 1,
       "triangles": 960,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 0.01,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          -0.14,
+          -0.14
+        ],
+        "radius": 0.66
+      }
     },
     "Planet2.json": {
       "source": "Objects/Planet2/model0.fbx",
       "meshes": 1,
       "triangles": 960,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 0.01,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.65
+      }
     },
     "Planet2_lod1.json": {
       "source": "Objects/Planet2/model1.fbx",
       "meshes": 1,
       "triangles": 32,
       "materials": [
-        "mat_default"
-      ]
+        "Material #31"
+      ],
+      "importTransform": {
+        "scale": 0.01,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 1.99
+      }
     },
     "Planet3.json": {
       "source": "Objects/Planet3/model0.fbx",
       "meshes": 1,
       "triangles": 960,
       "materials": [
-        "mat_default"
-      ]
+        "Material #25"
+      ],
+      "importTransform": {
+        "scale": 0.01,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.65
+      }
     },
     "Planet3_lod1.json": {
       "source": "Objects/Planet3/model1.fbx",
       "meshes": 1,
       "triangles": 32,
       "materials": [
-        "mat_default"
-      ]
+        "Material #27"
+      ],
+      "importTransform": {
+        "scale": 0.01,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 1.99
+      }
     },
     "Planet3_lod2.json": {
       "source": "Objects/Planet3/model2.fbx",
       "meshes": 1,
       "triangles": 960,
       "materials": [
-        "mat_default"
-      ]
+        "Material #26"
+      ],
+      "importTransform": {
+        "scale": 0.01,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.65
+      }
     },
     "Sky1.json": {
       "source": "Objects/Sky1/model0.fbx",
@@ -308,7 +868,21 @@
       "triangles": 224,
       "materials": [
         "01 - Default"
-      ]
+      ],
+      "importTransform": {
+        "scale": 1,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 76.46
+      }
     },
     "Sky2.json": {
       "source": "Objects/Sky2/model0.fbx",
@@ -316,7 +890,21 @@
       "triangles": 224,
       "materials": [
         "01 - Default"
-      ]
+      ],
+      "importTransform": {
+        "scale": 1,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 76.46
+      }
     },
     "Sky3.json": {
       "source": "Objects/Sky3/model0.fbx",
@@ -324,15 +912,44 @@
       "triangles": 224,
       "materials": [
         "01 - Default"
-      ]
+      ],
+      "importTransform": {
+        "scale": 1,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 76.46
+      }
     },
     "Wheel.json": {
       "source": "Objects/Wheel/model0.fbx",
       "meshes": 2,
       "triangles": 288,
       "materials": [
-        "mat_default"
-      ]
+        "Material #26",
+        "Material #27"
+      ],
+      "importTransform": {
+        "scale": 0.01,
+        "rotX": 0,
+        "rotY": 0,
+        "rotZ": 0
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.19
+      }
     }
   }
 }

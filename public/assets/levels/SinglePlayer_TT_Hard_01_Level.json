@@ -6,12 +6,13 @@
     "save": "TT_H_01.svg",
     "sky": "Sky3",
     "size": 2048,
-    "text": "Closed circuit with sharp turns. Moderate your velocity while turning. Watch out some asteroids."
+    "text": ""
   },
   "imports": [
     "Content/Import/ModelConfig.xml",
     "Content/Import/TextureConfig.xml",
-    "Content/Import/TeamConfig.xml"
+    "Content/Import/TeamConfig.xml",
+    "Content/Import/GameInterface.xml"
   ],
   "importGhost": "TT_H_01.ghs",
   "objects": [
@@ -259,12 +260,6 @@
     },
     {
       "team": "ambient",
-      "type": "ark",
-      "model": "Ark",
-      "position": "0|0|0"
-    },
-    {
-      "team": "ambient",
       "type": "asteroid",
       "model": "Asteroid2",
       "position": "random",
@@ -285,6 +280,13 @@
       "model": "",
       "position": "random",
       "amount": 10000
+    },
+    {
+      "team": "ambient",
+      "type": "cloud",
+      "model": "",
+      "position": "random",
+      "amount": 1000
     }
   ],
   "camara": {
@@ -353,5 +355,10 @@
         }
       ]
     }
-  ]
+  ],
+  "menuText": "Closed circuit with sharp turns. Moderate your velocity while turning. Watch out some asteroids.",
+  "scoreBoard": {
+    "type": "TT",
+    "save": "TT_H_01.svg"
+  }
 }

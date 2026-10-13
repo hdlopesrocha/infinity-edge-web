@@ -1,4 +1,4 @@
-<!-- SinglePlayer: CTF vs TimeTrial. -->
+<!-- SinglePlayer/Menu.xml: CAPTURE THE FLAG / TIME TRIAL. -->
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
@@ -15,23 +15,17 @@ function go(path: string): void {
 </script>
 
 <template>
-  <MenuShell>
+  <MenuShell wide>
     <template #left>
       <div class="fit-list">
         <button class="icon-btn" @click="go('/ctf')">
-          <img :src="base + '_ctf.png'" alt="Capture the flag" />
-          <span>CAPTURE THE FLAG</span>
+          <img :src="base + '_ctf.png'" alt="" />
+          <span class="cap">CAPTURE THE FLAG</span>
         </button>
         <button class="icon-btn" @click="go('/tt')">
-          <img :src="base + '_timeTrial.png'" alt="Time trial" />
-          <span>TIME TRIAL</span>
+          <img :src="base + '_timeTrial.png'" alt="" />
+          <span class="cap">TIME TRIAL</span>
         </button>
-      </div>
-    </template>
-    <template #right>
-      <div class="menu-text small">
-        CTF: bring the enemy flag home — 5 minutes, most points win.
-        Time trial: race the ghost through the Ark gates.
       </div>
     </template>
   </MenuShell>

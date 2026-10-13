@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "InfinityEdge3D (XNA) fully migrated to the browser: Vue 3 + TypeScript + raw WebGL2 + gl-matrix",
+  "description": "IE3D_37_T (XNA) migrated to the browser: Vue 3 + TypeScript + raw WebGL2 + gl-matrix",
   "scripts": {
     "dev": "vite --port 5173 --strictPort",
     "build": "vue-tsc --noEmit && vite build",

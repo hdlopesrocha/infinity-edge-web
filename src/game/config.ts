@@ -1,4 +1,4 @@
-// Static data: ModelConfig / TextureConfig / TeamConfig / voices / SFX.
+// Static data verbatim (ModelConfig/TextureConfig/TeamConfig/Engine voices).
 
 export interface ModelCfg {
   name: string;

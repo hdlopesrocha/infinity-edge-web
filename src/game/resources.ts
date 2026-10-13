@@ -1,8 +1,6 @@
-// ResourceCenter port: options (exact defaults), voices/SFX registries,
-// model/texture caches, seeded RNG, background level hook.
-// Audio playout itself lives in audio.ts; RC resolves names and positions.
+// ResourceCenter: options (exact defaults/XML), voices/SFX, model LOD/color.
 
-import { loadModel } from '../engine/model';
+import { loadModelOptional } from '../engine/model';
 import type { GpuModel } from '../engine/model';
 import { loadTextureAny, peekTexture } from '../engine/texture';
 import type { TexEntry } from '../engine/texture';
@@ -24,33 +22,24 @@ export interface Options {
   axisY: boolean;
 }
 
-/** Exact Options.cs defaults. */
 export function defaultOptions(): Options {
   return {
-    username: 'Infinity Fan',
-    wireframe: false,
-    detail: 2,
-    distance: 192,
-    musicVolume: 0.5,
-    billboards: false,
-    motionBlur: false,
-    cheats: false,
-    axisX: false,
-    axisY: false,
+    username: 'Infinity Fan', wireframe: false, detail: 2, distance: 192,
+    musicVolume: 0.5, billboards: false, motionBlur: false, cheats: false,
+    axisX: false, axisY: false,
   };
 }
 
-const OPTIONS_KEY = 'ie3d.options.xml';
+const OPTIONS_KEY = 'options.ie3d';
 
 export function loadOptions(): Options {
   const d = defaultOptions();
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
     if (!raw) return d;
-    const doc = new DOMParser().parseFromString(raw, 'text/xml');
-    const el = doc.querySelector('Options');
+    const el = new DOMParser().parseFromString(raw, 'text/xml').querySelector('Options');
     if (!el || el.getAttribute('_version') !== '1.0.0.2') {
-      localStorage.removeItem(OPTIONS_KEY); // version mismatch -> wipe (verbatim)
+      localStorage.removeItem(OPTIONS_KEY);
       return d;
     }
     const g = (n: string, fb: string) => el.getAttribute(n) ?? fb;
@@ -68,7 +57,7 @@ export function loadOptions(): Options {
       motionBlur: b('_motionBlur', d.motionBlur),
       axisX: b('_axisX', d.axisX),
       axisY: b('_axisY', d.axisY),
-      cheats: d.cheats, // never serialized (verbatim)
+      cheats: d.cheats,
     };
   } catch {
     return d;
@@ -77,32 +66,30 @@ export function loadOptions(): Options {
 
 export function saveOptions(o: Options): void {
   try {
-    const xml =
+    localStorage.setItem(
+      OPTIONS_KEY,
       `<Options _version="1.0.0.2" _userName="${o.username.replace(/"/g, '')}" ` +
-      `_wireframe="${o.wireframe}" _detail="${o.detail}" _distance="${o.distance}" ` +
-      `_musicVolume="${o.musicVolume}" _billboards="${o.billboards}" ` +
-      `_motionBlur="${o.motionBlur}" _axisY="${o.axisY}" _axisX="${o.axisX}" />`;
-    localStorage.setItem(OPTIONS_KEY, xml);
-  } catch {
-    /* ignore */
-  }
+        `_wireframe="${o.wireframe}" _detail="${o.detail}" _distance="${o.distance}" ` +
+        `_musicVolume="${o.musicVolume}" _billboards="${o.billboards}" ` +
+        `_motionBlur="${o.motionBlur}" _axisY="${o.axisY}" _axisX="${o.axisX}" />`,
+    );
+  } catch { /* ignore */ }
 }
 
+/** CommandClearGame: wipe saves (.ie3d/.svg/.ghs in this port). */
 export function clearGameData(): string[] {
   const removed: string[] = [];
   try {
     const keys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && (k.endsWith('.svg') || k.endsWith('.ghs') || k.endsWith('.ie3d'))) keys.push(k);
+      if (k && (k.endsWith('.ie3d') || k.endsWith('.svg') || k.endsWith('.ghs'))) keys.push(k);
     }
     keys.forEach((k) => {
       localStorage.removeItem(k);
       removed.push(k);
     });
-  } catch {
-    /* ignore */
-  }
+  } catch { /* ignore */ }
   return removed;
 }
 
@@ -118,7 +105,6 @@ export class RC {
     this.renderer = renderer;
   }
 
-  /** Maths._random uniform [0,1). */
   random = (): number => {
     this.seed = (this.seed * 1664525 + 1013904223) >>> 0;
     return this.seed / 4294967296;
@@ -142,29 +128,49 @@ export class RC {
     return out;
   }
 
-  /** Preload every model/texture a level needs (ContentManager warm-up). */
+  /** Preload models (solid+color LODs) + HUD textures. */
   async preload(modelNames: string[], texAliases: string[]): Promise<void> {
     const gl = this.renderer.gl;
-    await Promise.all(modelNames.map((m) => loadModel(gl, this.modelUrl(m)).catch(() => null)));
-    await Promise.all(texAliases.map((t) => loadTextureAny(gl, this.texCandidates(t)).catch(() => null)));
-    // bind ModelData records
+    await Promise.all(texAliases.map((t) => this.ensureTex(t)));
     for (const name of modelNames) {
       if (this.models.has(name)) continue;
       const cfg = MODELS.find((m) => m.name === name);
-      const gpu: GpuModel | null = await loadModel(gl, this.modelUrl(name)).catch(() => null);
-      if (!gpu) continue;
-      const diffuseTex = gpu.materials[0]?.texture;
-      const tex = diffuseTex
-        ? await loadTextureAny(gl, [this.baseUrl(diffuseTex)]).catch(() => null)
-        : null;
+      const detail = cfg?.detail ?? 1;
+      const solid: (GpuModel | null)[] = [];
+      const color: (GpuModel | null)[] = [];
+      for (let i = 0; i < detail; i++) {
+        solid.push(await loadModelOptional(gl, this.modelUrl(i === 0 ? name : `${name}_lod${i}`)));
+      }
+      const color0 = await loadModelOptional(gl, this.modelUrl(`${name}_color`));
+      if (color0) {
+        color.push(color0);
+        for (let i = 1; i < detail; i++) {
+          color.push(await loadModelOptional(gl, this.modelUrl(`${name}_color${i}`)));
+        }
+      }
+      const gpu0 = solid[0] ?? color[0];
+      if (!gpu0) continue;
+      const texes: (TexEntry | null)[] = [];
+      for (const mat of gpu0.materials) {
+        if (mat.texture) {
+          const t = await loadTextureAny(gl, [this.baseUrl(mat.texture)]).catch(() => null);
+          texes.push(t && t.url !== '__fallback__' ? t : null);
+        } else {
+          texes.push(null);
+        }
+      }
+      const tex = texes.find((t) => t) ?? null;
       const icon = await loadTextureAny(gl, this.texCandidates(name + '_icon')).catch(() => null);
       this.models.set(name, {
         name,
-        gpu,
+        solid: solid.length ? solid : [gpu0],
+        color: color.length ? color : [gpu0],
         tex,
+        texes,
         icon: icon && icon.url !== '__fallback__' ? icon : null,
         flares: { engine: cfg?.engineFlares ?? [], color: cfg?.colorFlares ?? [] },
         friction: 1,
+        detail,
       });
     }
   }
@@ -173,7 +179,6 @@ export class RC {
     return this.models.get(name) ?? null;
   }
 
-  /** Synchronous texture for per-frame draw code (preload/ensureTex first). */
   tex(alias: string): TexEntry | null {
     const hit = this.texCache.get(alias);
     if (hit !== undefined) return hit;

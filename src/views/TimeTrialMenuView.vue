@@ -1,4 +1,4 @@
-<!-- TimeTrial.Menu: PEGASUS / LEO / DRACO. -->
+<!-- TT/Menu.xml: PEGASUS / LEO / DRACO. -->
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
@@ -15,25 +15,22 @@ function go(diff: string): void {
 </script>
 
 <template>
-  <MenuShell>
+  <MenuShell wide>
     <template #left>
       <div class="fit-list">
         <button class="icon-btn" @click="go('easy')">
-          <img :src="base + '_easy.png'" alt="Pegasus" />
-          <span>PEGASUS</span>
+          <img :src="base + '_easy.png'" alt="" />
+          <span class="cap">PEGASUS</span>
         </button>
         <button class="icon-btn" @click="go('normal')">
-          <img :src="base + '_normal.png'" alt="Leo" />
-          <span>LEO</span>
+          <img :src="base + '_normal.png'" alt="" />
+          <span class="cap">LEO</span>
         </button>
         <button class="icon-btn" @click="go('hard')">
-          <img :src="base + '_hard.png'" alt="Draco" />
-          <span>DRACO</span>
+          <img :src="base + '_hard.png'" alt="" />
+          <span class="cap">DRACO</span>
         </button>
       </div>
-    </template>
-    <template #right>
-      <div class="menu-watermark">TT</div>
     </template>
   </MenuShell>
 </template>

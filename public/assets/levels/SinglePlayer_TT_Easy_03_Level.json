@@ -6,12 +6,13 @@
     "save": "TT_E_03.svg",
     "sky": "Sky1",
     "size": 2048,
-    "text": "Make a vertical looping. Be careful! Control your speed."
+    "text": ""
   },
   "imports": [
     "Content/Import/ModelConfig.xml",
     "Content/Import/TextureConfig.xml",
-    "Content/Import/TeamConfig.xml"
+    "Content/Import/TeamConfig.xml",
+    "Content/Import/GameInterface.xml"
   ],
   "importGhost": "TT_E_03.ghs",
   "objects": [
@@ -63,7 +64,7 @@
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|18,74|365,25"
+      "position": "0|18.74|365.25"
     },
     {
       "team": "ambient",
@@ -75,7 +76,7 @@
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|109,25|365,25"
+      "position": "0|109.25|365.25"
     },
     {
       "team": "ambient",
@@ -87,7 +88,7 @@
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|106,25|274,74"
+      "position": "0|106.25|274.74"
     },
     {
       "team": "ambient",
@@ -99,7 +100,7 @@
       "team": "ambient",
       "type": "ark",
       "model": "Ark",
-      "position": "0|18,74|274,74"
+      "position": "0|18.74|274.74"
     },
     {
       "team": "ambient",
@@ -107,6 +108,13 @@
       "model": "",
       "position": "random",
       "amount": 10000
+    },
+    {
+      "team": "ambient",
+      "type": "cloud",
+      "model": "",
+      "position": "random",
+      "amount": 1000
     }
   ],
   "camara": {
@@ -175,5 +183,10 @@
         }
       ]
     }
-  ]
+  ],
+  "menuText": "Make a vertical loop. Be careful! Control your speed.",
+  "scoreBoard": {
+    "type": "TT",
+    "save": "TT_E_03.svg"
+  }
 }

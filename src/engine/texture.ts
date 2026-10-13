@@ -1,6 +1,3 @@
-// Texture loading, caching, filtering, mipmaps (TextureCache port).
-// LinearWrap sampler semantics; alias probing .png -> .jpg.
-
 export interface TexEntry {
   tex: WebGLTexture;
   url: string;
@@ -68,7 +65,6 @@ export function loadTexture(gl: WebGL2RenderingContext, url: string): Promise<Te
   return job;
 }
 
-/** Try urls in order; first loadable wins, else white fallback. Never rejects. */
 export async function loadTextureAny(gl: WebGL2RenderingContext, urls: string[]): Promise<TexEntry> {
   for (const url of urls) {
     const hit = cache.get(url);
@@ -84,11 +80,3 @@ export async function loadTextureAny(gl: WebGL2RenderingContext, urls: string[])
 export function peekTexture(url: string): TexEntry | undefined {
   return cache.get(url);
 }
-
-export function clearTextureCache(gl: WebGL2RenderingContext): void {
-  for (const e of cache.values()) gl.deleteTexture(e.tex);
-  cache.clear();
-  pending.clear();
-  fallback = null;
-}
-

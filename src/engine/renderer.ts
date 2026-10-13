@@ -1,5 +1,4 @@
 // Renderer host: canvas, GL context, camera, programs, stable loop.
-// Vue owns UI; game/instance.ts owns simulation and issues draw calls here.
 
 import { Camera } from './camera';
 import { Draw } from './draw';
@@ -23,6 +22,7 @@ export class Renderer {
   stats: RenderStats = { fps: 0, draws: 0, culled: 0 };
   onFrame: ((dtMs: number) => void) | null = null;
   onStats: ((s: RenderStats) => void) | null = null;
+  onRebuilt: (() => void) | null = null;
   private raf = 0;
   private last = 0;
   private running = false;
@@ -30,7 +30,6 @@ export class Renderer {
   private fpsT = 0;
   private unwatch: (() => void) | null = null;
   private resizeObs: ResizeObserver | null = null;
-  onRebuilt: (() => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -65,7 +64,7 @@ export class Renderer {
     if (!this.running) this.start();
   }
 
-  beginFrame(dtMs: number): void {
+  beginFrame(): void {
     const gl = this.gl;
     if (resizeGL(this.canvas, gl)) {
       this.camera.setAspect(this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
@@ -74,7 +73,6 @@ export class Renderer {
     this.stats.culled = 0;
     extractFrustum(this.camera.viewProj, this.frustum);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    void dtMs;
   }
 
   trackDraws(n = 1): void {

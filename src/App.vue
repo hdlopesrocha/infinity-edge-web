@@ -1,7 +1,9 @@
 <!-- Root: persistent WebGL canvas behind the routed Vue UI overlay. -->
 <script setup lang="ts">
-import { RouterView } from 'vue-router';
+import { RouterView, useRoute } from 'vue-router';
 import GameCanvas from './components/GameCanvas.vue';
+
+const route = useRoute();
 </script>
 
 <template>
@@ -10,7 +12,7 @@ import GameCanvas from './components/GameCanvas.vue';
       <GameCanvas />
     </div>
     <div class="ui-layer">
-      <RouterView />
+      <RouterView :key="route.fullPath" />
     </div>
   </div>
 </template>

@@ -6,12 +6,13 @@
     "save": "TT_E_02.svg",
     "sky": "Sky1",
     "size": 2048,
-    "text": "Learn to handle the SpaceShip by changing your orientation."
+    "text": ""
   },
   "imports": [
     "Content/Import/ModelConfig.xml",
     "Content/Import/TextureConfig.xml",
-    "Content/Import/TeamConfig.xml"
+    "Content/Import/TeamConfig.xml",
+    "Content/Import/GameInterface.xml"
   ],
   "importGhost": "TT_E_02.ghs",
   "objects": [
@@ -71,6 +72,13 @@
       "model": "",
       "position": "random",
       "amount": 10000
+    },
+    {
+      "team": "ambient",
+      "type": "cloud",
+      "model": "",
+      "position": "random",
+      "amount": 1000
     }
   ],
   "camara": {
@@ -139,5 +147,10 @@
         }
       ]
     }
-  ]
+  ],
+  "menuText": "Learn to handle the SpaceShip by changing your orientation.",
+  "scoreBoard": {
+    "type": "TT",
+    "save": "TT_E_02.svg"
+  }
 }

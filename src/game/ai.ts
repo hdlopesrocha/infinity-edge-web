@@ -1,65 +1,47 @@
-// Intelligence port: AIPoint/AIGoPoint/AIGoRandom/AIGoSphere/AIOffensive/
-// AIFreePath/AIFollow/AIFlagCap/AIGoRandomOffensive/AIBreak/AIBullet/
-// AIHoming/AITimeTrial/HILocal + XM_Actions factories (AIBodyGuard,
-// AIFlagProt, AISpawnKiller are AIBreak∘AIFollow compositions, not classes).
-// Every radius, threshold, timer, and quirk preserved.
+// Intelligence 37_T verbatim.
 
 import { quat, vec3, steerToward, ypr } from '../engine/math';
 import { Base, Flag, setAIHomingFactory } from './objects';
-import type { Command, HomingMissile, SpaceObject } from './objects';
-import { P, previewDirection } from './physics';
+import type { Command, HomingMissile, SpaceObject, SpaceShip } from './objects';
+import { previewDirection } from './physics';
 import type { GameInstance } from './instance';
 import type { RC } from './resources';
 import type { Control } from './controls';
 
 export type { Command };
 
-/** Shared steering primitive (AIPoint verbatim). */
 export function steerTo(obj: SpaceObject, tx: number, ty: number, tz: number, maxAngular: number): void {
-  const t = vec3.fromValues(tx, ty, tz);
-  const o = vec3.clone(obj.dir);
-  steerToward(obj.rot, o, t, obj.side, maxAngular);
+  steerToward(obj.rot, obj.dir, vec3.fromValues(tx, ty, tz), obj.side, maxAngular);
   obj.update();
 }
 
-// --------------------------------------------------------------- AIPoint
 export class AIPoint implements Command {
-  constructor(
-    private obj: SpaceObject,
-    private tx: number, private ty: number, private tz: number,
-  ) {}
+  constructor(private obj: SpaceObject, private target: SpaceObject) {}
 
   execute(): void {
-    steerTo(this.obj, this.tx, this.ty, this.tz, this.obj.physics.maxAngular);
+    steerTo(this.obj, this.target.pos[0], this.target.pos[1], this.target.pos[2], this.obj.physics.maxAngular);
   }
 }
 
-export function aiPointTo(obj: SpaceObject, target: SpaceObject): AIPoint {
-  return new AIPoint(obj, target.pos[0], target.pos[1], target.pos[2]);
-}
-
-// ------------------------------------------------------------- AIGoPoint
 export class AIGoPoint implements Command {
   constructor(private gi: GameInstance, private obj: SpaceObject, private target: SpaceObject) {
     void gi;
   }
 
   execute(): void {
-    aiPointTo(this.obj, this.target).execute();
+    new AIPoint(this.obj, this.target).execute();
     vec3.scale(this.obj.accel, this.obj.dir, this.obj.physics.accelMax);
     const dx = this.obj.pos[0] - this.target.pos[0];
     const dy = this.obj.pos[1] - this.target.pos[1];
     const dz = this.obj.pos[2] - this.target.pos[2];
     const dist = Math.hypot(dx, dy, dz);
     if (dist < 32) {
-      const s = Math.max(0.01, Math.min(0.3, dist / 32));
-      vec3.scale(this.obj.accel, this.obj.accel, s);
+      vec3.scale(this.obj.accel, this.obj.accel, Math.max(0.01, Math.min(0.3, dist / 32)));
     }
     this.obj.update();
   }
 }
 
-// ------------------------------------------------------------ AIGoRandom
 export class AIGoRandom implements Command {
   target = vec3.create();
 
@@ -83,7 +65,6 @@ export class AIGoRandom implements Command {
   }
 }
 
-// ------------------------------------------------------------ AIGoSphere
 export class AIGoSphere implements Command {
   constructor(
     private gi: GameInstance, private obj: SpaceObject,
@@ -91,12 +72,14 @@ export class AIGoSphere implements Command {
   ) {}
 
   execute(): void {
-    aiPointTo(this.obj, this.target).execute();
+    new AIPoint(this.obj, this.target).execute();
     vec3.scale(this.obj.accel, this.obj.dir, this.obj.physics.accelMax);
     const dx = this.target.pos[0] - this.obj.pos[0];
     const dy = this.target.pos[1] - this.obj.pos[1];
     const dz = this.target.pos[2] - this.obj.pos[2];
-    if (Math.hypot(dx, dy, dz) <= this.radius) {
+    if (Math.hypot(dx, dy, dz) > this.radius) {
+      vec3.scale(this.obj.accel, this.obj.dir, this.obj.physics.accelMax);
+    } else {
       vec3.set(this.obj.accel, 0, 0, 0);
     }
     this.obj.update();
@@ -104,7 +87,6 @@ export class AIGoSphere implements Command {
   }
 }
 
-// ----------------------------------------------------------- AIOffensive
 export class AIOffensive implements Command {
   executed = false;
   private target: SpaceObject | null = null;
@@ -138,7 +120,6 @@ export class AIOffensive implements Command {
   }
 }
 
-// ------------------------------------------------------------ AIFreePath
 export class AIFreePath implements Command {
   constructor(private gi: GameInstance, private obj: SpaceObject, private radius: number) {}
 
@@ -159,7 +140,6 @@ export class AIFreePath implements Command {
   }
 }
 
-// -------------------------------------------------------------- AIFollow
 export class AIFollow implements Command {
   private aio: AIOffensive;
 
@@ -173,9 +153,8 @@ export class AIFollow implements Command {
   execute(): void {
     this.aio.execute();
     if (!this.aio.executed) {
-      if (this.obj.flag) {
-        const base = this.obj.team.base;
-        if (base) new AIGoPoint(this.gi, this.obj, base).execute();
+      if (this.obj.flag && this.obj.team.base) {
+        new AIGoPoint(this.gi, this.obj, this.obj.team.base).execute();
       } else {
         new AIGoSphere(this.gi, this.obj, this.who, this.targetRadius).execute();
       }
@@ -183,7 +162,6 @@ export class AIFollow implements Command {
   }
 }
 
-// ------------------------------------------------------------- AIFlagCap
 export class AIFlagCap implements Command {
   private aio: AIOffensive;
 
@@ -193,26 +171,25 @@ export class AIFlagCap implements Command {
 
   execute(): void {
     this.aio.execute();
-    if (this.aio.executed) return;
-    let target: Flag | null = null;
-    for (const t of this.obj.team.enemys) {
-      if (t.flag) target = t.flag; // last enemy team with a flag wins
-    }
-    if (!target) return;
-    const owner = target.getOwner();
-    if (!owner || owner.team !== this.obj.team) {
-      new AIGoPoint(this.gi, this.obj, target).execute();
-    } else if (owner === this.obj) {
-      const base = this.obj.team.base;
-      if (base) new AIGoPoint(this.gi, this.obj, base).execute();
-    } else {
-      const base = target.team.base;
-      if (base) new AIGoPoint(this.gi, this.obj, base).execute();
+    if (!this.aio.executed) {
+      let target: Flag | null = null;
+      for (const t of this.obj.team.enemys) {
+        if (t.flag) target = t.flag;
+      }
+      if (target) {
+        const owner = target.getOwner();
+        if (owner === null || owner.team !== this.obj.team) {
+          new AIGoPoint(this.gi, this.obj, target).execute();
+        } else if (owner === this.obj) {
+          if (this.obj.team.base) new AIGoPoint(this.gi, this.obj, this.obj.team.base).execute();
+        } else {
+          if (target.team.base) new AIGoPoint(this.gi, this.obj, target.team.base).execute();
+        }
+      }
     }
   }
 }
 
-// --------------------------------------------------- AIGoRandomOffensive
 export class AIGoRandomOffensive implements Command {
   private goOffensive: AIOffensive;
   private goRandom: AIGoRandom;
@@ -232,25 +209,21 @@ export class AIGoRandomOffensive implements Command {
   }
 }
 
-// ---------------------------------------------------------------- AIBreak
 export class AIBreak implements Command {
   intelligence: Command;
   private dummy: AIGoRandom;
   private intel = true;
   private timeMs = 0;
-  private waitOffset: number;
+  private waitOffset = 0;
 
   constructor(private gi: GameInstance, obj: SpaceObject, intelligence: Command) {
-    this.waitOffset = 0;
-    this.intel = true;
-    this.timeMs = 0;
     this.intelligence = intelligence;
     this.dummy = new AIGoRandom(gi, obj);
   }
 
   execute(): void {
     this.timeMs += this.gi.dtMs;
-    const seconds = Math.floor(this.timeMs / 1000) % 60; // TimeSpan.Seconds component
+    const seconds = Math.floor(this.timeMs / 1000) % 60;
     const r = this.gi.rc.random;
     if (this.intel) {
       this.intelligence.execute();
@@ -270,46 +243,6 @@ export class AIBreak implements Command {
   }
 }
 
-// -------------------------------------------------------------- AIBullet
-export class AIBullet implements Command {
-  constructor(private gi: GameInstance, private obj: SpaceObject) {}
-
-  execute(): void {
-    let target: SpaceObject | null = null;
-    let distTarget = 0;
-    const found: SpaceObject[] = [];
-    this.gi.map.octree.sphereSelectInteractive(
-      this.obj.sx, this.obj.sy, this.obj.sz, 8, found as unknown as import('../engine/octree').OctItem[],
-    );
-    for (const o of found) {
-      if (o !== this.obj && o.team !== this.obj.team) {
-        if (!target) {
-          target = o;
-          const dx = this.obj.pos[0] - o.pos[0];
-          const dy = this.obj.pos[1] - o.pos[1];
-          const dz = this.obj.pos[2] - o.pos[2];
-          distTarget = dx * dx + dy * dy + dz * dz;
-        } else {
-          const dx = this.obj.pos[0] - o.pos[0];
-          const dy = this.obj.pos[1] - o.pos[1];
-          const dz = this.obj.pos[2] - o.pos[2];
-          const distTemp = dx * dx + dy * dy + dz * dz;
-          if (distTemp < distTarget) {
-            distTarget = distTemp; // (original assigns swapped; equivalent outcome)
-            target = o;
-          }
-        }
-      }
-    }
-    if (target && target.active) {
-      steerTo(this.obj, target.pos[0], target.pos[1], target.pos[2], this.obj.physics.maxAngular);
-    }
-    vec3.scale(this.obj.accel, this.obj.dir, this.obj.physics.accelMax);
-    this.obj.update();
-  }
-}
-
-// -------------------------------------------------------------- AIHoming
 export class AIHoming implements Command {
   constructor(
     private gi: GameInstance, private obj: SpaceObject, private target: SpaceObject | null,
@@ -319,7 +252,7 @@ export class AIHoming implements Command {
 
   execute(): void {
     if (this.target && this.target.active) {
-      steerTo(this.obj, this.target.pos[0], this.target.pos[1], this.target.pos[2], this.obj.physics.maxAngular);
+      new AIPoint(this.obj, this.target).execute();
     }
     vec3.scale(this.obj.accel, this.obj.dir, this.obj.physics.accelMax);
     this.obj.update();
@@ -330,7 +263,6 @@ setAIHomingFactory(
   (gi: GameInstance, target: SpaceObject | null, self: HomingMissile) => new AIHoming(gi, self, target),
 );
 
-// ----------------------------------------------------------- AITimeTrial
 export class AITimeTrial implements Command {
   constructor(private gi: GameInstance, private obj: SpaceObject) {}
 
@@ -341,25 +273,20 @@ export class AITimeTrial implements Command {
   }
 }
 
-// --------------------------------------------------------------- HILocal
 export class HILocal implements Command {
   warning = false;
-  private inside = true;
+  inside = true;
 
   constructor(
-    private gi: GameInstance,
-    private obj: SpaceObject,
-    private control: Control,
-    private rc: RC,
+    private gi: GameInstance, private obj: SpaceObject,
+    private control: Control, private rc: RC,
   ) {}
 
   execute(): void {
     const o = this.obj;
     const c = this.control;
     const opts = this.rc.options;
-    // thrust
     vec3.scale(o.accel, o.dir, o.physics.accelMax * c.analogAcel.value);
-    // desired facing: current rot composed with stick yaw/pitch (±pi/2)
     const q = quat.create();
     ypr(
       q,
@@ -374,7 +301,6 @@ export class HILocal implements Command {
     const stickLen = Math.hypot(c.analogStick.value.x, c.analogStick.value.y);
     steerTo(o, want[0], want[1], want[2], o.physics.maxAngular * stickLen);
     o.update();
-    // leaving-field warning + teleport voice
     if (!o.insideMap) {
       if (!this.warning) this.gi.setNotification('leavingFieldOfBattle');
       this.warning = true;
@@ -386,8 +312,6 @@ export class HILocal implements Command {
       this.gi.setNotification('youWereTeleported');
     }
     this.inside = o.insideMap;
-    void this.inside;
-    // fire: lead first non-Base/non-Flag enemy in _distance, else dumbfire
     if (c.fireButton.value && o.canLaunchBullet()) {
       let executed = false;
       const found: SpaceObject[] = [];
@@ -409,13 +333,11 @@ export class HILocal implements Command {
   }
 }
 
-// ------------------------------------------------------- XM_Actions factories
 export function applyAction(gi: GameInstance, name: string, fromId: string, toId: string | null): void {
-  const from = gi.objects.get(fromId) as SpaceObject | undefined;
+  const from = gi.objects.get(fromId) as SpaceShip | undefined;
   if (!from) return;
   const to = toId ? (gi.objects.get(toId) as SpaceObject | undefined) : undefined;
-  const rc = gi.rc;
-  if (name === 'HILocal') from.intelligence = new HILocal(gi, from, gi.control, rc);
+  if (name === 'HILocal') from.intelligence = new HILocal(gi, from, gi.control, gi.rc);
   else if (name === 'AIBodyGuard' && to) from.intelligence = new AIBreak(gi, from, new AIFollow(gi, from, to, 128, 32));
   else if (name === 'AIFlagCap') from.intelligence = new AIBreak(gi, from, new AIFlagCap(gi, from, 128));
   else if (name === 'AIFlagProt' && from.team.flag) {

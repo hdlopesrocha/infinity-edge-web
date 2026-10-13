@@ -1,13 +1,6 @@
-// Control port: Core/Control/*.cs — touch buttons + keyboard + smoothing.
-// The view feeds pointer/keyboard state; update(w,h) computes values per the
-// original formulas. Draw state (counts, knob positions) is read by GameView.
+// Control 37_T verbatim: per-axis deadzone, playable-area stick, positions.
 
 import { clamp } from '../engine/math';
-
-export interface StickValue {
-  x: number;
-  y: number;
-}
 
 export interface Touch {
   x: number;
@@ -15,57 +8,46 @@ export interface Touch {
 }
 
 export class AnalogStick {
-  value: StickValue = { x: 0, y: 0 };
-  old: StickValue = { x: 0, y: 0 };
+  value = { x: 0, y: 0 };
+  old = { x: 0, y: 0 };
   pressing = false;
   enabled = false;
-  // geometry (set each update from canvas size)
   backX = 0;
   backY = 0;
   stickX = 0;
   stickY = 0;
   readonly backSize = 256;
   readonly stickSize = 96;
-  readonly areaPad = 64; // 2*margin32
+  readonly areaSize = 320; // 256 + 2*32 margin
 
-  reset(): void {
+  reset(_w: number, _h: number): void {
     this.old = { ...this.value };
     this.value = { x: 0, y: 0 };
   }
 
-  receiveTouch(x: number, y: number, w: number, h: number): void {
-    // playable area: left 2/3
+  receiveTouch(x: number, y: number, w: number): void {
     if (x > (2 * w) / 3) return;
     if (!this.enabled) {
-      // recenter area/back on finger
       this.backX = x - this.backSize / 2;
       this.backY = y - this.backSize / 2;
     }
     this.pressing = true;
-    const areaX = this.backX - 32;
-    const areaY = this.backY - 32;
-    const areaW = this.backSize + 64;
-    const areaH = this.backSize + 64;
-    void areaX; void areaY;
-    const right = this.backX + this.backSize;
     const bottom = this.backY + this.backSize;
-    void areaW; void areaH;
-    let vx = -clamp((right - x) / (this.backSize / 2) - 1, -1, 1);
+    const right = this.backX + this.backSize;
     let vy = -clamp((bottom - y) / (this.backSize / 2) - 1, -1, 1);
-    void w; void h;
-    if (Math.hypot(vx, vy) < 0.1) {
-      vx = 0;
-      vy = 0;
-    } else {
-      vx *= 1.1111;
-      vy *= 1.1111;
-    }
+    let vx = -clamp((right - x) / (this.backSize / 2) - 1, -1, 1);
+    // Per-axis deadzone + rescale (verbatim)
+    if (Math.abs(vx) < 0.1) vx = 0;
+    else if (vx < 0) vx = (vx + 0.1) * 1.1111;
+    else vx = (vx - 0.1) * 1.1111;
+    if (Math.abs(vy) < 0.1) vy = 0;
+    else if (vy < 0) vy = (vy + 0.1) * 1.1111;
+    else vy = (vy - 0.1) * 1.1111;
     this.value = { x: clamp(vx, -1, 1), y: clamp(vy, -1, 1) };
   }
 
   finish(): void {
     this.enabled = this.pressing;
-    // smoothing: lerp toward old (verbatim)
     this.value = {
       x: clamp(this.value.x + (this.old.x - this.value.x) * 0.7, -1, 1),
       y: clamp(this.value.y + (this.old.y - this.value.y) * 0.7, -1, 1),
@@ -75,27 +57,35 @@ export class AnalogStick {
       this.value.x /= l;
       this.value.y /= l;
     }
-    // stick knob offset: Center + Size*Value/2 - Stick/2 (verbatim)
-    this.stickX = this.backX + this.backSize / 2 + (this.backSize * this.value.x) / 2 - this.stickSize / 2;
-    this.stickY = this.backY + this.backSize / 2 + (this.backSize * this.value.y) / 2 - this.stickSize / 2;
+    this.stickX = this.backX + this.backSize / 2 + (this.backSize / 2) * this.value.x - this.stickSize / 2;
+    this.stickY = this.backY + this.backSize / 2 + (this.backSize / 2) * this.value.y - this.stickSize / 2;
   }
 }
 
 export class AnalogAcel {
   value = 0;
   old = 0;
+  // Area/Back rectangles: Area (W-96, H-400, 96x400); Back (Area.X+48, Area.Y+48, 16x304)
+  areaX = 0;
+  areaY = 0;
+  backX = 0;
+  backY = 0;
+  readonly backW = 16;
+  readonly backH = 400 - 96;
+  readonly knobSize = 96;
 
-  reset(): void {
+  reset(w: number, h: number): void {
     this.old = this.value;
-    this.value = 0; // Windows/no-touch default
+    this.areaX = w - 96;
+    this.areaY = h - 400;
+    this.backX = this.areaX + 48;
+    this.backY = this.areaY + 48;
+    this.value = 0; // WINDOWS branch
   }
 
-  receiveTouch(x: number, y: number, w: number, h: number): void {
-    const areaX = w - 96;
-    const areaY = h - 400;
-    if (x >= areaX && x <= areaX + 96 && y >= areaY && y <= areaY + 400) {
-      const bottom = areaY + 400;
-      this.value = clamp((bottom - y) / 400, 0, 1);
+  receiveTouch(x: number, y: number): void {
+    if (x >= this.areaX && x <= this.areaX + 96 && y >= this.areaY && y <= this.areaY + 400) {
+      this.value = clamp((this.backY + this.backH - y) / this.backH, 0, 1);
     }
   }
 
@@ -106,44 +96,54 @@ export class AnalogAcel {
 
 export class TouchButton {
   value = false;
+  // BackRectangle 96x96; AreaRectangle = Back (or offset 0 here)
+  x = 0;
+  y = 0;
+  readonly size = 96;
 
-  constructor(public rect: (w: number, h: number) => { x: number; y: number; w: number; h: number }) {}
+  constructor(private row: number) {}
 
-  reset(): void {
+  reset(w: number, h: number): void {
+    this.x = w - 96 - 128;
+    this.y = h - (96 + 32) * this.row;
     this.value = false;
   }
 
-  receiveTouch(x: number, y: number, w: number, h: number): void {
-    const r = this.rect(w, h);
-    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) this.value = true;
+  receiveTouch(tx: number, ty: number): void {
+    if (tx >= this.x && tx <= this.x + this.size && ty >= this.y && ty <= this.y + this.size) {
+      this.value = true;
+    }
   }
 }
 
 export class Control {
   analogStick = new AnalogStick();
   analogAcel = new AnalogAcel();
-  fireButton = new TouchButton((w, h) => ({ x: w - 96 - 128, y: h - 128 * 1, w: 96, h: 96 }));
-  homingButton = new TouchButton((w, h) => ({ x: w - 96 - 128, y: h - 128 * 2, w: 96, h: 96 }));
-  nitroButton = new TouchButton((w, h) => ({ x: w - 96 - 128, y: h - 128 * 3, w: 96, h: 96 }));
+  fireButton = new TouchButton(1);
+  homingButton = new TouchButton(2);
+  nitroButton = new TouchButton(3);
   homings = 0;
   nitroFrac = 0;
   keys = new Set<string>();
   touches = new Map<number, Touch>();
+  private w = 1280;
+  private h = 720;
 
-  /** Per-frame update (Control.Update verbatim, touch+keyboard). */
   update(w: number, h: number): void {
-    this.analogStick.reset();
-    this.analogAcel.reset();
-    this.fireButton.reset();
-    this.homingButton.reset();
-    this.nitroButton.reset();
+    this.w = w;
+    this.h = h;
+    this.analogStick.reset(w, h);
+    this.analogAcel.reset(w, h);
+    this.fireButton.reset(w, h);
+    this.homingButton.reset(w, h);
+    this.nitroButton.reset(w, h);
     this.analogStick.pressing = false;
     for (const t of this.touches.values()) {
-      this.analogStick.receiveTouch(t.x, t.y, w, h);
-      this.analogAcel.receiveTouch(t.x, t.y, w, h);
-      this.fireButton.receiveTouch(t.x, t.y, w, h);
-      this.homingButton.receiveTouch(t.x, t.y, w, h);
-      this.nitroButton.receiveTouch(t.x, t.y, w, h);
+      this.analogStick.receiveTouch(t.x, t.y, w);
+      this.analogAcel.receiveTouch(t.x, t.y);
+      this.fireButton.receiveTouch(t.x, t.y);
+      this.homingButton.receiveTouch(t.x, t.y);
+      this.nitroButton.receiveTouch(t.x, t.y);
     }
     const k = this.keys;
     const has = (...codes: string[]) => codes.some((c) => k.has(c));
@@ -155,10 +155,9 @@ export class Control {
     if (has('ControlLeft', 'KeyC')) this.analogAcel.value = 1;
     if (has('AltLeft', 'KeyM')) this.homingButton.value = true;
     if (has('ShiftLeft', 'ShiftRight', 'KeyN')) this.nitroButton.value = true;
-    if (has('Escape')) {
-      /* handled by view (back navigation) */
-    }
     this.analogStick.finish();
     this.analogAcel.finish();
+    void this.w;
+    void this.h;
   }
 }

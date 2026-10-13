@@ -6,12 +6,13 @@
     "save": "CTF_N.svg",
     "sky": "Sky2",
     "size": 2048,
-    "text": "Score by bringing the enemy's flag to your base. You have 5 minutes to win."
+    "text": ""
   },
   "imports": [
     "Content/Import/ModelConfig.xml",
     "Content/Import/TextureConfig.xml",
-    "Content/Import/TeamConfig.xml"
+    "Content/Import/TeamConfig.xml",
+    "Content/Import/GameInterface.xml"
   ],
   "objects": [
     {
@@ -270,6 +271,13 @@
       "model": "",
       "position": "random",
       "amount": 10000
+    },
+    {
+      "team": "ambient",
+      "type": "cloud",
+      "model": "",
+      "position": "random",
+      "amount": 1000
     }
   ],
   "camara": {
@@ -414,5 +422,10 @@
         }
       ]
     }
-  ]
+  ],
+  "menuText": "Score by bringing the enemy's flag to your base. You have 5 minutes to win.",
+  "scoreBoard": {
+    "type": "CTF",
+    "save": "CTF_N.svg"
+  }
 }

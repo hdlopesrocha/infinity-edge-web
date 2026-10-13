@@ -1,6 +1,5 @@
-// Converted-model JSON format + GPU loader + validation + ray intersect.
-// Format: tools/convert-fbx.mjs output. Single LOD per file; detail LODs in
-// sibling <Alias>_lod<N>.json files.
+// Model JSON + loader: validation, LOD + fade (Model3D.Draw verbatim),
+// model/color variants, mesh-sphere ray tests.
 
 import { mat4, quat, vec3 } from './math';
 
@@ -30,6 +29,7 @@ export interface ConvertedModel {
   generator: string;
   upAxis: 'Y' | 'Z';
   units: string;
+  importTransform?: { scale: number; rotX: number; rotY: number; rotZ: number };
   boundingSphere: { center: [number, number, number]; radius: number };
   boundingBox: { min: [number, number, number]; max: [number, number, number] };
   meshes: ConvertedMesh[];
@@ -44,11 +44,8 @@ export interface GpuMesh {
   uvbo: WebGLBuffer | null;
   ibo: WebGLBuffer | null;
   indexCount: number;
-  indexType: number; // UNSIGNED_SHORT / UNSIGNED_INT
+  indexType: number;
   materialIndex: number;
-  /** CPU copies for ray-mesh tests (BulletHit). */
-  positions: Float32Array;
-  indices: Uint16Array | Uint32Array;
   bounds: { center: vec3; radius: number };
 }
 
@@ -61,7 +58,7 @@ export interface GpuModel {
 }
 
 const cache = new Map<string, GpuModel>();
-const pending = new Map<string, Promise<GpuModel>>();
+const pending = new Map<string, Promise<GpuModel | null>>();
 
 export function validateModel(m: unknown): asserts m is ConvertedModel {
   const mm = m as ConvertedModel;
@@ -74,10 +71,6 @@ export function validateModel(m: unknown): asserts m is ConvertedModel {
       throw new Error(`Mesh ${mesh.name}: bad positions`);
     if (!Array.isArray(mesh.indices) || mesh.indices.length % 3 !== 0)
       throw new Error(`Mesh ${mesh.name}: bad indices`);
-    if (mesh.normals.length !== 0 && mesh.normals.length !== mesh.positions.length)
-      throw new Error(`Mesh ${mesh.name}: normals length mismatch`);
-    if (mesh.uvs.length !== 0 && mesh.uvs.length !== (mesh.positions.length / 3) * 2)
-      throw new Error(`Mesh ${mesh.name}: uv length mismatch`);
   }
   if (!mm.boundingSphere || typeof mm.boundingSphere.radius !== 'number')
     throw new Error('Model missing boundingSphere');
@@ -165,36 +158,35 @@ export function createGpuModel(gl: WebGL2RenderingContext, data: ConvertedModel)
       indexCount: mesh.indices.length,
       indexType: idx instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
       materialIndex: mesh.material ? (matIndex.get(mesh.material) ?? 0) : 0,
-      positions: pos, indices: idx, bounds: meshBounds(pos),
+      bounds: meshBounds(pos),
     };
   });
-  const sphere = {
-    center: vec3.fromValues(...data.boundingSphere.center),
-    radius: data.boundingSphere.radius,
+  return {
+    meshes,
+    materials: data.materials,
+    boundingSphere: { center: vec3.fromValues(...data.boundingSphere.center), radius: data.boundingSphere.radius },
+    boundingBox: {
+      min: vec3.fromValues(...data.boundingBox.min),
+      max: vec3.fromValues(...data.boundingBox.max),
+    },
+    source: data.source,
   };
-  const box = {
-    min: vec3.fromValues(...data.boundingBox.min),
-    max: vec3.fromValues(...data.boundingBox.max),
-  };
-  return { meshes, materials: data.materials, boundingSphere: sphere, boundingBox: box, source: data.source };
 }
 
-export async function loadModel(gl: WebGL2RenderingContext, url: string): Promise<GpuModel> {
+export async function loadModelOptional(gl: WebGL2RenderingContext, url: string): Promise<GpuModel | null> {
   const hit = cache.get(url);
   if (hit) return hit;
   const p = pending.get(url);
   if (p) return p;
-  const job = (async () => {
+  const job: Promise<GpuModel | null> = (async () => {
     try {
       const res = await fetch(url);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) return null;
       const gpu = createGpuModel(gl, (await res.json()) as ConvertedModel);
       cache.set(url, gpu);
       return gpu;
     } catch {
-      const gpu = createGpuModel(gl, proceduralFallback(url));
-      cache.set(url, gpu);
-      return gpu;
+      return null;
     }
   })();
   pending.set(url, job);
@@ -202,105 +194,53 @@ export async function loadModel(gl: WebGL2RenderingContext, url: string): Promis
   return job;
 }
 
-export function disposeModel(gl: WebGL2RenderingContext, url: string): void {
-  const m = cache.get(url);
-  if (!m) return;
-  for (const mesh of m.meshes) {
-    gl.deleteBuffer(mesh.vbo);
-    gl.deleteBuffer(mesh.nbo);
-    gl.deleteBuffer(mesh.uvbo);
-    gl.deleteBuffer(mesh.ibo);
-    gl.deleteVertexArray(mesh.vao);
-  }
-  cache.delete(url);
+export async function loadModel(gl: WebGL2RenderingContext, url: string): Promise<GpuModel> {
+  const g = await loadModelOptional(gl, url);
+  if (g) return g;
+  const fb = createGpuModel(gl, proceduralFallback(url));
+  cache.set(url, fb);
+  return fb;
 }
 
-// --- Ray vs model (Model3D.Intersects port for BulletHit) ---
-// Tests per-mesh world spheres first, then triangles (Möller–Trumbore).
-// Returns nearest distance along the ray, or null.
-
-const _e1 = new Float32Array(3);
-const _e2 = new Float32Array(3);
-const _tv = new Float32Array(3);
-
-function rayTri(
-  ox: number, oy: number, oz: number, dx: number, dy: number, dz: number,
-  ax: number, ay: number, az: number, bx: number, by: number, bz: number,
-  cx: number, cy: number, cz: number,
-): number | null {
-  const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
-  const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
-  const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
-  const det = e1x * px + e1y * py + e1z * pz;
-  if (det > -1e-9 && det < 1e-9) return null;
-  const inv = 1 / det;
-  const tx = ox - ax, ty = oy - ay, tz = oz - az;
-  const u = (tx * px + ty * py + tz * pz) * inv;
-  if (u < 0 || u > 1) return null;
-  const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
-  const v = (dx * qx + dy * qy + dz * qz) * inv;
-  if (v < 0 || u + v > 1) return null;
-  const t = (e2x * qx + e2y * qy + e2z * qz) * inv;
-  return t > 1e-9 ? t : null;
+/** LOD + fade verbatim (Model3D.Draw). */
+export function selectLod(
+  lods: (GpuModel | null)[],
+  camDistance: number,
+  detail: number,
+  viewDistance: number,
+): { gpu: GpuModel; alpha: number } | null {
+  const models = Math.max(1, lods.length);
+  const j = Math.max(0, Math.min(models - 1, Math.floor((3 * camDistance) / viewDistance + detail)));
+  const gpu = lods[j] ?? lods[0];
+  if (!gpu) return null;
+  return { gpu, alpha: Math.max(0, Math.min(1, (viewDistance - camDistance) / 32)) };
 }
 
-/** Ray (origin, dir normalized) vs model under world matrix. */
+/** Mesh-sphere ray test (Model3D.Intersects(Ray,Matrix,Model)). */
 export function rayIntersectModel(
-  model: GpuModel,
-  world: mat4,
-  ox: number, oy: number, oz: number,
-  dx: number, dy: number, dz: number,
+  model: GpuModel, world: mat4,
+  ox: number, oy: number, oz: number, dx: number, dy: number, dz: number,
 ): number | null {
-  // Transform ray to model space once per mesh via inverse matrix.
-  const inv = mat4.create();
-  mat4.invert(inv, world);
-  const im = inv as unknown as Float32Array;
-  // origin (w=1) and direction (w=0) transform
-  let best: number | null = null;
-  void _e1; void _e2; void _tv;
+  let closest: number | null = null;
   for (const mesh of model.meshes) {
-    // world-space coarse sphere test
     const c = mesh.bounds.center;
-    const wx = world[0] * c[0] + world[4] * c[1] + world[8] * c[2] + world[12];
-    const wy = world[1] * c[0] + world[5] * c[1] + world[9] * c[2] + world[13];
-    const wz = world[2] * c[0] + world[6] * c[1] + world[10] * c[2] + world[14];
-    const sx = Math.hypot(world[0], world[1], world[2]);
+    const m = world as unknown as Float32Array;
+    const wx = m[0] * c[0] + m[4] * c[1] + m[8] * c[2] + m[12];
+    const wy = m[1] * c[0] + m[5] * c[1] + m[9] * c[2] + m[13];
+    const wz = m[2] * c[0] + m[6] * c[1] + m[10] * c[2] + m[14];
+    const sx = Math.hypot(m[0], m[1], m[2]);
     const wr = mesh.bounds.radius * sx;
-    // ray-sphere
     const ocx = wx - ox, ocy = wy - oy, ocz = wz - oz;
     const tca = ocx * dx + ocy * dy + ocz * dz;
     const d2 = ocx * ocx + ocy * ocy + ocz * ocz - tca * tca;
     if (d2 > wr * wr) continue;
-    // model-space ray
-    const mox = im[0] * ox + im[4] * oy + im[8] * oz + im[12];
-    const moy = im[1] * ox + im[5] * oy + im[9] * oz + im[13];
-    const moz = im[2] * ox + im[6] * oy + im[10] * oz + im[14];
-    let mdx = im[0] * dx + im[4] * dy + im[8] * dz;
-    let mdy = im[1] * dx + im[5] * dy + im[9] * dz;
-    let mdz = im[2] * dx + im[6] * dy + im[10] * dz;
-    const ml = Math.hypot(mdx, mdy, mdz) || 1;
-    mdx /= ml; mdy /= ml; mdz /= ml;
-    const pos = mesh.positions, idx = mesh.indices;
-    for (let i = 0; i < idx.length; i += 3) {
-      const a = idx[i] * 3, b = idx[i + 1] * 3, cc = idx[i + 2] * 3;
-      const t = rayTri(
-        mox, moy, moz, mdx, mdy, mdz,
-        pos[a], pos[a + 1], pos[a + 2],
-        pos[b], pos[b + 1], pos[b + 2],
-        pos[cc], pos[cc + 1], pos[cc + 2],
-      );
-      if (t !== null) {
-        // convert model-space t to world distance (approx by scale)
-        const wt = t * sx;
-        if (best === null || wt < best) best = wt;
-      }
-    }
+    const t = tca - Math.sqrt(Math.max(0, wr * wr - d2));
+    if (t >= 0 && (closest === null || t < closest)) closest = t;
   }
-  return best;
+  return closest;
 }
 
-// --- Procedural fallbacks (missing assets never break the scene) ---
-function finalize(url: string, positions: number[], indices: number[], texture?: string): ConvertedModel {
+function finalize(url: string, positions: number[], indices: number[]): ConvertedModel {
   const pos = new Float32Array(positions);
   const b = meshBounds(pos);
   return {
@@ -314,7 +254,7 @@ function finalize(url: string, positions: number[], indices: number[], texture?:
     }],
     materials: [{
       name: 'mat0', diffuse: [0.75, 0.78, 0.85], emissive: [0, 0, 0],
-      specular: [0.68, 0.85, 1], shininess: 32, alpha: 1, ...(texture ? { texture } : {}),
+      specular: [0.68, 0.85, 1], shininess: 32, alpha: 1,
     }],
   };
 }
@@ -323,7 +263,8 @@ export function proceduralFallback(url: string): ConvertedModel {
   const name = url.toLowerCase();
   if (name.includes('sky')) return makeSky(url);
   if (name.includes('ark')) return makeTorus(url);
-  if (name.includes('asteroid') || name.includes('planet') || name.includes('wheel')) return makeRock(url);
+  if (name.includes('asteroid')) return makeRock(url, 6);
+  if (name.includes('planet')) return makeRock(url, 1);
   if (name.includes('bullet') || name.includes('missile')) return makeBolt(url);
   if (name.includes('flag')) return makeFlag(url);
   if (name.includes('base')) return makeBase(url);
@@ -332,19 +273,19 @@ export function proceduralFallback(url: string): ConvertedModel {
 
 function makeFighter(url: string): ConvertedModel {
   const p = [
-    0, 0, 3.2, -0.5, 0.15, 0.6, 0.5, 0.15, 0.6,
-    0, 0, 3.2, 0.5, 0.15, 0.6, 0.5, -0.15, 0.6,
-    0, 0, 3.2, 0.5, -0.15, 0.6, -0.5, -0.15, 0.6,
-    0, 0, 3.2, -0.5, -0.15, 0.6, -0.5, 0.15, 0.6,
-    0, 0.1, -1.6, -2.6, 0, -1.2, -0.5, 0.1, -1.0,
-    0, 0.1, -1.6, 0.5, 0.1, -1.0, 2.6, 0, -1.2,
+    0, 0, 0.4, -0.18, 0.02, 0.07, 0.18, 0.02, 0.07,
+    0, 0, 0.4, 0.18, 0.02, 0.07, 0.18, -0.02, 0.07,
+    0, 0, 0.4, 0.18, -0.02, 0.07, -0.18, -0.02, 0.07,
+    0, 0, 0.4, -0.18, -0.02, 0.07, -0.18, 0.02, 0.07,
+    0, 0.01, -0.2, -0.32, 0, -0.14, -0.05, 0.01, -0.12,
+    0, 0.01, -0.2, 0.05, 0.01, -0.12, 0.32, 0, -0.14,
   ];
   const idx: number[] = [];
   for (let i = 0; i < p.length / 9; i++) idx.push(i * 3, i * 3 + 1, i * 3 + 2);
   return finalize(url, p, idx);
 }
 
-function makeSky(url: string, r = 900): ConvertedModel {
+function makeSky(url: string, r = 76): ConvertedModel {
   const p: number[] = [], idx: number[] = [];
   const lat = 12, lon = 20;
   for (let i = 0; i <= lat; i++) {
@@ -362,7 +303,7 @@ function makeSky(url: string, r = 900): ConvertedModel {
   return finalize(url, p, idx);
 }
 
-function makeRock(url: string, r = 4): ConvertedModel {
+function makeRock(url: string, r = 6): ConvertedModel {
   const t = (1 + Math.sqrt(5)) / 2;
   const v = [
     [-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t],
@@ -379,7 +320,7 @@ function makeRock(url: string, r = 4): ConvertedModel {
   return finalize(url, p, idx);
 }
 
-function makeTorus(url: string, R = 6, r = 1): ConvertedModel {
+function makeTorus(url: string, R = 6.5, r = 1): ConvertedModel {
   const p: number[] = [], idx: number[] = [];
   const seg = 10, rings = 20;
   for (let i = 0; i <= rings; i++) {
@@ -398,14 +339,14 @@ function makeTorus(url: string, R = 6, r = 1): ConvertedModel {
 }
 
 function makeBolt(url: string): ConvertedModel {
-  const p = [0, 0, 1.2, -0.25, 0, 0.4, 0.25, 0, 0.4, 0.25, 0, 0.4, 0.25, 0, -0.8, -0.25, 0, -0.8];
+  const p = [0, 0, 0.3, -0.06, 0, 0.1, 0.06, 0, 0.1, 0.06, 0, 0.1, 0.06, 0, -0.2, -0.06, 0, -0.2];
   return finalize(url, p, [0, 1, 2, 3, 4, 5]);
 }
 
 function makeFlag(url: string): ConvertedModel {
   const p = [
-    0, 0, 0, 0, 4, 0, 0.12, 0, 0.12, 0, 4, 0, 0.12, 0, 0.12, 0.12, 0, 0.12,
-    0.12, 4, 0.12, 0.12, 0, 0.12, 3, 3.6, 0.12, 0.12, 3.4, 0.12, 3, 3.2, 0.12,
+    0, 0, 0, 0, 1, 0, 0.03, 0, 0.03, 0, 1, 0, 0.03, 0, 0.03, 0.03, 0, 0.03,
+    0.03, 1, 0.03, 0.03, 0, 0.03, 0.75, 0.9, 0.03, 0.03, 0.85, 0.03, 0.75, 0.8, 0.03,
   ];
   const idx: number[] = [];
   for (let i = 0; i < p.length / 9; i++) idx.push(i * 3, i * 3 + 1, i * 3 + 2);
@@ -413,10 +354,10 @@ function makeFlag(url: string): ConvertedModel {
 }
 
 function makeBase(url: string): ConvertedModel {
-  const p: number[] = [0, 0.4, 0];
+  const p: number[] = [0, 0.1, 0];
   for (let i = 0; i <= 6; i++) {
     const a = (i / 6) * Math.PI * 2;
-    p.push(Math.cos(a) * 6, 0.4, Math.sin(a) * 6);
+    p.push(Math.cos(a) * 5, 0.1, Math.sin(a) * 5);
   }
   const idx: number[] = [];
   for (let i = 1; i <= 6; i++) idx.push(0, i, i + 1);

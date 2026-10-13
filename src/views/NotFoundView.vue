@@ -1,11 +1,10 @@
-<!-- Unknown routes: graceful fallback, background unchanged. -->
+<!-- Unknown route: empty chrome only (no invented text). -->
 <script setup lang="ts">
 import MenuShell from '../components/MenuShell.vue';
 </script>
 
 <template>
-  <MenuShell primary="menu" primary-to="/menu">
-    <template #left><div class="menu-title">Unknown route</div></template>
-    <template #right><div class="menu-text">This screen does not exist. The background scene is unchanged.</div></template>
+  <MenuShell wide primary="menu" primary-to="/menu">
+    <template #left></template>
   </MenuShell>
 </template>

@@ -1,15 +1,19 @@
-// Copy textures + sounds + model icons from the XNA content tree.
-// Usage: node tools/copy-assets.mjs
-// UI textures keep alias names; object diffuse textures are namespaced
-// <Folder>__<file>; model icons become <Alias>_icon.png (DrawPointer markers).
-
+// Copy textures + sounds + icons (IE3D_37_T). Sanitized object filenames.
 import { basename, dirname, join } from 'node:path';
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, '..');
-const content = join(webRoot, '..', 'InfinityEdge3D', 'InfinityEdge', 'InfinityEdgeContent');
+const content = (() => {
+  const candidates = [
+    join(webRoot, '..', 'IE3D_37_T', 'InfinityEdge3D', 'InfinityEdge', 'InfinityEdgeContent'),
+    join(webRoot, '..', 'IE3D_37_T', 'InfinityEdge', 'InfinityEdgeContent'),
+  ];
+  for (const c of candidates) if (existsSync(c)) return c;
+  return candidates[0];
+})();
+const sanitize = (s) => s.replace(/[^a-zA-Z0-9_.-]/g, '_');
 
 const TEXTURE_ALIASES = {
   _menubtn: 'System/menubtn', _buttonLU: 'System/buttonLU', _buttonRU: 'System/buttonRU',
@@ -46,7 +50,7 @@ function findFile(baseNoExt) {
     for (const f of readdirSync(dir)) {
       if (f.toLowerCase().startsWith(want) && /\.(png|jpe?g)$/i.test(f)) return join(dir, f);
     }
-  } catch { /* missing dir */ }
+  } catch { /* missing */ }
   return null;
 }
 
@@ -73,20 +77,20 @@ try {
     try { files = readdirSync(dir); } catch { continue; }
     for (const f of files) {
       if (!/\.(png|jpe?g)$/i.test(f)) continue;
-      copyFileSync(join(dir, f), join(objOut, `${folder}__${f}`));
+      copyFileSync(join(dir, f), join(objOut, sanitize(`${folder}__${f}`)));
       if (/^icon\./i.test(f)) copyFileSync(join(dir, f), join(texOut, `${folder}_icon.png`));
       copied++;
     }
   }
-} catch { /* no objects dir */ }
+} catch { /* none */ }
 
 const sndOut = join(webRoot, 'public', 'assets', 'sounds');
 mkdirSync(sndOut, { recursive: true });
 try {
   for (const f of readdirSync(join(content, 'Sounds'))) {
-    if (/\.(wav|mp3|wma)$/i.test(f)) { copyFileSync(join(content, 'Sounds', f), join(sndOut, f)); copied++; }
+    if (/\.(wav|mp3|wma)$/i.test(f)) { copyFileSync(join(content, 'Sounds', f), join(sndOut, sanitize(f))); copied++; }
   }
-} catch { /* no sounds dir */ }
+} catch { /* none */ }
 try {
   const mp3 = join(content, 'sound.mp3');
   if (existsSync(mp3)) { copyFileSync(mp3, join(sndOut, 'sound.mp3')); copied++; }

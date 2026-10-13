@@ -1,7 +1,4 @@
-// GLSL reproducing XNA BasicEffect (Model3D.Draw: per-pixel, 1 dir light,
-// ambient, LightBlue specular, emissive, alpha) + unlit path (Draws.cs,
-// Sky.Draw with LightingEnabled=false) + instanced environment + points
-// (ministars) + camera-facing billboards (DrawBillBoard/TextureSquare).
+// BasicEffect-exact GLSL: ambient 0.001, LightBlue spec 1024, per-pixel.
 
 export const LIT_VERT = `#version 300 es
 layout(location=0) in vec3 aPos;
@@ -55,54 +52,7 @@ void main() {
   oColor = vec4(uColor * t.rgb, uAlpha * t.a);
 }`;
 
-export const INST_VERT = `#version 300 es
-layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aNormal;
-layout(location=2) in vec2 aUV;
-layout(location=3) in vec4 iM0; layout(location=4) in vec4 iM1;
-layout(location=5) in vec4 iM2; layout(location=6) in vec4 iM3;
-uniform mat4 uView; uniform mat4 uProj;
-out vec3 vN; out vec3 vW; out vec2 vUV;
-void main() {
-  mat4 W = mat4(iM0, iM1, iM2, iM3);
-  vec4 w = W * vec4(aPos, 1.0);
-  vW = w.xyz; vN = mat3(W) * aNormal; vUV = aUV;
-  gl_Position = uProj * uView * w;
-}`;
-
-export const INST_FRAG = `#version 300 es
-precision highp float;
-in vec3 vN; in vec3 vW; in vec2 vUV;
-uniform sampler2D uTex; uniform bool uHasTex;
-uniform vec3 uDiffuse; uniform vec3 uAmbient; uniform vec3 uLightDir;
-uniform vec3 uLightDiffuse; uniform float uAlpha;
-out vec4 oColor;
-void main() {
-  vec4 t = uHasTex ? texture(uTex, vUV) : vec4(1.0);
-  vec3 base = uDiffuse * t.rgb;
-  float nd = max(dot(normalize(vN), normalize(uLightDir)), 0.0);
-  oColor = vec4(base * (uAmbient + uLightDiffuse * nd), uAlpha * t.a);
-}`;
-
-export const STAR_VERT = `#version 300 es
-layout(location=0) in vec3 aPos;
-uniform mat4 uView; uniform mat4 uProj; uniform float uSize;
-void main() {
-  gl_Position = uProj * uView * vec4(aPos, 1.0);
-  gl_PointSize = clamp(uSize * 900.0 / max(1.0, length(aPos)), 1.0, 5.0);
-}`;
-
-export const STAR_FRAG = `#version 300 es
-precision highp float;
-uniform vec3 uColor; uniform float uAlpha;
-out vec4 oColor;
-void main() {
-  float m = smoothstep(0.5, 0.15, length(gl_PointCoord - vec2(0.5)));
-  oColor = vec4(uColor, uAlpha * m);
-}`;
-
 export const BB_VERT = `#version 300 es
-// Camera-facing quad: aCorner in [-1,1]^2 from a shared static VBO.
 layout(location=0) in vec2 aCorner;
 uniform vec3 uCenter; uniform float uSize;
 uniform vec3 uRight; uniform vec3 uUp;

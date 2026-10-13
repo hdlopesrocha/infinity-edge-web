@@ -1,6 +1,4 @@
-<!-- Persistent WebGL host: Renderer + RC live across routes; the active
-     GameInstance rebuilds when the scene key changes (background BACK vs
-     level). Keyboard/pointer feed instance.control; BACK drag orbits. -->
+<!-- Persistent WebGL host: Renderer + RC + active GameInstance. -->
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -19,28 +17,29 @@ let renderer: Renderer | null = null;
 let rc: RC | null = null;
 let instance: GameInstance | null = null;
 let building = '';
+let buildGen = 0;
 let sceneTimer = 0;
 let menuDrag: { x: number; y: number } | null = null;
 
-function current(): GameInstance | null {
-  return instance;
-}
-
 async function rebuild(): Promise<void> {
   if (!renderer || !rc) return;
-  const key = store.sceneKey === 'background' ? 'background' : store.sceneKey;
-  if (building === key + '|' + store.options.billboards) return;
-  building = key + '|' + store.options.billboards;
+  const key = store.sceneKey;
+  const token = key + '|' + store.options.billboards;
+  if (building === token) return;
+  building = token;
+  const gen = ++buildGen;
   try {
     const def = await loadLevel(key);
-    const gi = await GameInstance.create(renderer, rc, def);
+    const gi = await GameInstance.create(renderer, rc, def, store.levelText);
+    // Stale-build drop: a newer rebuild started while we were loading.
+    if (gen !== buildGen) return;
     gi.canvasW = canvasRef.value?.clientWidth || 1280;
     gi.canvasH = canvasRef.value?.clientHeight || 720;
     instance = gi;
     (window as unknown as { __ieGame?: GameInstance }).__ieGame = gi;
   } catch (e) {
     glError.value = 'Scene failed: ' + (e as Error).message;
-    building = '';
+    if (gen === buildGen) building = '';
   }
 }
 
@@ -80,7 +79,6 @@ function onPointerMove(e: PointerEvent): void {
   if (!instance || !renderer) return;
   const p = canvasPos(e);
   if (menuDrag && instance.gameType === 'BACK') {
-    // menu orbit: drag rotates the auto-orbit angle directly
     const dx = p.x - menuDrag.x;
     renderer.camera.orbitAngle = (renderer.camera.orbitAngle + dx * 0.3) % 360;
     menuDrag = p;
@@ -102,6 +100,7 @@ onMounted(() => {
     syncOptionsFromRC(rc.options);
     audio.setMusicVolume(rc.options.musicVolume);
     (window as unknown as { __ieRenderer?: Renderer }).__ieRenderer = renderer;
+    (window as unknown as { __ieStore?: typeof store }).__ieStore = store;
     (window as unknown as { __ieRC?: RC }).__ieRC = rc;
     renderer.onRebuilt = () => {
       building = '';
@@ -112,7 +111,7 @@ onMounted(() => {
       instance.canvasW = canvasRef.value?.clientWidth || 1280;
       instance.canvasH = canvasRef.value?.clientHeight || 720;
       instance.update(dtMs);
-      renderer.beginFrame(dtMs);
+      renderer.beginFrame();
       instance.draw();
       if (instance.result && store.route === 'game') {
         const lv = store.levelKey;
@@ -126,9 +125,8 @@ onMounted(() => {
     renderer.start();
     sceneTimer = window.setInterval(() => {
       void rebuild();
-      if (rc && (store.options.distance !== rc.options.distance || store.options.billboards !== rc.options.billboards)) {
-        // live option sync without rebuild where possible
-        renderer!.camera.far = store.options.distance;
+      if (renderer && rc && store.options.distance !== rc.options.distance) {
+        renderer.camera.far = store.options.distance;
       }
     }, 300);
     window.addEventListener('keydown', onKeyDown);
@@ -146,8 +144,6 @@ onBeforeUnmount(() => {
   renderer = null;
   instance = null;
 });
-
-void current;
 </script>
 
 <template>
@@ -160,6 +156,6 @@ void current;
     @pointercancel="onPointerUp"
   ></canvas>
   <div v-if="glError" class="hud">
-    <div class="hud-notify">{{ glError }} — UI remains usable.</div>
+    <div class="hud-notify">{{ glError }}</div>
   </div>
 </template>

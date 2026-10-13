@@ -1,6 +1,4 @@
-// Level catalogue: converted Level.xml JSON + route mapping.
-// The app loads the real converted data at runtime (public/assets/levels)
-// so every level keeps its exact objects/actions/goals/texts.
+// Level catalogue over converted Level.xml JSON.
 
 export interface LevelObjectJson {
   team: string;
@@ -31,20 +29,17 @@ export interface LevelGoalSetJson {
 
 export interface LevelJson {
   source: string;
-  description: {
-    type: string;
-    name: string;
-    save: string;
-    sky: string;
-    size: number;
-    text: string;
-  };
+  description: { type: string; name: string; save: string; sky: string; size: number; text: string };
   imports: string[];
   importGhost?: string;
   objects: LevelObjectJson[];
   camara: { name: string; value: string };
   actions: LevelActionJson[];
   goals: LevelGoalSetJson[];
+  /** Briefing textBox text from the sibling Menu.xml. */
+  menuText?: string;
+  /** scoreBoard tag from the sibling Menu.xml. */
+  scoreBoard?: { type: string; save: string };
 }
 
 export interface LevelDef extends LevelJson {
@@ -79,8 +74,7 @@ export async function loadLevel(key: string): Promise<LevelDef> {
   if (!file) throw new Error('Unknown level: ' + key);
   const res = await fetch(BASE + file);
   if (!res.ok) throw new Error('Level not found: ' + file);
-  const json = (await res.json()) as LevelJson;
-  const def: LevelDef = { ...json, key };
+  const def: LevelDef = { ...((await res.json()) as LevelJson), key };
   cache.set(key, def);
   return def;
 }
@@ -92,16 +86,3 @@ export const TT_GROUPS = [
 ] as const;
 
 export const CTF_LEVELS = ['ctf-easy', 'ctf-normal', 'ctf-hard'] as const;
-
-export function trackLabel(key: string): string {
-  if (key.startsWith('tt-hard')) return 'Demo Track';
-  const m = key.match(/(\d+)$/);
-  return 'Track ' + String(Number(m?.[1] ?? 1)).padStart(2, '0');
-}
-
-export function groupOf(key: string): (typeof TT_GROUPS)[number] | null {
-  for (const g of TT_GROUPS) {
-    if ((g.tracks as readonly string[]).includes(key)) return g;
-  }
-  return null;
-}

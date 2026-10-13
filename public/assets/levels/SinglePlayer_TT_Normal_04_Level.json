@@ -6,12 +6,13 @@
     "save": "TT_N_04.svg",
     "sky": "Sky2",
     "size": 2048,
-    "text": "Make a vertical looping. Be careful! Control your speed and take down some asteroids."
+    "text": ""
   },
   "imports": [
     "Content/Import/ModelConfig.xml",
     "Content/Import/TextureConfig.xml",
-    "Content/Import/TeamConfig.xml"
+    "Content/Import/TeamConfig.xml",
+    "Content/Import/GameInterface.xml"
   ],
   "importGhost": "TT_N_04.ghs",
   "objects": [
@@ -174,6 +175,13 @@
       "model": "",
       "position": "random",
       "amount": 10000
+    },
+    {
+      "team": "ambient",
+      "type": "cloud",
+      "model": "",
+      "position": "random",
+      "amount": 1000
     }
   ],
   "camara": {
@@ -242,5 +250,10 @@
         }
       ]
     }
-  ]
+  ],
+  "menuText": "Begin with an S turn and finish in a straight line.",
+  "scoreBoard": {
+    "type": "TT",
+    "save": "TT_N_04.svg"
+  }
 }

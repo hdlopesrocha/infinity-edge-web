@@ -1,21 +1,14 @@
-// Ghost recording + playback: GhostRecord.cs / .ghs importGhost port.
-// Records player pos+quat+team-clock each frame (UpdateObjectUI); on Victory
-// with a new best score the file is saved (framed binary protocol, gzip).
-// Playback advances past records older than the selected team's clock and
-// draws the ship model at 50% alpha (GameInstance.Draw verbatim).
+// GhostRecord port (37_T): per-frame capture, framed+gzip persistence,
+// XML .ghs shape for export, playback cursor.
 
 import { quat, vec3 } from '../engine/math';
 import { decodeMessage, encodeMessage, MsgType } from './net';
-import { parseTimeSpanFull, timeSpanToString } from './team';
+import { timeSpanToString } from './team';
 
 export interface GhostRecord {
   pos: vec3;
   rot: quat;
   timeMs: number;
-}
-
-export function ghostKey(ghostFile: string): string {
-  return ghostFile;
 }
 
 function toB64(bytes: Uint8Array): string {
@@ -80,9 +73,7 @@ export async function deserializeGhost(
 export function saveGhostFile(ghostFile: string, records: GhostRecord[]): void {
   try {
     localStorage.setItem(ghostFile, toB64(serializeGhost(ghostFile, records)));
-  } catch {
-    /* storage unavailable */
-  }
+  } catch { /* ignore */ }
 }
 
 export async function loadGhostFile(ghostFile: string): Promise<GhostRecord[] | null> {
@@ -104,7 +95,7 @@ export function hasGhostFile(ghostFile: string): boolean {
   }
 }
 
-/** Legacy .ghs XML text (original file format) for export/debugging. */
+/** Legacy .ghs XML shape (importGhost format) for export. */
 export function ghostToXml(ghostFile: string, records: GhostRecord[]): string {
   let xml = `<import><ghosts directory="${ghostFile}">`;
   for (const r of records) {
@@ -113,5 +104,3 @@ export function ghostToXml(ghostFile: string, records: GhostRecord[]): string {
   }
   return xml + `</ghosts></import>`;
 }
-
-export { parseTimeSpanFull };

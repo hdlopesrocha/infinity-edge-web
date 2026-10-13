@@ -1,5 +1,4 @@
-// Physics presets (Physics.cs verbatim) + NextPosition integration +
-// intercept solver (PreviewDirection) + cubic clamp.
+// Physics presets verbatim + NextPosition (vel>0 gate) + PreviewDirection.
 
 import { ObKind } from '../engine/octree';
 import { vec3 } from '../engine/math';
@@ -32,41 +31,29 @@ export interface BodyState {
   vel: vec3;
   accel: vec3;
   multiplier: number;
-  friction: number; // model._friction (1)
+  friction: number;
   physics: Physics;
 }
 
-/** Object3D.NextPosition verbatim (dt in ms). */
 export function nextPosition(b: BodyState, dtMs: number): void {
   const dt = dtMs / 1000;
   const m = b.multiplier;
-  const ax = b.accel[0] * m - b.friction * b.vel[0];
-  const ay = b.accel[1] * m - b.friction * b.vel[1];
-  const az = b.accel[2] * m - b.friction * b.vel[2];
-  b.vel[0] += ax * dt;
-  b.vel[1] += ay * dt;
-  b.vel[2] += az * dt;
-  const cap = b.physics.velMax * m;
-  const sp = vec3.length(b.vel);
-  if (sp > cap && sp > 0) vec3.scale(b.vel, b.vel, cap / sp);
-  if (sp > 0) {
+  b.vel[0] += (b.accel[0] * m - b.friction * b.vel[0]) * dt;
+  b.vel[1] += (b.accel[1] * m - b.friction * b.vel[1]) * dt;
+  b.vel[2] += (b.accel[2] * m - b.friction * b.vel[2]) * dt;
+  const len = vec3.length(b.vel);
+  const max = b.physics.velMax * m;
+  if (len > 0) {
+    if (len > max) vec3.scale(b.vel, b.vel, max / len);
     b.pos[0] += b.vel[0] * dt;
     b.pos[1] += b.vel[1] * dt;
     b.pos[2] += b.vel[2] * dt;
   }
-  b.multiplier = b.multiplier + (1 - b.multiplier) * 0.2; // Lerp(m,1,.2)
+  b.multiplier = b.multiplier + (1 - b.multiplier) * 0.2;
 }
 
-/**
- * PreviewDirection intercept solver verbatim (uses BULLET.velMax=256 even
- * for missiles; gate dot>0.985 decides lead vs straight).
- */
 export function previewDirection(
-  out: vec3,
-  fromPos: vec3,
-  fromDir: vec3,
-  targetPos: vec3,
-  targetVel: vec3,
+  out: vec3, fromPos: vec3, fromDir: vec3, targetPos: vec3, targetVel: vec3,
 ): vec3 {
   const tx = targetPos[0] - fromPos[0];
   const ty = targetPos[1] - fromPos[1];
@@ -80,7 +67,7 @@ export function previewDirection(
     const c = tx * tx + ty * ty + tz * tz;
     const p = -b / (2 * a);
     const disc = b * b - 4 * a * c;
-    const q = Math.sqrt(Math.max(0, disc)) / (2 * a);
+    const q = Math.sqrt(disc) / (2 * a);
     const t1 = p - q;
     const t2 = p + q;
     const t = t1 > t2 && t2 > 0 ? t2 : t1;
@@ -93,13 +80,11 @@ export function previewDirection(
   return vec3.copy(out, fromDir);
 }
 
-/** Keep inside cubic world (Map.PositionInside semantics). */
 export function clampInside(pos: vec3, size: number): boolean {
   const h = size / 2;
   let clamped = false;
   for (let i = 0; i < 3; i++) {
-    if (pos[i] < -h) { pos[i] = -h; clamped = true; }
-    else if (pos[i] > h) { pos[i] = h; clamped = true; }
+    if (pos[i] < -h) { pos[i] = -h; clamped = true; } else if (pos[i] > h) { pos[i] = h; clamped = true; }
   }
   return clamped;
 }

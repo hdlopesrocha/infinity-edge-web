@@ -1,10 +1,7 @@
-// Faithful port of IE3D_API/OcTree.cs.
-// Cubic root (size/2 extents), 10% child overlap clamped to parent,
-// fragments while X-extent > 48, per-node _count/_interactiveCount,
-// prune-on-empty, RefreshObject reinsertion, typed select queries.
-// Sim objects register themselves via node refs (obj._octNode).
+// OcTree verbatim: root ±size/2, child halves +10% clamped, frag > 32,
+// counts, prune, refresh, typed selects.
 
-import { boxVisible, rayBox, raySphere, sphereContainsBox, spheresIntersect } from './frustum';
+import { boxVisible, rayBox, raySphere, spheresIntersect } from './frustum';
 import type { FrustumPlanes } from './frustum';
 
 export enum ObKind {
@@ -17,7 +14,6 @@ export interface OctItem {
   _octNode: OctNode | null;
   kind: ObKind;
   active: boolean;
-  // world bounding sphere (updated by obj.update())
   sx: number;
   sy: number;
   sz: number;
@@ -41,54 +37,44 @@ export class OctNode {
   interactiveCount = 0;
 
   constructor(size: number);
-  constructor(min: number[], max: number[], parent: OctNode, index: number);
-  constructor(a: number | number[], b?: number[] | OctNode, c?: OctNode | number, d?: number) {
+  constructor(parent: OctNode, index: number);
+  constructor(a: number | OctNode, b?: OctNode | number, c?: number) {
     if (typeof a === 'number') {
       const size = a / 2;
       this.minx = -size; this.miny = -size; this.minz = -size;
       this.maxx = size; this.maxy = size; this.maxz = size;
       this.parent = null;
     } else {
-      const min = a, max = b as number[];
-      const parent = c as OctNode;
-      // 10% overlap, clamped to parent
-      const vx = (max[0] - min[0]) * 0.1;
-      const vy = (max[1] - min[1]) * 0.1;
-      const vz = (max[2] - min[2]) * 0.1;
-      this.minx = Math.max(min[0] - vx, parent.minx);
-      this.miny = Math.max(min[1] - vy, parent.miny);
-      this.minz = Math.max(min[2] - vz, parent.minz);
-      this.maxx = Math.min(max[0] + vx, parent.maxx);
-      this.maxy = Math.min(max[1] + vy, parent.maxy);
-      this.maxz = Math.min(max[2] + vz, parent.maxz);
+      const parent = a;
+      const index = b as number;
+      const size = [(parent.maxx - parent.minx) * 0.5, (parent.maxy - parent.miny) * 0.5, (parent.maxz - parent.minz) * 0.5];
+      const bit = [(index & 4) !== 0 ? 1 : 0, (index & 2) !== 0 ? 1 : 0, (index & 1) !== 0 ? 1 : 0];
+      const mn = [
+        parent.minx + bit[0] * size[0],
+        parent.miny + bit[1] * size[1],
+        parent.minz + bit[2] * size[2],
+      ];
+      const mx = [mn[0] + size[0], mn[1] + size[1], mn[2] + size[2]];
+      this.minx = Math.max(mn[0] - size[0] * 0.1, parent.minx);
+      this.miny = Math.max(mn[1] - size[1] * 0.1, parent.miny);
+      this.minz = Math.max(mn[2] - size[2] * 0.1, parent.minz);
+      this.maxx = Math.min(mx[0] + size[0] * 0.1, parent.maxx);
+      this.maxy = Math.min(mx[1] + size[1] * 0.1, parent.maxy);
+      this.maxz = Math.min(mx[2] + size[2] * 0.1, parent.maxz);
       this.parent = parent;
-      this.index = d as number;
+      this.index = index;
     }
   }
 
   canFrag(): boolean {
-    return this.maxx - this.minx > 48;
+    return this.maxx - this.minx > 32;
   }
 
   private fragment(index: number): OctNode {
-    const cx = (this.minx + this.maxx) / 2;
-    const cy = (this.miny + this.maxy) / 2;
-    const cz = (this.minz + this.maxz) / 2;
-    const mn = this, mx = this;
-    switch (index) {
-      case 0: return new OctNode([cx, cy, cz], [mx.maxx, mx.maxy, mx.maxz], this, 0);
-      case 1: return new OctNode([mn.minx, cy, cz], [cx, mx.maxy, mx.maxz], this, 1);
-      case 2: return new OctNode([mn.minx, cy, mn.minz], [cx, mx.maxy, cz], this, 2);
-      case 3: return new OctNode([cx, cy, mn.minz], [mx.maxx, mx.maxy, cz], this, 3);
-      case 4: return new OctNode([cx, mn.miny, cz], [mx.maxx, cy, mx.maxz], this, 4);
-      case 5: return new OctNode([mn.minx, mn.miny, cz], [cx, cy, mx.maxz], this, 5);
-      case 6: return new OctNode([mn.minx, mn.miny, mn.minz], [cx, cy, cz], this, 6);
-      default: return new OctNode([cx, mn.miny, mn.minz], [mx.maxx, cy, cz], this, 7);
-    }
+    return new OctNode(this, index);
   }
 
-  private boxContainsSphere(sx: number, sy: number, sz: number, r: number): boolean {
-    // BoundingBox.Contains(BoundingSphere): sphere fully inside the box.
+  containsSphere(sx: number, sy: number, sz: number, r: number): boolean {
     return (
       sx - r >= this.minx && sx + r <= this.maxx &&
       sy - r >= this.miny && sy + r <= this.maxy &&
@@ -96,21 +82,35 @@ export class OctNode {
     );
   }
 
-  private static nodeContains(node: OctNode, sx: number, sy: number, sz: number, r: number): boolean {
+  static nodeContains(n: OctNode, sx: number, sy: number, sz: number, r: number): boolean {
     return (
-      sx - r >= node.minx && sx + r <= node.maxx &&
-      sy - r >= node.miny && sy + r <= node.maxy &&
-      sz - r >= node.minz && sz + r <= node.maxz
+      sx - r >= n.minx && sx + r <= n.maxx &&
+      sy - r >= n.miny && sy + r <= n.maxy &&
+      sz - r >= n.minz && sz + r <= n.maxz
     );
   }
 
   childContains(sx: number, sy: number, sz: number, r: number): boolean {
     if (!this.canFrag()) return false;
     for (let i = 0; i < 8; i++) {
-      const n = this.childs[i] ?? this.fragment(i);
-      if (OctNode.nodeContains(n, sx, sy, sz, r)) return true;
+      if (OctNode.childBoxContains(this, i, sx, sy, sz, r)) return true;
     }
     return false;
+  }
+
+  private static childBoxContains(p: OctNode, i: number, sx: number, sy: number, sz: number, r: number): boolean {
+    if (p.childs[i]) return p.childs[i]!.containsSphere(sx, sy, sz, r);
+    const size = [(p.maxx - p.minx) * 0.5, (p.maxy - p.miny) * 0.5, (p.maxz - p.minz) * 0.5];
+    const bit = [(i & 4) !== 0 ? 1 : 0, (i & 2) !== 0 ? 1 : 0, (i & 1) !== 0 ? 1 : 0];
+    const mn = [p.minx + bit[0] * size[0], p.miny + bit[1] * size[1], p.minz + bit[2] * size[2]];
+    const mx = [mn[0] + size[0], mn[1] + size[1], mn[2] + size[2]];
+    const lox = Math.max(mn[0] - size[0] * 0.1, p.minx);
+    const loy = Math.max(mn[1] - size[1] * 0.1, p.miny);
+    const loz = Math.max(mn[2] - size[2] * 0.1, p.minz);
+    const hix = Math.min(mx[0] + size[0] * 0.1, p.maxx);
+    const hiy = Math.min(mx[1] + size[1] * 0.1, p.maxy);
+    const hiz = Math.min(mx[2] + size[2] * 0.1, p.maxz);
+    return sx - r >= lox && sx + r <= hix && sy - r >= loy && sy + r <= hiy && sz - r >= loz && sz + r <= hiz;
   }
 
   insert(obj: OctItem): void {
@@ -121,18 +121,21 @@ export class OctNode {
       let contains = false;
       if (ptr.canFrag()) {
         for (let i = 0; i < 8; i++) {
-          const n = ptr.childs[i] ?? ptr.fragment(i);
-          if (n.boxContainsSphere(obj.sx, obj.sy, obj.sz, obj.sradius)) {
-            ptr.childs[i] = n;
+          const has = ptr.childs[i] !== null;
+          const ok = has
+            ? ptr.childs[i]!.containsSphere(obj.sx, obj.sy, obj.sz, obj.sradius)
+            : OctNode.childBoxContains(ptr, i, obj.sx, obj.sy, obj.sz, obj.sradius);
+          if (ok) {
+            if (!has) ptr.childs[i] = ptr.fragment(i);
             contains = true;
-            ptr = n;
+            ptr = ptr.childs[i]!;
             ptr.count++;
             if (obj.kind === ObKind.Interactive) ptr.interactiveCount++;
             break;
           }
         }
-      }
-      if (!contains || !ptr.canFrag()) break;
+      } else break;
+      if (!contains) break;
     }
     if (obj.kind === ObKind.Interactive) ptr.interactive.push(obj);
     else if (obj.kind === ObKind.Environment) ptr.environment.push(obj);
@@ -158,7 +161,7 @@ export class OctNode {
     const ptr = obj._octNode;
     if (!ptr) return;
     const chCon = ptr.childContains(obj.sx, obj.sy, obj.sz, obj.sradius);
-    const thisCon = ptr.boxContainsSphere(obj.sx, obj.sy, obj.sz, obj.sradius);
+    const thisCon = ptr.containsSphere(obj.sx, obj.sy, obj.sz, obj.sradius);
     if (!thisCon || chCon) {
       removeFrom(ptr, obj);
       if (chCon) {
@@ -205,15 +208,8 @@ export class OctNode {
       if (o.active && spheresIntersect(sx, sy, sz, r, o.sx, o.sy, o.sz, o.sradius)) out.push(o);
     }
     for (const ch of this.childs) {
-      if (
-        ch &&
-        ch.interactiveCount > 0 &&
-        spheresIntersect(sx, sy, sz, r, (ch.minx + ch.maxx) / 2, (ch.miny + ch.maxy) / 2, (ch.minz + ch.maxz) / 2,
-          Math.hypot(ch.maxx - ch.minx, ch.maxy - ch.miny, ch.maxz - ch.minz) / 2)
-      ) {
-        // note: original tests sphere-vs-box; sphere-vs-bounds-sphere is a
-        // conservative superset — refine with the exact box test below.
-        if (sphereBoxIntersect(sx, sy, sz, r, ch)) ch.sphereSelectInteractive(sx, sy, sz, r, out);
+      if (ch && ch.interactiveCount > 0 && sphereBoxIntersect(sx, sy, sz, r, ch)) {
+        ch.sphereSelectInteractive(sx, sy, sz, r, out);
       }
     }
   }

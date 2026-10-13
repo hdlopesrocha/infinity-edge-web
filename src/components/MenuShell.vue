@@ -1,35 +1,24 @@
-<!-- GenericMenu chrome: _backWindow + split sides + 160x48 corner buttons.
-     _buttonLU pops history (exit when alone); _buttonRU is the action slot. -->
+<!-- GenericMenu chrome (from Import/GenericMenu.xml values):
+     _window backWindow 0|0|0|100 full body -96px; four 160x48 corners;
+     back label exit at root else back (commandTextIfRoot). -->
 <script setup lang="ts">
-import { useRoute, useRouter } from 'vue-router';
 import { computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { audio } from '../game/audio';
 
 const props = withDefaults(
-  defineProps<{
-    primary?: string;
-    primaryTo?: string;
-    onPrimary?: (() => void) | null;
-    ldLabel?: string;
-    rdLabel?: string;
-    noBack?: boolean;
-  }>(),
-  { primary: '', primaryTo: '', onPrimary: null, ldLabel: '', rdLabel: '', noBack: false },
+  defineProps<{ primary?: string; primaryTo?: string; onPrimary?: (() => void) | null; wide?: boolean }>(),
+  { primary: '', primaryTo: '', onPrimary: null, wide: false },
 );
 
 const router = useRouter();
 const route = useRoute();
-const backLabel = computed(() => {
-  const n = String(route.name ?? '');
-  return n === 'menu' || n === 'engine' || n === 'start' || n === 'boot' ? 'exit' : 'back';
-});
+const backText = computed(() => (String(route.name) === 'menu' ? 'exit' : 'back'));
 
 function goBack(): void {
   audio.unlock();
   void audio.sfx('button');
-  if (backLabel.value === 'exit') void router.push('/');
-  else if (window.history.length > 1) router.back();
-  else void router.push('/menu');
+  if (window.history.length > 1) router.back();
 }
 
 function goPrimary(): void {
@@ -45,11 +34,11 @@ function goPrimary(): void {
 
 <template>
   <div class="menu-window" @pointerdown="audio.unlock()">
-    <div class="menu-left"><slot name="left" /></div>
-    <div class="menu-right"><slot name="right" /></div>
+    <div class="menu-left" :class="{ wide: wide }"><slot name="left" /></div>
+    <div v-if="!wide" class="menu-right"><slot name="right" /></div>
   </div>
-  <button v-if="!noBack" class="corner-btn lu" @click="goBack">{{ backLabel }}</button>
+  <button class="corner-btn lu" @click="goBack">{{ backText }}</button>
   <button v-if="primary" class="corner-btn ru go" @click="goPrimary">{{ primary }}</button>
-  <div v-if="ldLabel" class="corner-btn ld" aria-hidden="true">{{ ldLabel }}</div>
-  <div v-if="rdLabel" class="corner-btn rd" aria-hidden="true">{{ rdLabel }}</div>
+  <div class="corner-btn rd" aria-hidden="true"></div>
+  <div class="corner-btn ld" aria-hidden="true"></div>
 </template>

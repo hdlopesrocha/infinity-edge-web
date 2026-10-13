@@ -1,7 +1,4 @@
-// Team / Score / GameScore / Reward / Conditions.
-// Ports Core/Team.cs, Core/Score.cs, Core/Reward.cs, Core/Condition.cs,
-// Core/Conditions/*.cs and the XM_Goals mapping. Forward-declared game
-// types avoid circular imports (instance.ts wires the rest).
+// Team / Score / GameScore (ToVisual + ToVisualIngame) / Reward / Conditions.
 
 import type { GameInstance } from './instance';
 import type { SpaceObject } from './objects';
@@ -14,22 +11,20 @@ export class Team {
   base: import('./objects').Base | null = null;
   flag: import('./objects').Flag | null = null;
   objects: SpaceObject[] = [];
-  sounds: string[] = []; // voice fields queued (Team._sounds of Voice)
+  sounds: string[] = [];
   allies: Team[] = [];
   enemys: Team[] = [];
 
   constructor(name: string, color: [number, number, number]) {
     this.name = name;
     this.color = color;
-    this.allies.push(this); // self-ally
+    this.allies.push(this);
   }
 
-  /** Team.Manage: drain voice queue into notifications for the viewed team. */
   manage(gi: GameInstance, controlled: SpaceObject | null): void {
     if (controlled && this === controlled.team) {
       while (this.sounds.length > 0) {
-        const voice = this.sounds.shift()!;
-        gi.setNotification(voice);
+        gi.setNotification(this.sounds.shift()!);
       }
     }
     this.sounds.length = 0;
@@ -50,7 +45,6 @@ export class GameScore {
     this.scores = scores;
   }
 
-  /** Sort key: CTF = enemy points minus own (lower wins); TT = max time+1. */
   hashCode(type: 'CTF' | 'TT'): number {
     if (type === 'CTF') {
       let total = 0;
@@ -62,7 +56,7 @@ export class GameScore {
     return total;
   }
 
-  /** ToVisual verbatim. */
+  /** Briefing list (name + time, first control only). */
   toVisual(type: string): string {
     if (type === 'CTF') {
       let ret = '';
@@ -73,17 +67,40 @@ export class GameScore {
     let ret = '';
     for (const s of this.scores) {
       if (s.control) {
-        const ms = Math.floor(s.timeMs);
-        const h = Math.floor(ms / 3600000);
-        const m = Math.floor((ms % 3600000) / 60000);
-        const sec = Math.floor((ms % 60000) / 1000);
-        const mmm = ms % 1000;
-        const p2 = (n: number) => String(n).padStart(2, '0');
-        ret = (h !== 0 ? p2(h) + ':' : '') + p2(m) + ':' + p2(sec) + '.' + String(mmm).padStart(3, '0');
+        ret = s.name + ' - ' + fmtTime(s.timeMs);
+        break;
       }
     }
     return ret;
   }
+
+  /** In-game scoreboard (time only, first control only). */
+  toVisualIngame(type: string): string {
+    if (type === 'CTF') {
+      let ret = '';
+      for (const s of this.scores) if (s.control) ret = String(s.points) + ret;
+      for (const s of this.scores) if (!s.control) ret = ret + ' : ' + s.points;
+      return ret;
+    }
+    let ret = '';
+    for (const s of this.scores) {
+      if (s.control) {
+        ret = fmtTime(s.timeMs);
+        break;
+      }
+    }
+    return ret;
+  }
+}
+
+function fmtTime(timeMs: number): string {
+  const ms = Math.floor(timeMs);
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const sec = Math.floor((ms % 60000) / 1000);
+  const mmm = ms % 1000;
+  const p2 = (n: number) => String(n).padStart(2, '0');
+  return (h !== 0 ? p2(h) + ':' : '') + p2(m) + ':' + p2(sec) + '.' + String(mmm).padStart(3, '0');
 }
 
 export type RewardType = 'Gold' | 'Silver' | 'Bronze' | 'Victory' | 'Defeat' | 'None';
@@ -92,18 +109,16 @@ export abstract class Condition {
   abstract check(gi: GameInstance): boolean;
 }
 
-/** True once DestroyObject ran (even if respawning). */
 export class CondDestroyed extends Condition {
   constructor(private obj: SpaceObject | null) {
     super();
   }
 
   check(_gi: GameInstance): boolean {
-    return !!this.obj && this.obj.destroyed;
+    return !!this.obj && !this.obj.active;
   }
 }
 
-/** Selected (human) team's clock >= threshold. */
 export class CondMoreTime extends Condition {
   constructor(private timeMs: number) {
     super();
@@ -114,7 +129,6 @@ export class CondMoreTime extends Condition {
   }
 }
 
-/** Selected team's clock <= threshold (gold time limits). */
 export class CondLessTime extends Condition {
   constructor(private timeMs: number) {
     super();
@@ -125,20 +139,18 @@ export class CondLessTime extends Condition {
   }
 }
 
-/** Named team tied-leader and non-zero. */
 export class CondMorePoints extends Condition {
   constructor(private team: Team) {
     super();
   }
 
   check(gi: GameInstance): boolean {
-    let max = 0;
-    for (const t of gi.teams.values()) max = Math.max(max, t.points);
-    return this.team.points === max && max !== 0;
+    let min = 99999;
+    for (const t of gi.teams.values()) min = Math.min(min, t.points);
+    return this.team.points > min;
   }
 }
 
-/** All Ark gates collected. */
 export class CondNoPath extends Condition {
   check(gi: GameInstance): boolean {
     return gi.map.path.length === 0;
@@ -157,7 +169,6 @@ export class Reward {
     this.conditions.push(c);
   }
 
-  /** AND over stack; empty -> false. */
   check(gi: GameInstance): boolean {
     if (this.conditions.length === 0) return false;
     for (const c of this.conditions) {
@@ -167,17 +178,13 @@ export class Reward {
   }
 }
 
-/** "hh:mm:ss" / "mm:ss" -> ms (TimeSpan.Parse for goal values). */
 export function parseTimeSpan(s: string): number {
   const parts = s.split(':').map(Number);
-  let ms = 0;
-  if (parts.length === 3) ms = (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
-  else if (parts.length === 2) ms = (parts[0] * 60 + parts[1]) * 1000;
-  else ms = parts[0] * 1000;
-  return ms;
+  if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+  if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
+  return parts[0] * 1000;
 }
 
-/** "1.02:03:04.005" style TimeSpan.ToString for ghost/score files. */
 export function timeSpanToString(ms: number): string {
   const total = Math.max(0, Math.floor(ms));
   const d = Math.floor(total / 86400000);
@@ -190,7 +197,6 @@ export function timeSpanToString(ms: number): string {
 }
 
 export function parseTimeSpanFull(s: string): number {
-  // "d.hh:mm:ss.fff" or "hh:mm:ss[.fff]"
   let rest = s;
   let days = 0;
   const dot = rest.indexOf('.');

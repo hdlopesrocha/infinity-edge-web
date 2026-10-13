@@ -1,5 +1,4 @@
-// Life pools: Life1 (single) + Life3 (3-zone directional, bug-compatible).
-// ReceiveDamage destroys the owner via callback when depleted.
+// Life1/Life3 verbatim.
 
 import { vec3 } from '../engine/math';
 
@@ -65,7 +64,6 @@ export class Life3 extends Life {
   }
 
   receiveDamage(amount: number, direction: vec3, ownerUp: vec3, ownerDir: vec3, destroy: DestroyFn): void {
-    // verbatim logic incl. the if/if/else quirk: dot>0.2 hits left AND center.
     const v = vec3.create();
     vec3.cross(v, ownerUp, ownerDir);
     const l = vec3.length(v) || 1;
@@ -92,7 +90,6 @@ export class Life3 extends Life {
   }
 }
 
-/** GameInstance.StringToLife: null -> Life1(10); a|b|c -> Life3; n -> Life1. */
 export function stringToLife(s: string | null): Life {
   if (s == null) return new Life1(10);
   const words = s.split('|');

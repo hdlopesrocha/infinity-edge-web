@@ -1,24 +1,27 @@
-<!-- About credits (About.cs). -->
+<!-- About (XM_About verbatim, list spacing -8). -->
 <script setup lang="ts">
 import MenuShell from '../components/MenuShell.vue';
 </script>
 
 <template>
-  <MenuShell>
+  <MenuShell wide>
     <template #left>
-      <div class="menu-title">Infinity Edge 1.0.0.2</div>
-      <div class="menu-text small">
-        <div>Graphics: Goncalo Rocha, Nikhil Bhatt, Henrique Rocha</div>
-        <div>Sounds: Ricardo Abreu</div>
-        <div>Programmers: Henrique Rocha, Nikhil Bhatt</div>
-        <div>Thanks: Microsoft Lisbon</div>
-      </div>
-    </template>
-    <template #right>
-      <div class="menu-text small">
-        Web migration of the XNA space combat game — Vue 3 + TypeScript +
-        raw WebGL2. Original content by the Infinity Edge team.
-      </div>
+      <div class="f-default c-lime">Infinity Edge (1.0.0.5) </div>
+      <div class="f-small c-white">&nbsp;</div>
+      <div class="f-middle c-yellow">=== GRAPHICS ===</div>
+      <div class="f-small c-white">Goncalo Rocha</div>
+      <div class="f-small c-white">Nikhil Bhatt</div>
+      <div class="f-small c-white60">Henrique Rocha</div>
+      <div class="f-small c-white">&nbsp;</div>
+      <div class="f-middle c-yellow">=== SOUNDS ===</div>
+      <div class="f-small c-white">Ricardo Abreu</div>
+      <div class="f-small c-white">&nbsp;</div>
+      <div class="f-middle c-yellow">=== PROGRAMMERS ===</div>
+      <div class="f-small c-white">Henrique Rocha</div>
+      <div class="f-small c-white60">Nikhil Bhatt</div>
+      <div class="f-small c-white">&nbsp;</div>
+      <div class="f-middle c-yellow">=== SPECIAL THANKS ===</div>
+      <div class="f-small c-white">Microsoft @ Lisbon Experience</div>
     </template>
   </MenuShell>
 </template>

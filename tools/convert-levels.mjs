@@ -1,23 +1,24 @@
-// Level.xml -> JSON converter (documents the <game> schema; the app embeds
-// the same data in src/game/levels.ts and validates against these files).
-// Usage: node tools/convert-levels.mjs
-// Reads:  ../InfinityEdge3D/.../SinglePlayer/**/Level.xml + Background.xml
-// Writes: public/assets/levels/*.json + INDEX.json
-
+// Level.xml -> JSON (IE3D_37_T). Comment-stripped; paired/self-closing description.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, '..');
-const contentDir = join(webRoot, '..', 'InfinityEdge3D', 'InfinityEdge', 'InfinityEdgeContent');
+function findContentDir() {
+  const candidates = [
+    join(webRoot, '..', 'IE3D_37_T', 'InfinityEdge3D', 'InfinityEdge', 'InfinityEdgeContent'),
+    join(webRoot, '..', 'IE3D_37_T', 'InfinityEdge', 'InfinityEdgeContent'),
+  ];
+  for (const c of candidates) if (existsSync(c)) return c;
+  return candidates[0];
+}
+const contentDir = findContentDir();
 const outDir = join(webRoot, 'public', 'assets', 'levels');
 
 const attr = (tag, name) => (tag.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`)) || [])[1] ?? '';
 
 function parseLevel(xml, rel) {
-  // Strip XML comments first: commented-out objects/actions must not parse
-  // (e.g. TT Easy 01 contains a commented ambient ship with 1000|1000|1000 life).
   xml = xml.replace(/<!--[\s\S]*?-->/g, '');
   let descTag = xml.match(/<description\b[^>]*\/>/)?.[0] ?? '';
   let innerText = '';
@@ -33,7 +34,7 @@ function parseLevel(xml, rel) {
     const amount = a('amount');
     return {
       team: a('team'), type: a('type'), model: a('model'), position: a('position'),
-      name: a('name') || undefined, life: a('life') || undefined,
+      name: a('reference') || a('name') || undefined, life: a('life') || undefined,
       amount: amount ? Number(amount) : undefined,
     };
   });
@@ -74,6 +75,19 @@ const index = [];
     if (statSync(p).isDirectory()) walk(p, r);
     else if (/^(Level|Background)\.xml$/i.test(f)) {
       const level = parseLevel(readFileSync(p, 'utf8'), r);
+      // Sibling Menu.xml textBox text is the briefing description.
+      try {
+        const menuPath = join(dir, f.replace(/Level\.xml$/i, 'Menu.xml'));
+        if (existsSync(menuPath)) {
+          let menuXml = readFileSync(menuPath, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+          const tb = menuXml.match(/<textBox\b[^>]*\btext="([^"]*)"/);
+          level.menuText = tb ? tb[1] : '';
+          const sb = menuXml.match(/<scoreBoard\b[^>]*\/>/);
+          if (sb) {
+            level.scoreBoard = { type: attr(sb[0], 'type'), save: attr(sb[0], 'save') };
+          }
+        }
+      } catch { /* no menu */ }
       const safe = r.replace(/\.xml$/i, '').replace(/[^a-z0-9]+/gi, '_') + '.json';
       writeFileSync(join(outDir, safe), JSON.stringify(level, null, 2) + '\n');
       index.push({ file: safe, source: r, type: level.description.type, objects: level.objects.length });

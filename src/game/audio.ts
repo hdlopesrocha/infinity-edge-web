@@ -1,6 +1,4 @@
-// Audio: Web Audio API for SFX + voices, <audio> loop for music.
-// Port of MediaPlayer (looping Song) + SoundEffect.Play(v,pan) + Voice.
-// Autoplay policy: unlock() on first user gesture (Game1.GameHasControl).
+// Audio: Web Audio SFX/voices + <audio> music loop.
 
 import { SFX, VOICES } from './config';
 
@@ -26,11 +24,8 @@ class AudioManager {
       try {
         if (!this.ctx) this.ctx = new AudioContext();
         if (this.ctx.state === 'suspended') void this.ctx.resume();
-      } catch {
-        /* no audio */
-      }
+      } catch { /* no audio */ }
     }
-    // Looping music like Game1.LoadContent (IsRepeating, musicVolume).
     try {
       if (!this.musicEl) {
         this.musicEl = new Audio(musicUrl());
@@ -39,7 +34,7 @@ class AudioManager {
         const p = this.musicEl.play();
         if (p) {
           p.catch(() => {
-            this.unlocked = false; // still blocked; retry on next gesture
+            this.unlocked = false;
             this.musicEl = null;
           });
         }
@@ -47,9 +42,7 @@ class AudioManager {
         this.musicEl.volume = this.muted ? 0 : this.musicVolume;
         void this.musicEl.play().catch(() => undefined);
       }
-    } catch {
-      /* unplayable asset (repo sound.mp3 is 0 bytes): stay silent */
-    }
+    } catch { /* silent */ }
   }
 
   setMusicVolume(v: number): void {
@@ -74,9 +67,8 @@ class AudioManager {
     }
   }
 
-  /** SoundEffect.Play(volume, pitch, pan) — pitch unused (always 0 in code). */
   async sfx(name: string, volume = 1, pan = 0): Promise<void> {
-    if (!this.unlocked || this.muted) return;
+    if (!this.unlocked) return;
     if (!(SFX as readonly string[]).includes(name) && !VOICES.some((v) => v.file === name)) return;
     try {
       if (!this.ctx) this.ctx = new AudioContext();
@@ -95,12 +87,9 @@ class AudioManager {
         src.connect(g).connect(this.ctx.destination);
       }
       src.start();
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }
 
-  /** Voice.Play + GetText: plays the line, returns subtitle text. */
   voice(field: string): string {
     const v = VOICES.find((x) => x.field === field);
     if (!v) return field;

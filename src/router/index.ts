@@ -1,7 +1,3 @@
-// Hash-based navigation mirroring the scene stack:
-// engine -> start -> menu -> single -> tt/ctf -> tracks -> briefing ->
-// game -> victory/defeat, plus options/about.
-
 import { createRouter, createWebHashHistory } from 'vue-router';
 import type { RouteRecordRaw } from 'vue-router';
 import { syncSceneState } from '../game/store';
@@ -12,9 +8,9 @@ const routes: RouteRecordRaw[] = [
   { path: '/start', name: 'start', component: () => import('../views/BootView.vue') },
   { path: '/menu', name: 'menu', component: () => import('../views/MainMenuView.vue') },
   { path: '/single-player', name: 'single', component: () => import('../views/SinglePlayerView.vue') },
+  { path: '/ctf', name: 'ctf', component: () => import('../views/CtfMenuView.vue') },
   { path: '/tt', name: 'tt', component: () => import('../views/TimeTrialMenuView.vue') },
   { path: '/tt/:diff', name: 'tracks', component: () => import('../views/TracksView.vue') },
-  { path: '/ctf', name: 'ctf', component: () => import('../views/CtfMenuView.vue') },
   { path: '/briefing/:level', name: 'briefing', component: () => import('../views/BriefingView.vue') },
   { path: '/game/:level', name: 'game', component: () => import('../views/GameView.vue') },
   { path: '/options', name: 'options', component: () => import('../views/OptionsView.vue') },
