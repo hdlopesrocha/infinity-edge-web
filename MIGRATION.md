@@ -15,10 +15,16 @@ Source: `../IE3D_37_T` (174 `.cs`, 38 FBX, ~100 textures, 26 sounds, 13 levels,
   `colorN.fbx` (alpha shell). LOD `j = clamp(3·len/distance + detail, 0,
   models-1)`; fade `alpha *= clamp((distance-len)/32, 0, 1)`. Meshes tested
   as spheres (ray hits measured at mesh-sphere level).
-- **Per-asset import transforms**: `InfinityEdgeContent.contentproj` applies
-  ModelProcessor `Scale` + single-axis `RotationX/Y/Z` (e.g. Fighter3 0.011,
-  Base 0.11, Ark 0.24+RY90, Bullet 0.005+RX90, Asteroid1 ×1.6). Node Lcl
-  transforms bake hierarchically (Scene root identity).
+- **Per-asset import transforms** are applied by the **XNA build itself** and
+  therefore baked into the compiled `.xnb` shipped with the game
+  (`tools/xnb/Objects/`): the content pipeline applies the ModelProcessor
+  `Scale`/`RotationX/Y/Z` from `InfinityEdgeContent.contentproj`, the per-file
+  FBX unit scale, the FBX→XNA axis conversion and the node hierarchy. The
+  converter replays the runtime composition instead of re-deriving it:
+  `World = transforms[ParentBone] * vertex` (`Model.CopyAbsoluteBoneTransformsTo`
+  = `local * parentAbsolute`, `Model3D.Draw`), and `Model3D.GetBoundingSphere`
+  (merge of `mesh.BoundingSphere.Transform(absoluteBone)`), which is the sphere
+  the game uses for collisions and flare placement.
 - **Camera**: FOV π/4, near 0.1, far = options distance (default 192).
   Follow cam 6 units behind (stick ±π/24 + π/16 pitch bias, banked up),
   lookAt = pos + dir·distance; menu orbit r=6/h=3 at 1°/frame.
@@ -50,12 +56,16 @@ Source: `../IE3D_37_T` (174 `.cs`, 38 FBX, ~100 textures, 26 sounds, 13 levels,
 
 ## 2. What was migrated
 
-- **Assets** (`tools/`): FBX→JSON converter handling ASCII 2013 + binary
-  v6100 (hosted geometry, zlib arrays, hierarchical bake, contentproj import
-  transforms, material + model-connected textures, LOD/color naming) — 43
-  files, 0 failures. Level/menu XML→JSON with comments stripped (commented
-  objects/actions never parse) and sibling Menu.xml texts/scoreBoard captured
-  — 14 files. Textures/sounds/icons copied (113 files).
+- **Assets** (`tools/`): model converter reading the original compiled XNA
+  content (`tools/convert-xnb.mjs`: XNB v5 Model reader, bone hierarchy →
+  absolute matrices, `world = boneAbs · vertex` bake, per-mesh spheres,
+  XNA-style `_bsphere` merge, BasicEffect → material + texture resolution
+  against the source content dir; `node tools/convert-xnb.mjs --check` parses
+  without writing) — 43 files, 0 failures. Level/menu XML→JSON with comments
+  stripped (commented objects/actions never parse) and sibling Menu.xml
+  texts/scoreBoard captured — 14 files. Textures/sounds/icons copied
+  (113 files). `tools/convert-fbx.mjs` (raw FBX + contentproj replay) is kept
+  for reference only; it could not reproduce the compiled result.
 - **Engine**: GL2 context + loop with context-loss recovery, BasicEffect-exact
   shaders, texture cache with mipmaps, model validation + LOD/fade + per
   material textures, follow/orbit cameras, frustum, OcTree (>32), billboards
@@ -81,17 +91,30 @@ Source: `../IE3D_37_T` (174 `.cs`, 38 FBX, ~100 textures, 26 sounds, 13 levels,
 
 ## 3. Verification (real browser)
 
-- TT Easy 01: full-throttle run collects all 6 gates in 5.90 s → Gold victory
-  (limit 6 s), 2563 ghost samples.
+- **Model matrices (fix)**: geometry now comes from the original compiled
+  content and matches the reference screenshots: Fighter3 is a flat horizontal
+  dart (wingspan 2.59, length 2.06, nose +Z, centered), Ark rings face the
+  flight axis (radius 16.75), the base hexagon sphere is 12.7, bullets/missiles
+  point +Z, the flag cluster sits at its origin, planets align with their cloud
+  layers. Camera framing matches SS3 (ship ≈31% of the 800 px width at the
+  original 6-unit chase distance = 2.59/8.3). Addon aliases (`adShield` →
+  `AddonShield.json`, ...) and the HUD pointer clamp (`MyClamp` + reflect off
+  the near plane) now follow `GameInstance.DrawPointer`; the base pointer sits
+  at the top edge exactly as in SS3.
+- TT Easy 01: full-throttle run collects all 6 gates in ~4.5 s → Gold victory
+  (limit 6 s), ghost recorded.
 - TT Easy 02: gate course → Victory screen, medal, score (`TT_E_02.svg`) and
   ghost (`TT_E_02.ghs`) saved (new best only).
-- CTF Easy: 10v9 ships + bases + flags + 8000 asteroids; 30 s AI combat
-  without exceptions; respawn queue drains; clock advances (MoreTime).
+- CTF Easy: 10v9 ships + bases + flags + 8000 asteroids; 25 s AI combat with
+  the player firing every second, zero page errors; the teal hexagon base,
+  bracket pointers ("100%"), ship icons and flag pointer match SS6/SS7.
 - Menus, briefing (verbatim training text), options, about, tracks render
-  from converted data; background scene persists across navigation.
-- Unit tests 21/21: binary protocol + gzip (flag rules, small-message raw,
-  malformed rejection), frustum (sphere/box/near-plane), OcTree (descent,
-  queries, prune), physics (integration, clamp, lead-shot, clamps).
+  from converted data; background scene persists across navigation; the main
+  menu composition matches SS1 (ship over the base sphere, same icons).
+- Unit tests 21/21 (previous revision): binary protocol + gzip (flag rules,
+  small-message raw, malformed rejection), frustum (sphere/box/near-plane),
+  OcTree (descent, queries, prune), physics (integration, clamp, lead-shot,
+  clamps).
 
 ## 4. Known approximations
 

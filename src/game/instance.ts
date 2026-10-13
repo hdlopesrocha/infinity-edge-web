@@ -2,6 +2,7 @@
 // (ToVisualIngame scoreboard, aim, DrawPointer/MyClamp), scores, ghost.
 
 import { mat4, vec3 } from '../engine/math';
+import { frustumContains } from '../engine/frustum';
 import type { Renderer } from '../engine/renderer';
 import type { TexEntry } from '../engine/texture';
 import { GameMap } from './map';
@@ -25,7 +26,8 @@ export type GameType = 'CTF' | 'TT' | 'BACK';
 export interface PointerMark {
   x: number;
   y: number;
-  size: number;
+  w: number;
+  h: number;
   iconUrl: string | null;
   over: boolean;
   color: [number, number, number];
@@ -345,7 +347,7 @@ export class GameInstance {
         if (obj instanceof SpaceShip) {
           const p = this.project(obj.pos[0], obj.pos[1], obj.pos[2]);
           out.push({
-            x: p.x, y: p.y, size: 48, iconUrl: null, over: true,
+            x: p.x, y: p.y, w: 48, h: 48, iconUrl: null, over: true,
             color: obj.team.color, label: Math.floor(obj.lifePercentage() * 100) + '%',
           });
           return;
@@ -355,8 +357,10 @@ export class GameInstance {
       let tx = obj.pos[0], ty = obj.pos[1], tz = obj.pos[2];
       const toObj = vec3.fromValues(tx - cam.position[0], ty - cam.position[1], tz - cam.position[2]);
       if (vec3.dot(toObj, cam.direction) < 0) {
+        // XNA: Viewport.Project(Vector3.Reflect(obj.Position, Near.Normal)) --
+        // reflects the absolute position about the plane through the origin.
         const n = vec3.fromValues(f[20], f[21], f[22]);
-        const d = vec3.dot(toObj, n);
+        const d = vec3.dot(vec3.fromValues(tx, ty, tz), n);
         tx -= 2 * d * n[0];
         ty -= 2 * d * n[1];
         tz -= 2 * d * n[2];
@@ -366,14 +370,7 @@ export class GameInstance {
       const icon = obj.model.icon;
       const iw = icon ? icon.width : 32;
       const ih = icon ? icon.height : 32;
-      let insideAll = true;
-      for (const i of [0, 1, 2, 3, 5]) {
-        if (f[i * 4] * obj.pos[0] + f[i * 4 + 1] * obj.pos[1] + f[i * 4 + 2] * obj.pos[2] + f[i * 4 + 3] >= 0) {
-          insideAll = false;
-          break;
-        }
-      }
-      if (!insideAll) {
+      if (!frustumContains(f, obj.pos[0], obj.pos[1], obj.pos[2])) {
         const cl = this.myClamp(sx, sy, iw / 2, ih / 2);
         sx = cl.x;
         sy = cl.y;
@@ -396,7 +393,7 @@ export class GameInstance {
       vx = Math.max(-sizeOverX, Math.min(sizeOverX, vx));
       vy = Math.max(-sizeOverY, Math.min(sizeOverY, vy));
       out.push({
-        x: sizeOverX + vx, y: sizeOverY + vy, size: Math.max(iw, ih),
+        x: sizeOverX + vx, y: sizeOverY + vy, w: iw, h: ih,
         iconUrl: icon ? icon.url : null, over: false, color: c, label: null,
       });
     };

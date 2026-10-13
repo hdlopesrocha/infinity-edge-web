@@ -10,17 +10,27 @@ directly for this application.
 ```sh
 npm install
 npm run copy:assets     # textures + sounds + icons from ../IE3D_37_T (once)
-npm run convert         # FBX -> JSON models + Level.xml -> JSON (once)
+npm run convert         # XNB -> JSON models + Level.xml -> JSON (once)
 npm run dev             # http://localhost:5173/#/
 npm run build           # typecheck + production build (dist/)
 npm run preview         # serve the build
 npm run typecheck       # vue-tsc only
 ```
 
-Converter sources: `../IE3D_37_T/InfinityEdge3D/InfinityEdge/InfinityEdgeContent`
-(auto-detects the `IE3D_37_T/InfinityEdge/InfinityEdgeContent` layout too).
-`node tools/convert-fbx.mjs --check` parses without writing. Every output is
+Model conversion reads the **original compiled XNA content** (the 2013 build
+output shipped with the game, reused byte-for-byte by the `../infinity-edge-mono`
+port). A copy of every `modelN.xnb` / `colorN.xnb` is vendored under
+`tools/xnb/Objects/`; the converter bakes `transforms[ParentBone] * vertex`
+(XNA `Model.CopyAbsoluteBoneTransformsTo` + `Model3D.Draw`) and reproduces
+`Model3D.GetBoundingSphere`. Texture *file* names are resolved against
+`../IE3D_37_T/InfinityEdge3D/InfinityEdge/InfinityEdgeContent` (auto-detects
+the `IE3D_37_T/InfinityEdge/InfinityEdgeContent` layout too).
+`node tools/convert-xnb.mjs --check` parses without writing. Every output is
 recorded in `public/assets/models/MANIFEST.json`.
+
+`tools/convert-fbx.mjs` (source-FBX path) is superseded: the FBX route missed
+the XNA axis conversion, the per-file unit scale and the local·parent bone
+composition; the compiled XNB is exact. It is kept only for reference.
 
 ## Routes (hash-based, no server config)
 

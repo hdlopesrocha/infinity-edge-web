@@ -136,16 +136,19 @@ export class RC {
       if (this.models.has(name)) continue;
       const cfg = MODELS.find((m) => m.name === name);
       const detail = cfg?.detail ?? 1;
+      // Model files are named after the Objects/ folder (ModelConfig.directory);
+      // several aliases differ from it (adShield -> AddonShield, ...).
+      const fileBase = cfg?.directory.split('/').pop() ?? name;
       const solid: (GpuModel | null)[] = [];
       const color: (GpuModel | null)[] = [];
       for (let i = 0; i < detail; i++) {
-        solid.push(await loadModelOptional(gl, this.modelUrl(i === 0 ? name : `${name}_lod${i}`)));
+        solid.push(await loadModelOptional(gl, this.modelUrl(i === 0 ? fileBase : `${fileBase}_lod${i}`)));
       }
-      const color0 = await loadModelOptional(gl, this.modelUrl(`${name}_color`));
+      const color0 = await loadModelOptional(gl, this.modelUrl(`${fileBase}_color`));
       if (color0) {
         color.push(color0);
         for (let i = 1; i < detail; i++) {
-          color.push(await loadModelOptional(gl, this.modelUrl(`${name}_color${i}`)));
+          color.push(await loadModelOptional(gl, this.modelUrl(`${fileBase}_color${i}`)));
         }
       }
       const gpu0 = solid[0] ?? color[0];
@@ -160,7 +163,7 @@ export class RC {
         }
       }
       const tex = texes.find((t) => t) ?? null;
-      const icon = await loadTextureAny(gl, this.texCandidates(name + '_icon')).catch(() => null);
+      const icon = await loadTextureAny(gl, this.texCandidates(fileBase + '_icon')).catch(() => null);
       this.models.set(name, {
         name,
         solid: solid.length ? solid : [gpu0],

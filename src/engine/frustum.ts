@@ -39,10 +39,10 @@ export function sphereVisible(f: FrustumPlanes, cx: number, cy: number, cz: numb
   return true;
 }
 
-/** MyFrustumContains verbatim (Near/Bottom/Top/Left/Right, far excluded). */
+/** MyFrustumContains (Near/Bottom/Top/Left/Right, far excluded). */
 export function frustumContains(f: FrustumPlanes, px: number, py: number, pz: number): boolean {
   for (const i of [0, 1, 2, 3, 5]) {
-    if (f[i * 4] * px + f[i * 4 + 1] * py + f[i * 4 + 2] * pz + f[i * 4 + 3] >= 0) return false;
+    if (f[i * 4] * px + f[i * 4 + 1] * py + f[i * 4 + 2] * pz + f[i * 4 + 3] < 0) return false;
   }
   return true;
 }

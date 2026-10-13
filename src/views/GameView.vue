@@ -115,7 +115,7 @@ onBeforeUnmount(() => {
 
 function markerStyle(m: PointerMark): string {
   const c = `rgb(${(m.color[0] * 255) | 0},${(m.color[1] * 255) | 0},${(m.color[2] * 255) | 0})`;
-  return `left:${m.x}px;top:${m.y}px;filter:drop-shadow(0 0 3px ${c});`;
+  return `left:${m.x}px;top:${m.y}px;transform:translate(-50%,-50%);filter:drop-shadow(0 0 3px ${c});`;
 }
 
 void store;
@@ -129,7 +129,7 @@ void store;
     <div class="hud-life" v-html="hud.lifeHtml"></div>
     <div v-for="(m, i) in hud.pointers" :key="i" class="hud-marker" :style="markerStyle(m)">
       <img v-if="m.over" :src="base + '_over.png'" width="48" height="48" alt="" draggable="false" />
-      <img v-else-if="m.iconUrl" :src="m.iconUrl" :width="Math.min(48, m.size)" :height="Math.min(48, m.size)" alt="" draggable="false" />
+      <img v-else-if="m.iconUrl" :src="m.iconUrl" :width="m.w" :height="m.h" alt="" draggable="false" />
       <span v-if="m.label">{{ m.label }}</span>
     </div>
     <div ref="layerRef" class="touch-layer" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp">

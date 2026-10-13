@@ -9,7 +9,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
-    "convert:models": "node tools/convert-fbx.mjs",
+    "convert:models": "node tools/convert-xnb.mjs",
     "convert:levels": "node tools/convert-levels.mjs",
     "convert": "npm run convert:models && npm run convert:levels",
     "copy:assets": "node tools/copy-assets.mjs"

@@ -1,3 +1,9 @@
+// FBX -> JSON converter (IE3D_37_T source). SUPERSEDED by tools/convert-xnb.mjs:
+// replaying the raw FBX + contentproj import parameters cannot reproduce the
+// compiled XNA result (FBX->XNA axis conversion, per-file unit scale, and
+// local*parent bone composition all happen inside the original build). Kept
+// for reference; `npm run convert:models` uses the XNB path.
+//
 // FBX -> JSON converter (IE3D_37_T source).
 // Reads:  <content>/Objects/*/model*.fbx + color*.fbx
 //         <content>/InfinityEdgeContent.contentproj (per-asset Scale/Rotation)
