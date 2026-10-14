@@ -17,6 +17,7 @@
     "copy:assets": "node tools/copy-assets.mjs",
     "asset-server": "node tools/asset-server.mjs --port 8090",
     "shots": "node tools/screenshots.mjs",
+    "deploy": "node tools/deploy-gh-pages.mjs",
     "probe": "node tools/probe.mjs"
   },
   "dependencies": {
