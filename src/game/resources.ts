@@ -140,50 +140,71 @@ export class RC {
   async preload(modelNames: string[], texAliases: string[]): Promise<void> {
     const gl = this.renderer.gl;
     await Promise.all(texAliases.map((t) => this.ensureTex(t)));
+    // Models are independent: load them in parallel (the published build is
+    // network-bound, so the sequential loop dominated the first-load time).
+    const jobs: Promise<void>[] = [];
     for (const name of modelNames) {
       if (this.models.has(name)) continue;
-      const cfg = MODELS.find((m) => m.name === name);
-      const detail = cfg?.detail ?? 1;
-      // Model files are named after the Objects/ folder (ModelConfig.directory);
-      // several aliases differ from it (adShield -> AddonShield, ...).
-      const fileBase = cfg?.directory.split('/').pop() ?? name;
-      const solid: (GpuModel | null)[] = [];
-      const color: (GpuModel | null)[] = [];
-      for (let i = 0; i < detail; i++) {
-        solid.push(await loadModelOptional(gl, this.modelUrl(i === 0 ? fileBase : `${fileBase}_lod${i}`)));
+      const pending = this.modelJobs.get(name);
+      if (pending) {
+        jobs.push(pending);
+        continue;
       }
-      const color0 = await loadModelOptional(gl, this.modelUrl(`${fileBase}_color`));
-      if (color0) {
-        color.push(color0);
-        for (let i = 1; i < detail; i++) {
-          color.push(await loadModelOptional(gl, this.modelUrl(`${fileBase}_color${i}`)));
-        }
-      }
-      const gpu0 = solid[0] ?? color[0];
-      if (!gpu0) continue;
-      const texes: (TexEntry | null)[] = [];
-      for (const mat of gpu0.materials) {
-        if (mat.texture) {
-          const t = await loadTextureAny(gl, [this.baseUrl(mat.texture)]).catch(() => null);
-          texes.push(t && t.url !== '__fallback__' ? t : null);
-        } else {
-          texes.push(null);
-        }
-      }
-      const tex = texes.find((t) => t) ?? null;
-      const icon = await loadTextureAny(gl, this.texCandidates(fileBase + '_icon')).catch(() => null);
-      this.models.set(name, {
-        name,
-        solid: solid.length ? solid : [gpu0],
-        color: color.length ? color : [gpu0],
-        tex,
-        texes,
-        icon: icon && icon.url !== '__fallback__' ? icon : null,
-        flares: { engine: cfg?.engineFlares ?? [], color: cfg?.colorFlares ?? [] },
-        friction: 1,
-        detail,
-      });
+      const job = this.loadModel(gl, name).finally(() => this.modelJobs.delete(name));
+      this.modelJobs.set(name, job);
+      jobs.push(job);
     }
+    await Promise.all(jobs);
+  }
+
+  private modelJobs = new Map<string, Promise<void>>();
+
+  private async loadModel(gl: WebGL2RenderingContext, name: string): Promise<void> {
+    if (this.models.has(name)) return;
+    const cfg = MODELS.find((m) => m.name === name);
+    const detail = cfg?.detail ?? 1;
+    // Model files are named after the Objects/ folder (ModelConfig.directory);
+    // several aliases differ from it (adShield -> AddonShield, ...).
+    const fileBase = cfg?.directory.split('/').pop() ?? name;
+    const solidJobs: Promise<GpuModel | null>[] = [];
+    for (let i = 0; i < detail; i++) {
+      solidJobs.push(loadModelOptional(gl, this.modelUrl(i === 0 ? fileBase : `${fileBase}_lod${i}`)));
+    }
+    const colorJobs: Promise<GpuModel | null>[] = [];
+    for (let i = 0; i < detail; i++) {
+      colorJobs.push(loadModelOptional(gl, this.modelUrl(i === 0 ? `${fileBase}_color` : `${fileBase}_color${i}`)));
+    }
+    const [solid, colorAll] = await Promise.all([
+      Promise.all(solidJobs),
+      Promise.all(colorJobs),
+    ]);
+    const color: (GpuModel | null)[] = [];
+    if (colorAll[0]) {
+      color.push(colorAll[0]);
+      for (let i = 1; i < colorAll.length; i++) color.push(colorAll[i]);
+    }
+    const gpu0 = solid[0] ?? color[0];
+    if (!gpu0) return;
+    const texJobs: Promise<TexEntry | null>[] = gpu0.materials.map((mat) =>
+      mat.texture
+        ? loadTextureAny(gl, [this.baseUrl(mat.texture)]).catch(() => null)
+        : Promise.resolve(null),
+    );
+    const iconJob = loadTextureAny(gl, this.texCandidates(fileBase + '_icon')).catch(() => null);
+    const [texResults, icon] = await Promise.all([Promise.all(texJobs), iconJob]);
+    const texes: (TexEntry | null)[] = texResults.map((t) => (t && t.url !== '__fallback__' ? t : null));
+    const tex = texes.find((t) => t) ?? null;
+    this.models.set(name, {
+      name,
+      solid: solid.length ? solid : [gpu0],
+      color: color.length ? color : [gpu0],
+      tex,
+      texes,
+      icon: icon && icon.url !== '__fallback__' ? icon : null,
+      flares: { engine: cfg?.engineFlares ?? [], color: cfg?.colorFlares ?? [] },
+      friction: 1,
+      detail,
+    });
   }
 
   model(name: string): ModelData | null {
