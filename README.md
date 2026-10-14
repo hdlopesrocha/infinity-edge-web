@@ -107,6 +107,9 @@ value left on the slider.
   CullNone like `Draws.DrawBillBoard`, billboards gated on Special Effects),
   `post.ts` (scene target + velocity motion blur + lens flare),
   `noise.ts` (tileable 3D Perlin field for smoke/plume).
+- `src/game/assetmanifest.ts` — model/texture manifests so the loaders request
+  exactly the files that exist (no candidate-probing 404s during the boot
+  preload; falls back to probing without a manifest).
 - `src/game/` — math (GetH/GetV verbatim), life pools (Life1/Life3 quirks),
   physics presets + NextPosition + PreviewDirection, Team/Score/Reward/
   Conditions (Destroyed = !active, MorePoints = strictly above minimum),

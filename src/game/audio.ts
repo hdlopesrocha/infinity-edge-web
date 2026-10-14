@@ -19,6 +19,11 @@ class AudioManager {
   muted = false;
 
   unlock(): void {
+    // Chrome logs "The AudioContext was not allowed to start" when the context
+    // is created without user activation, so wait for a real gesture (the boot
+    // call and the global first-gesture handler both land here).
+    const ua = (navigator as unknown as { userActivation?: { hasBeenActive?: boolean } }).userActivation;
+    if (ua && ua.hasBeenActive === false) return;
     if (!this.unlocked) {
       this.unlocked = true;
       try {

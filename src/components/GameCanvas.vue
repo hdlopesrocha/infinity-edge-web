@@ -7,6 +7,7 @@ import { mat4, vec3 } from '../engine/math';
 import { GameInstance } from '../game/instance';
 import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
+import { ensureManifests, warmManifests } from '../game/assetmanifest';
 import { store, syncOptionsFromRC } from '../game/store';
 import { audio } from '../game/audio';
 
@@ -41,6 +42,9 @@ async function buildEngineScene(): Promise<void> {
 
 async function rebuild(): Promise<void> {
   if (!renderer || !rc) return;
+  // Asset manifests first: with them the loaders request exactly the files that
+  // exist instead of probing candidates (which logged 404s).
+  await ensureManifests();
   const key = store.sceneKey;
   if (key === 'engine') {
     void buildEngineScene();
@@ -120,6 +124,7 @@ onMounted(() => {
     if (!canvasRef.value) return;
     renderer = new Renderer(canvasRef.value);
     rc = new RC(renderer);
+    warmManifests();
     syncOptionsFromRC(rc.options);
     audio.setMusicVolume(rc.options.musicVolume);
     (window as unknown as { __ieRenderer?: Renderer }).__ieRenderer = renderer;

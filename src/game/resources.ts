@@ -8,6 +8,7 @@ import type { Renderer } from '../engine/renderer';
 import type { ModelData } from './objects';
 import { MODELS, TEXTURES } from './config';
 import { LEVEL_FILES, loadLevel } from './levels';
+import { ensureManifests, modelFiles, textureFiles } from './assetmanifest';
 import { audio } from './audio';
 
 export interface Options {
@@ -129,10 +130,16 @@ export class RC {
 
   private texCandidates(alias: string): string[] {
     const names = alias.startsWith('_') ? [alias, alias.slice(1)] : [alias, '_' + alias];
+    const files = textureFiles();
     const out: string[] = [];
     for (const n of names) {
-      out.push(this.baseUrl(`assets/textures/${n}.png`));
-      out.push(this.baseUrl(`assets/textures/${n}.jpg`));
+      for (const ext of ['png', 'jpg']) {
+        const file = `${n}.${ext}`;
+        // The generated manifest lists what actually exists; without it we keep
+        // probing (the loader tolerates the 404s).
+        if (files && !files.has(file)) continue;
+        out.push(this.baseUrl(`assets/textures/${file}`));
+      }
     }
     return out;
   }
@@ -167,13 +174,17 @@ export class RC {
     // Model files are named after the Objects/ folder (ModelConfig.directory);
     // several aliases differ from it (adShield -> AddonShield, ...).
     const fileBase = cfg?.directory.split('/').pop() ?? name;
+    const models = modelFiles();
+    const exists = (file: string): boolean => !models || models.has(file);
     const solidJobs: Promise<GpuModel | null>[] = [];
     for (let i = 0; i < detail; i++) {
-      solidJobs.push(loadModelOptional(gl, this.modelUrl(i === 0 ? fileBase : `${fileBase}_lod${i}`)));
+      const file = i === 0 ? `${fileBase}.json` : `${fileBase}_lod${i}.json`;
+      solidJobs.push(exists(file) ? loadModelOptional(gl, this.modelUrl(file.slice(0, -5))) : Promise.resolve(null));
     }
     const colorJobs: Promise<GpuModel | null>[] = [];
     for (let i = 0; i < detail; i++) {
-      colorJobs.push(loadModelOptional(gl, this.modelUrl(i === 0 ? `${fileBase}_color` : `${fileBase}_color${i}`)));
+      const file = i === 0 ? `${fileBase}_color.json` : `${fileBase}_color${i}.json`;
+      colorJobs.push(exists(file) ? loadModelOptional(gl, this.modelUrl(file.slice(0, -5))) : Promise.resolve(null));
     }
     const [solid, colorAll] = await Promise.all([
       Promise.all(solidJobs),
@@ -216,6 +227,7 @@ export class RC {
    */
   async preloadAll(onProgress?: (done: number, total: number) => void): Promise<void> {
     const gl = this.renderer.gl;
+    await ensureManifests();
     const extraTex = [
       'holoSmoke1', 'holoSmoke2', 'holoSmoke3', 'holoSmoke4', 'holoSmoke5', 'holoSmoke6', 'holoSmoke7',
       'hexagon', 'aim', 'over',

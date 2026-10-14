@@ -308,3 +308,17 @@ progress bar (Black40 panel, black `_pixel` track, white fill, DejaVu labels,
 `done / total`). The engine/start screens keep their original 3 s / 1.5 s
 minimums but the transition to the menu is gated on the preload finishing, so
 menus and games never stall on a fetch.
+
+**Asset manifests + quiet boot (web addition).** The loaders resolve textures and
+model variants by probing candidate names, and most candidates do not exist in
+the 2013 content, so the eager boot preload used to log hundreds of 404s. Two
+generated manifests now make the probing exact: `assets/models/MANIFEST.json`
+(written by `tools/convert-xnb.mjs`) and `assets/textures/MANIFEST.json`
+(written by `tools/asset-manifest.mjs`, 94 files). `src/game/assetmanifest.ts`
+loads both (cached, tiny) and the RC filters texture candidates and model
+variants through them; if a manifest is missing the old probing behaviour is
+kept. The AudioContext is also only created once the page has user activation
+(`navigator.userActivation`), so Chrome no longer logs "The AudioContext was not
+allowed to start" — the soundtrack still starts on the first gesture through the
+existing retry hooks. Verified: boot + a TT level run with 0 404s and 0 console
+errors/warnings.

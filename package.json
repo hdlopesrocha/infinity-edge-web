@@ -15,6 +15,7 @@
     "convert:levels": "node tools/convert-levels.mjs",
     "convert": "npm run convert:models && npm run convert:levels",
     "copy:assets": "node tools/copy-assets.mjs",
+    "assets:manifest": "node tools/asset-manifest.mjs",
     "asset-server": "node tools/asset-server.mjs --port 8090",
     "shots": "node tools/screenshots.mjs",
     "deploy": "node tools/deploy-gh-pages.mjs",
