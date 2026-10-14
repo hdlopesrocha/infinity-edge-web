@@ -46,7 +46,8 @@ export const MODELS: ModelCfg[] = [
   },
   {
     name: 'Fighter3', detail: 1, directory: 'Objects/Fighter3',
-    engineFlares: [[0.1, -0.05, -0.6], [-0.1, -0.05, -0.6]],
+    // ModelConfig.xml: 0.07|-0.02|-0.7 and -0.07|-0.02|-0.7.
+    engineFlares: [[0.07, -0.02, -0.7], [-0.07, -0.02, -0.7]],
     colorFlares: [[0.7, -0.05, -0.3], [-0.7, -0.05, -0.3]],
   },
 ];

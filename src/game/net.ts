@@ -17,6 +17,9 @@ export enum MsgType {
   Ping = 7,
   Pong = 8,
   GhostData = 9,
+  /** Raw bytes sidecar request ({id,file}) / response ({id}, payload = bytes). */
+  BinaryRequest = 10,
+  BinaryData = 11,
   Error = 0xffff,
 }
 
@@ -92,3 +95,17 @@ export async function decodeMessage(data: ArrayBuffer | Uint8Array): Promise<Dec
 
 export const textEncoder = new TextEncoder();
 export const textDecoder = new TextDecoder();
+
+/** JSON control payloads (protocol doc: docs/protocol.md). */
+export function encodeJson(type: number, obj: unknown, opts: { compress?: boolean } = {}): Uint8Array {
+  return encodeMessage(type, textEncoder.encode(JSON.stringify(obj)), opts);
+}
+
+/** Decode a JSON payload; throws on malformed UTF-8/JSON. */
+export function decodeJson<T>(msg: DecodedMessage): T {
+  try {
+    return JSON.parse(textDecoder.decode(msg.payload)) as T;
+  } catch (e) {
+    throw new Error('net: malformed JSON payload: ' + (e as Error).message);
+  }
+}

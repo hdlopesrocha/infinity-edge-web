@@ -103,11 +103,41 @@ body {
 .accel-bar { position: absolute; width: 16px; background: rgba(255,255,255,0.2); }
 .accel-knob { position: absolute; width: 96px; height: 96px; }
 
-.opt-row { display: flex; align-items: center; gap: 10px; margin: 4px 0; color: #fff; }
+.opt-list { display: flex; flex-direction: column; gap: 8px; color: #fff; }
+/* Left column: labels share a right edge (Text Align.RIGHT + OUT_RIGHT
+   children in XM_Options), controls start at a common x. */
+.opt-list-left { align-items: flex-start; }
+.opt-list-left .opt-row { justify-content: flex-end; }
+.opt-list-left .opt-row > label { text-align: right; min-width: 122px; }
+.opt-list-right { align-items: flex-start; }
+.opt-row { display: flex; align-items: center; gap: 10px; margin: 0; color: #fff; }
 .opt-row label { font-size: 16px; white-space: pre; }
 .opt-input { background: none; border: none; color: #ffff00; font-size: 16px; font-family: inherit; pointer-events: auto; padding: 0; min-width: 60px; }
-input[type='range'].drag { width: 192px; pointer-events: auto; accent-color: #fff; }
-.opt-check { pointer-events: auto; accent-color: #fff; }
+.opt-value { font-size: 16px; white-space: pre; }
+/* InputDrag: 192 x LineSpacing black `_pixel` bar with a `_ball` knob. */
+.opt-drag { display: inline-flex; align-items: center; width: 192px; height: 20px; }
+input[type='range'].drag {
+  width: 192px; height: 20px; margin: 0; pointer-events: auto;
+  appearance: none; -webkit-appearance: none; background: #000; border: none;
+}
+input[type='range'].drag::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 20px; height: 20px; border: none;
+  background: var(--ball) center / contain no-repeat; cursor: pointer;
+}
+input[type='range'].drag::-moz-range-thumb {
+  width: 20px; height: 20px; border: none;
+  background: var(--ball) center / contain no-repeat; cursor: pointer;
+}
+/* InputCheck (CheckSkin: black `_pixel`, white `_ball` when checked). */
+input[type='checkbox'].opt-check {
+  appearance: none; -webkit-appearance: none;
+  width: 20px; height: 20px; margin: 0; background: #000; border: none;
+  pointer-events: auto; cursor: pointer;
+}
+input[type='checkbox'].opt-check:checked {
+  background: var(--ball) center / contain no-repeat, #000;
+}
+.opt-clear { align-self: flex-start; width: 90%; }
 
 .splash { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: transparent; pointer-events: auto; transition: opacity 500ms ease; }
 .splash img { width: 50%; max-width: 560px; height: auto; }

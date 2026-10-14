@@ -286,14 +286,15 @@ export class GameMap {
       }
       this.allBullets = keep;
     }
-    // MANAGE_SMOKE (alpha drains -0.075/frame while active)
+    // MANAGE_SMOKE (alpha drains -0.075 per 30 fps frame while active)
     {
       const keep: { obj: Billboard; elapsed: number; max: number }[] = [];
       for (const timer of this.timedBillboards) {
         const bill = timer.obj;
         timer.elapsed += dtMs;
         if (timer.elapsed < timer.max) {
-          bill.alpha = clamp(bill.alpha - 0.075, 0, 1);
+          // The original drains per fixed 30 fps frame; scale by real dt.
+          bill.alpha = clamp(bill.alpha - 0.075 * (dtMs / (1000 / 30)), 0, 1);
           this.refreshObject(bill);
           keep.push(timer);
         } else {
@@ -347,7 +348,10 @@ export class GameMap {
     const draw = d.draw;
     const r = d.rc.renderer;
     const items: OctItem[] = [];
-    this.octree.frustumSelect(r.frustum, items);
+    // Hierarchical frustum culling; the rejected-object count is reported in
+    // the renderer stats (no allocations, subtree rejects counted in bulk).
+    this.octree.frustumSelect(r.frustum, items, r.cullStats);
+    r.stats.culled = r.cullStats.culled;
     const list = (items as Abstract3D[]).filter(
       (o) => o.physics.objectType !== ObKind.Uncollidable || o.active,
     );

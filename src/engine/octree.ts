@@ -20,6 +20,11 @@ export interface OctItem {
   sradius: number;
 }
 
+/** Counts objects (or whole subtrees) rejected by frustum culling. */
+export interface CullStats {
+  culled: number;
+}
+
 export class OctNode {
   minx: number;
   miny: number;
@@ -186,19 +191,30 @@ export class OctNode {
     }
   }
 
-  frustumSelect(f: FrustumPlanes, out: OctItem[]): void {
+  /**
+   * Hierarchical frustum select. `stats` (optional, no allocation) counts the
+   * objects rejected by each test; a rejected subtree contributes its whole
+   * `count` at once, so the counter stays cheap on large maps (8k+ objects).
+   */
+  frustumSelect(f: FrustumPlanes, out: OctItem[], stats?: CullStats): void {
     for (const o of this.uncollidable) {
       if (o.active && sphereVisibleFrustum(f, o)) out.push(o);
+      else if (o.active && stats) stats.culled++;
     }
     for (const o of this.environment) {
       if (sphereVisibleFrustum(f, o)) out.push(o);
+      else if (stats) stats.culled++;
     }
     for (const o of this.interactive) {
       if (sphereVisibleFrustum(f, o)) out.push(o);
+      else if (stats) stats.culled++;
     }
     for (const ch of this.childs) {
-      if (ch && boxVisible(f, ch.minx, ch.miny, ch.minz, ch.maxx, ch.maxy, ch.maxz)) {
-        ch.frustumSelect(f, out);
+      if (!ch) continue;
+      if (boxVisible(f, ch.minx, ch.miny, ch.minz, ch.maxx, ch.maxy, ch.maxz)) {
+        ch.frustumSelect(f, out, stats);
+      } else if (stats) {
+        stats.culled += ch.count;
       }
     }
   }

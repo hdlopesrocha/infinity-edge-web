@@ -2,13 +2,16 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import { router } from './router';
 import { audio } from './game/audio';
+import { initChannel } from './game/netclient';
 import './style.css';
 
 createApp(App).use(router).mount('#app');
 
 // Music starts at launch (Game1.LoadContent -> MediaPlayer.Play). Browsers
 // block audio until the first user gesture, so retry once on the first
-// pointer/key event anywhere in the page.
+// pointer/key event anywhere in the page (and opportunistically when the page
+// regains focus / the pointer moves, which covers browsers that already trust
+// the origin).
 const unlockOnce = (): void => {
   audio.unlock();
   window.removeEventListener('pointerdown', unlockOnce);
@@ -16,5 +19,21 @@ const unlockOnce = (): void => {
 };
 window.addEventListener('pointerdown', unlockOnce);
 window.addEventListener('keydown', unlockOnce);
+const retry = (): void => {
+  if (!audio.playing()) audio.unlock();
+};
+document.addEventListener('visibilitychange', retry);
+window.addEventListener('focus', retry);
+window.addEventListener('pointermove', retry, { passive: true });
 
 (window as unknown as { __ieAudio?: typeof audio }).__ieAudio = audio;
+
+// Optional WebSocket asset/scene channel (docs/protocol.md). Disabled unless a
+// URL is configured, in which case converted level/model assets may travel as
+// gzip-framed binary messages instead of HTTP fetches. Never blocks rendering;
+// failures fall back to HTTP.
+const net = initChannel();
+(window as unknown as { __ieNet?: typeof net }).__ieNet = net;
+if (net.enabled) {
+  net.onStatus = (s) => console.debug('[net]', s.state, s.url);
+}

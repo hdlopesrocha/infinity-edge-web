@@ -3,7 +3,7 @@
      (EngineScreen.xml has no background); the start screen shows the
      Background scene (StartScreen.xml -> Content/Background.xml). -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { audio } from '../game/audio';
 
@@ -11,6 +11,7 @@ const router = useRouter();
 const route = useRoute();
 const fading = ref(false);
 const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
+const timers: number[] = [];
 
 const screen = computed(() => String(route.name ?? 'boot'));
 
@@ -24,20 +25,27 @@ onMounted(() => {
   // defer it to the first gesture, handled globally.
   audio.unlock();
   if (n === 'boot') {
-    window.setTimeout(() => void router.replace('/engine'), 60);
+    timers.push(window.setTimeout(() => void router.replace('/engine'), 60));
     return;
   }
-  window.setTimeout(() => {
+  timers.push(window.setTimeout(() => {
     fading.value = true;
-  }, 3000);
-  window.setTimeout(() => {
+  }, 3000));
+  timers.push(window.setTimeout(() => {
     if (n === 'engine') {
       void audio.voice('welcome');
       void router.replace('/start');
     } else {
       void router.replace('/menu');
     }
-  }, 3500);
+  }, 3500));
+});
+
+// Leaving the screen early (deep link, back button, menu click) must cancel
+// the scheduled transitions, otherwise the timer yanks the app back to /menu.
+onBeforeUnmount(() => {
+  for (const t of timers) window.clearTimeout(t);
+  timers.length = 0;
 });
 </script>
 

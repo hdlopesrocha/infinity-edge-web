@@ -446,6 +446,94 @@ function convert(path, folder, fileName) {
   };
 }
 
+// ---- Binary sidecar ------------------------------------------------------
+// Vertex/index data is packed into a sibling .bin file (documented in
+// docs/asset-formats.md). The JSON keeps names, materials, bounds and byte
+// ranges; the loader uploads the fetched buffer directly, so no per-vertex
+// JavaScript arrays are ever materialised at runtime.
+//
+// Layout, per mesh, each section 4-byte aligned, little-endian:
+//   Float32 position[nv*3] | Float32 normal[nv*3] | Float32 uv[nv*2] |
+//   Uint16|Uint32 index[ni]
+const align4 = (n) => (n + 3) & ~3;
+
+function meshBoundsOf(positions) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const v = positions[i + k];
+      if (v < min[k]) min[k] = v;
+      if (v > max[k]) max[k] = v;
+    }
+  }
+  const center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+  let radius = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    const dx = positions[i] - center[0];
+    const dy = positions[i + 1] - center[1];
+    const dz = positions[i + 2] - center[2];
+    radius = Math.max(radius, Math.hypot(dx, dy, dz));
+  }
+  return { center, radius };
+}
+
+function packBinary(meshes, binFile) {
+  const chunks = [];
+  let offset = 0;
+  const packed = [];
+  const push = (buf) => {
+    chunks.push(buf);
+    const at = offset;
+    offset += buf.byteLength;
+    const pad = align4(offset) - offset;
+    if (pad) chunks.push(Buffer.alloc(pad));
+    offset += pad;
+    return at;
+  };
+  for (const m of meshes) {
+    const nv = m.positions.length / 3;
+    let maxIndex = 0;
+    for (const i of m.indices) if (i > maxIndex) maxIndex = i;
+    const u32 = maxIndex > 65535;
+    const pos = Buffer.from(new Float32Array(m.positions).buffer);
+    const nrm = Buffer.from(new Float32Array(m.normals).buffer);
+    const uv = Buffer.from(new Float32Array(m.uvs).buffer);
+    const idx = Buffer.from(
+      (u32 ? Uint32Array.from(m.indices) : Uint16Array.from(m.indices)).buffer,
+    );
+    const bounds = meshBoundsOf(m.positions);
+    packed.push({
+      name: m.name,
+      material: m.material,
+      vertexCount: nv,
+      indexCount: m.indices.length,
+      indexType: u32 ? 'u32' : 'u16',
+      section: {
+        position: { offset: push(pos), length: pos.byteLength },
+        normal: { offset: push(nrm), length: nrm.byteLength },
+        uv: { offset: push(uv), length: uv.byteLength },
+        index: { offset: push(idx), length: idx.byteLength },
+      },
+      bounds: {
+        center: round3(bounds.center),
+        radius: Math.round(bounds.radius * 1e6) / 1e6,
+      },
+    });
+  }
+  const buffer = Buffer.concat(chunks);
+  return {
+    meshes: packed,
+    meta: {
+      file: binFile,
+      byteLength: buffer.byteLength,
+      endianness: 'little',
+      layout: 'position:f32x3,normal:f32x3,uv:f32x2,index:u16|u32',
+    },
+    buffer,
+  };
+}
+
 // ---- Main -----------------------------------------------------------------
 if (!existsSync(xnbRoot)) {
   console.error('convert-xnb: XNB content dir not found:', xnbRoot);
@@ -464,13 +552,29 @@ for (const folder of readdirSync(xnbRoot).sort()) {
   const convertOne = (file, outName) => {
     try {
       const json = convert(join(dir, file), folder, file);
-      if (!CHECK) writeFileSync(join(outDir, outName), JSON.stringify(json));
+      const binFile = outName.replace(/\.json$/, '.bin');
+      const packed = packBinary(json.meshes, binFile);
+      // Binary sidecar replaces the inline vertex arrays; everything else
+      // (names, materials, bounds, nodes) stays in the JSON.
+      const out = {
+        ...json,
+        version: 2,
+        binary: packed.meta,
+        meshes: packed.meshes,
+      };
+      if (!CHECK) {
+        writeFileSync(join(outDir, outName), JSON.stringify(out));
+        writeFileSync(join(outDir, binFile), packed.buffer);
+      }
       const tris = json.meshes.reduce((n, m) => n + m.indices.length / 3, 0);
+      const jsonBytes = Buffer.byteLength(JSON.stringify(out));
       manifest.models[outName] = {
         source: json.source,
         meshes: json.meshes.length,
         triangles: tris,
         materials: json.materials.map((m) => m.name),
+        binary: { file: binFile, byteLength: packed.meta.byteLength },
+        bytes: { json: jsonBytes, bin: packed.meta.byteLength },
         bounds: {
           center: json.boundingSphere.center.map((v) => +v.toFixed(2)),
           radius: +json.boundingSphere.radius.toFixed(2),
@@ -479,7 +583,7 @@ for (const folder of readdirSync(xnbRoot).sort()) {
       };
       ok++;
       const m = json.boundingSphere;
-      console.log(`ok ${outName}: ${json.meshes.length} mesh(es), ${tris} tris, r=${m.radius.toFixed(2)} c=(${m.center.map((v) => v.toFixed(2)).join(',')})`);
+      console.log(`ok ${outName}: ${json.meshes.length} mesh(es), ${tris} tris, r=${m.radius.toFixed(2)} c=(${m.center.map((v) => v.toFixed(2)).join(',')}) json=${jsonBytes}B bin=${packed.meta.byteLength}B`);
     } catch (e) {
       failed.push(`${folder}/${file}: ${e.message}`);
       console.error(`FAIL ${folder}/${file}: ${e.message}`);

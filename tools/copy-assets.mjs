@@ -96,5 +96,22 @@ try {
   if (existsSync(mp3)) { copyFileSync(mp3, join(sndOut, 'sound.mp3')); copied++; }
 } catch { /* ignore */ }
 
+// App icons: the original XNA project's favicon + the WP7 tile art (ico62/ico173),
+// used for the browser tab / home-screen icon.
+try {
+  const pub = join(webRoot, 'public');
+  const iconDirs = [
+    join(content, '..', 'InfinityEdge'),
+    join(content, '..'),
+    dirname(content),
+  ];
+  const icons = [['favicon.ico', 'favicon.ico'], ['ico173.png', 'apple-touch-icon.png']];
+  for (const [from, to] of icons) {
+    const p = iconDirs.map((d) => join(d, from)).find((c) => existsSync(c));
+    if (p) { copyFileSync(p, join(pub, to)); copied++; }
+    else missing.push(from);
+  }
+} catch { /* ignore */ }
+
 console.log(`copy-assets: copied ${copied} files, missing ${missing.length}`);
 if (missing.length) console.log('missing:', missing.join(', '));

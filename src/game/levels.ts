@@ -1,5 +1,7 @@
 // Level catalogue over converted Level.xml JSON.
 
+import { fetchAssetJson } from './assetfetch';
+
 export interface LevelObjectJson {
   team: string;
   type: string;
@@ -72,9 +74,7 @@ export async function loadLevel(key: string): Promise<LevelDef> {
   if (hit) return hit;
   const file = LEVEL_FILES[key];
   if (!file) throw new Error('Unknown level: ' + key);
-  const res = await fetch(BASE + file);
-  if (!res.ok) throw new Error('Level not found: ' + file);
-  const def: LevelDef = { ...((await res.json()) as LevelJson), key };
+  const def: LevelDef = { ...(await fetchAssetJson<LevelJson>(BASE + file)), key };
   cache.set(key, def);
   return def;
 }

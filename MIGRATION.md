@@ -91,18 +91,35 @@ Source: `../IE3D_37_T` (174 `.cs`, 38 FBX, ~100 textures, 26 sounds, 13 levels,
 
 ## 3. Verification (real browser)
 
-- **Lighting (fix)**: `DirLight0Direction` is the XNA `EnableDefaultLighting`
-  key light `(-0.5265408, -0.5735765, -0.6275069)` (BasicEffect.fx uses
-  `-DirLight0Direction`; the shader receives the negation) and the specular is
-  `Color.LightBlue` = (0.6784, 0.8471, 0.9020); previously the light came from
-  a different direction and the specular blue was 1.0.
+- **Lighting (fix)**: the runtime light is what a plain `BasicEffect` carries
+  (`Model3D.Draw` copies the *camera* effect's `DirectionalLight0` into every
+  model mesh effect; the camera effect is never `EnableDefaultLighting`'ed):
+  `Direction = Vector3.Down`, `DiffuseColor = One`. The GLSL light vector is
+  the negation (`dot(N, -DirLight0Direction)` → `(0, 1, 0)`, top light) and the
+  diffuse is white — the earlier "EnableDefaultLighting key light / warm white"
+  reading was wrong (the key-light rig is applied to the models' own effects in
+  `Model3D.LoadModel` and then overwritten per draw). `LoadModel` also forces
+  `DiffuseColor = White` on every mesh part (the `.xnb` material colours never
+  reach the draw call), lighting stays per-pixel with
+  `SpecularColor = Color.LightBlue` (0.6784, 0.8471, 0.9020), `SpecularPower
+  1024`, ambient 0.001, emissive = the per-object color parameter.
+- **Billboard culling (fix)**: `Draws.DrawBillBoard` / `Draws.TextureSquare`
+  switch to `RasterizerState.CullNone` (and restore) before drawing — the
+  camera-basis quad is clockwise on screen, so with `CULL_FACE BACK` left
+  enabled *every* star/smoke/cloud/flare and wall quad was culled (the
+  billboards were submitted but nothing reached the framebuffer). `flushBillboards`
+  and `drawQuad` now disable culling for their draw and restore it.
 - **Billboards (fix)**: miniStar/cloud billboards are octree objects
   (`Billboard` ctor `InsertObject`, Billboard.cs) — the C# default
   `_billboards = false` hides them, while SS1–SS8 and the MonoGame port run
   show them, so the web build defaults Special Effects **on** (Options still
   toggles it; the scene rebuilds so stars spawn/despawn like a level reload).
   Engine/color flares rotate their offsets by the ship quaternion
-  (`(CreateTranslation(v) * CreateFromQuaternion(rot)).Translation`).
+  (`(CreateTranslation(v) * CreateFromQuaternion(rot)).Translation`); the
+  offsets come from `ModelConfig.xml` (Fighter3 0.07|-0.02|-0.7, ... — the
+  earlier hand-written values were wrong). Smoke alpha drains -0.075 per 30 fps
+  frame in the original, so the web loop scales the drain by `dt/33.3 ms`
+  (otherwise the trail is half as long at 60 fps).
   Drawing is batched per texture (10 000 miniStar + 1 000 cloud billboards ->
   one draw call per texture): TT/CTF run at 60 fps in software rendering.
 - **Boot screens (fix)**: EngineScreen.xml has no `<background>` -> `/engine`
@@ -156,3 +173,59 @@ Source: `../IE3D_37_T` (174 `.cs`, 38 FBX, ~100 textures, 26 sounds, 13 levels,
 - Options/scores persist as XML/JSON in localStorage (IEFile replacement).
 - The `Min`/`Max` conversions of `Maths.StringToVector3` keep the original
   comma→exception quirk; commented level content stays unparsed.
+
+## 5. Follow-up pass (verification, binary assets, WebSocket channel)
+
+Everything below was re-checked against the running application in a real
+browser (headless Chrome via CDP, `tools/verify.mjs`, `tools/screenshots.mjs`).
+
+**Binary model assets.** `tools/convert-xnb.mjs` now splits every model into
+metadata JSON + a `.bin` sidecar (section table per mesh, 4-byte aligned,
+`position:f32x3,normal:f32x3,uv:f32x2,index:u16|u32`), documented in
+`docs/asset-formats.md`. `src/engine/model.ts` validates every range against
+`binary.byteLength` and uploads directly from typed-array *views*, so nothing
+ever builds per-vertex JS arrays: all 43 models / 72 meshes, 2.6 MB -> 1.9 MB
+with ~1 KB of JSON parsed per model (`Asteroid3`: 657 KB JSON -> 1 KB + 408 KB).
+Version-1 inline arrays are still accepted for the procedural fallback.
+
+**WebSocket binary channel + gzip** (`docs/protocol.md`): 8-byte LE header
+(version, flags, u16 type, u32 length), explicit gzip flag for payloads >= 256 B
+that actually shrink, id-correlated JSON payloads, `BinaryData` =
+`u32 metaLength | json {id,file,byteLength} | bytes`, `Error` frames.
+`tools/asset-server.mjs` (node + ws, `noServer` upgrade routing on `/assets`)
+serves the same converted assets over the channel and over plain HTTP;
+`src/game/netclient.ts` reconnects with exponential backoff, times out after
+8 s, counts malformed input, never throws into callers, and
+`src/game/assetfetch.ts` falls back to HTTP per asset. Enabled only via `?ws=`,
+`VITE_IE_WS` or `window.__IE_WS_URL` — with none set the app behaves exactly
+like before (no socket). Measured CTF Easy over the channel: 108 frames,
+2 127 303 B payload -> 811 495 B wire (62 % saved); both HTTP and WS paths pass
+the full browser check suite against the production build.
+
+**Frustum culling accounting.** `OctNode.frustumSelect` accepts a reusable
+`CullStats` counter (rejected objects, subtrees counted in bulk, no per-frame
+allocations) and `Map.draw` reports it as `renderer.stats.culled`; the browser
+check confirms 19 018 rejected / 53 drawn on CTF Easy with 0 visible objects
+dropped.
+
+**UI fidelity fix — Options.** The screen is rebuilt to `XM_Options`: left
+`VerticalList` of right-aligned labels with a shared right edge, 192 x 20 black
+`_pixel` bars with `_ball` knobs and value text (192 / Normal / 50 %), black
+square checks with a white ball when set, and `Clear All` at 90 % of the right
+list. The previous `Rotate` button (a leftover from the 2013 `MenuOptions.cs`)
+was removed. Matches SS8.
+
+**App icon.** `tools/copy-assets.mjs` copies the original `favicon.ico` and
+`ico173.png` (as `apple-touch-icon.png`); the 404 that every route produced is
+gone.
+
+**Test + verification tooling.** `npm test` (vitest, 41 tests): protocol framing,
+gzip threshold/flag/corruption/version/malformed JSON, binary-payload id, frustum
+planes (near/far/side, sphere-touching edges), ocTree selection (counter parity,
+large maps, insert/refresh/remove, the verbatim `_active`-only-uncullidable
+quirk), converted models (sidecar sizes, ranges, bounds, GPU upload shape), and
+physics/life (integration, clamp, lead-shot, GetH/GetV, Life3 branch quirk).
+`tools/verify.mjs` (15 checks) covers routing/history, a single surviving WebGL
+context across routes, navigation→scene mapping, audio unlock + soundtrack,
+frame rate, culling correctness and console errors; `tools/screenshots.mjs`
+captures every route and fails on 4xx/console errors.

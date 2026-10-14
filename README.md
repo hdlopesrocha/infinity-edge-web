@@ -10,11 +10,20 @@ directly for this application.
 ```sh
 npm install
 npm run copy:assets     # textures + sounds + icons from ../IE3D_37_T (once)
-npm run convert         # XNB -> JSON models + Level.xml -> JSON (once)
+npm run convert         # XNB -> JSON+bin models, Level.xml/Menu.xml -> JSON (once)
 npm run dev             # http://localhost:5173/#/
 npm run build           # typecheck + production build (dist/)
 npm run preview         # serve the build
 npm run typecheck       # vue-tsc only
+npm test                # unit tests (protocol+gzip, frustum/ocTree, models, physics)
+
+# verification tooling (headless Chrome, no extra dependencies)
+npm run asset-server    # HTTP + WebSocket asset channel on :8090
+npm run shots           # screenshots of every route -> tools/shots/
+node tools/verify.mjs   # behavioural checks: routing, history, single GL context,
+                        # navigation -> scene, audio, fps, frustum culling
+node tools/probe.mjs <url> "<js>"      # evaluate an expression in the page
+node tools/hangprobe.mjs <url> "<js>"  # poll an expression, detect main-thread stalls
 ```
 
 Model conversion reads the **original compiled XNA content** (the 2013 build
@@ -22,7 +31,10 @@ output shipped with the game, reused byte-for-byte by the `../infinity-edge-mono
 port). A copy of every `modelN.xnb` / `colorN.xnb` is vendored under
 `tools/xnb/Objects/`; the converter bakes `transforms[ParentBone] * vertex`
 (XNA `Model.CopyAbsoluteBoneTransformsTo` + `Model3D.Draw`) and reproduces
-`Model3D.GetBoundingSphere`. Texture *file* names are resolved against
+`Model3D.GetBoundingSphere`. Each model is written as metadata JSON plus a
+binary vertex/index sidecar (`<Name>.json` + `<Name>.bin`; format documented in
+`docs/asset-formats.md`), which the loader uploads straight from the fetched
+buffer. Texture *file* names are resolved against
 `../IE3D_37_T/InfinityEdge3D/InfinityEdge/InfinityEdgeContent` (auto-detects
 the `IE3D_37_T/InfinityEdge/InfinityEdgeContent` layout too).
 `node tools/convert-xnb.mjs --check` parses without writing. Every output is
@@ -50,6 +62,26 @@ composition; the compiled XNB is exact. It is kept only for reference.
 Back/forward and deep links work; the WebGL context persists across routes —
 only the scene description swaps (menus share the Background.xml scene).
 
+## WebSocket asset channel (optional)
+
+`docs/protocol.md` documents the binary protocol: an 8-byte little-endian
+header (version, flags, type, payload length), an explicit gzip flag for
+payloads >= 256 bytes that actually shrink, request/response correlation by id,
+and `Error` frames. It carries the converted levels and models — JSON metadata
+plus `.bin` vertex data — and is enabled only when a URL is supplied (`?ws=`,
+`VITE_IE_WS`, or `window.__IE_WS_URL`):
+
+```sh
+npm run asset-server    # ws://127.0.0.1:8090/assets (+ static HTTP on :8090)
+# open http://127.0.0.1:5173/?ws=ws://127.0.0.1:8090/assets#/menu
+```
+
+With no URL configured the application reads the same files over HTTP like a
+plain static host. The channel reconnects with exponential backoff, times out
+after 8 s, validates framing/sizes, counts malformed input, and falls back to
+HTTP per asset instead of stalling scene loading. Measured on CTF Easy: 108
+frames, 2 127 303 B of payload -> 811 495 B on the wire.
+
 ## Controls
 
 Keyboard (Control.cs): arrows steer, Space fire, LeftControl throttle,
@@ -60,10 +92,12 @@ buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
 
 ## Layout
 
-- `src/engine/` — GL context/loop, BasicEffect-exact GLSL (ambient 0.001,
-  LightBlue specular 1024), texture cache, converted-model loader with
-  validation + LOD/fade, camera (follow + orbit), frustum, OcTree (frag > 32),
-  draw primitives (billboards gated on Special Effects, textured quads).
+- `src/engine/` — GL context/loop, BasicEffect-exact GLSL (plain-BasicEffect
+  light: direction Down → shader `(0,1,0)`, white diffuse, ambient 0.001,
+  LightBlue specular 1024, white material diffuse), texture cache,
+  converted-model loader with validation + LOD/fade, camera (follow + orbit),
+  frustum, OcTree (frag > 32), draw primitives (billboards/quads drawn
+  CullNone like `Draws.DrawBillBoard`, billboards gated on Special Effects).
 - `src/game/` — math (GetH/GetV verbatim), life pools (Life1/Life3 quirks),
   physics presets + NextPosition + PreviewDirection, Team/Score/Reward/
   Conditions (Destroyed = !active, MorePoints = strictly above minimum),
@@ -79,7 +113,13 @@ buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
   life bar, touch controls), 12 views, hash router.
 - `src/ui/scene-xml.ts` — scene XML parser producing UI trees + refs
   (background/body/buttonSkin/font/textures/models/scoreBoard/options/about).
-- `tools/`, `public/assets/` — conversion scripts + converted content.
+- `src/game/net.ts`, `src/game/netclient.ts`, `src/game/assetfetch.ts` — binary
+  framing + gzip, the optional WebSocket channel (reconnect/timeout/fallback),
+  and the asset fetch front-end used by the level and model loaders.
+- `tools/`, `public/assets/` — conversion scripts, verification tooling
+  (screenshots/verify/probe/hangprobe), the asset server, converted content.
+- `docs/protocol.md`, `docs/asset-formats.md` — protocol and converted asset
+  formats.
 
 ## Verified behaviors (browser)
 
@@ -89,5 +129,12 @@ buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
 - CTF Easy: 12v11 objects (10v9 ships + bases/flags), 8000 asteroids,
   30 s of AI combat without errors, respawns, doors closed.
 - Menus, briefing text, options, about, tracks all render from converted data.
-- History back/forward syncs routes and scenes; unit tests 21/21 (protocol+gzip,
-  frustum, OcTree descent/queries, physics integration/lead-shot).
+- Options screen matches SS8: right-aligned labels with a shared right edge,
+  192 px black `_pixel` bars with `_ball` knobs and value text, black square
+  checks with a white ball when set, `Clear All` at 90 % of the right list.
+- `node tools/verify.mjs`: 15/15 checks — deep link, menu navigation, history
+  back/forward, unknown route, one surviving WebGL context across routes,
+  navigation→scene mapping (background/engine/level), audio unlock + soundtrack,
+  60 fps, culling (19k objects rejected, nothing visible dropped), no page errors.
+- `npm test`: 41 unit tests (protocol framing/gzip/threshold/malformed input,
+  frustum + ocTree culling, converted model sidecars, physics and life pools).

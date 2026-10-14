@@ -35,15 +35,20 @@ export function defaultOptions(): Options {
 
 const OPTIONS_KEY = 'options.ie3d';
 
+const OPTIONS_VERSION = '1.0.0.3';
+
 export function loadOptions(): Options {
   const d = defaultOptions();
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
     if (!raw) return d;
     const el = new DOMParser().parseFromString(raw, 'text/xml').querySelector('Options');
-    if (!el || el.getAttribute('_version') !== '1.0.0.2') {
+    if (!el || el.getAttribute('_version') !== OPTIONS_VERSION) {
+      // Old/unknown options: keep what still applies, but re-apply the web
+      // defaults once (Special Effects on: SS1-SS8 and the MonoGame port run
+      // show the star/cloud billboards + engine flares).
       localStorage.removeItem(OPTIONS_KEY);
-      return d;
+      return { ...d, ...(el ? {} : {}) };
     }
     const g = (n: string, fb: string) => el.getAttribute(n) ?? fb;
     const b = (n: string, fb: boolean) => {
@@ -71,7 +76,7 @@ export function saveOptions(o: Options): void {
   try {
     localStorage.setItem(
       OPTIONS_KEY,
-      `<Options _version="1.0.0.2" _userName="${o.username.replace(/"/g, '')}" ` +
+      `<Options _version="${OPTIONS_VERSION}" _userName="${o.username.replace(/"/g, '')}" ` +
         `_wireframe="${o.wireframe}" _detail="${o.detail}" _distance="${o.distance}" ` +
         `_musicVolume="${o.musicVolume}" _billboards="${o.billboards}" ` +
         `_motionBlur="${o.motionBlur}" _axisY="${o.axisY}" _axisX="${o.axisX}" />`,

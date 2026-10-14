@@ -31,9 +31,12 @@ export class Draw {
   uBb: Record<string, WebGLUniformLocation | null>;
   quadVao: WebGLVertexArrayObject | null = null;
   private invT = mat4.create();
-  // BasicEffect.EnableDefaultLighting: DirLight0Direction; the shader uses
-  // -DirLight0Direction (XNA BasicEffect.fx: dot(N, -DirLight0Direction)).
-  lightDir = vec3.fromValues(0.5265408, 0.5735765, 0.6275069);
+  // Model3D.Draw copies `camera._basicEffect.DirectionalLight0` into every
+  // model effect each frame. Camera._basicEffect is a plain `new BasicEffect`
+  // (never EnableDefaultLighting'ed), so the runtime light is the BasicEffect
+  // default: Enabled, DiffuseColor One, Direction Vector3.Down. The shader
+  // receives -DirLight0Direction (XNA: dot(N, -DirLight0Direction)).
+  lightDir = vec3.fromValues(0, 1, 0);
   // Batched billboard state (Draws.DrawBillBoard is one quad per call; the
   // 10k miniStar + 1k cloud billboards are merged per texture instead).
   private bbq: WebGLProgram;
@@ -144,7 +147,11 @@ export class Draw {
     vec3.normalize(this.lightDir, this.lightDir);
     gl.uniform3f(U.uLightDir, this.lightDir[0], this.lightDir[1], this.lightDir[2]);
     if (opts.light) {
+      // The camera effect's DirLight0DiffuseColor is the BasicEffect default
+      // Vector3.One (Model3D.Draw copies it; EnableDefaultLighting is only ever
+      // applied to the model meshes' own effects and then overwritten).
       gl.uniform3f(U.uLightDiffuse, 1, 1, 1);
+      // SpecularColor = Color.LightBlue (Model3D.Draw), SpecularPower = 1024.
       gl.uniform3f(U.uLightSpec, 0.6784314, 0.8470588, 0.9019608);
     } else {
       gl.uniform3f(U.uLightDiffuse, 0, 0, 0);
@@ -159,7 +166,10 @@ export class Draw {
       gl.uniform1i(U.uTex, 0);
       gl.uniform1i(U.uHasTex, 1);
       const mat = model.materials[m.materialIndex] ?? model.materials[0];
-      const d = opts.diffuse ?? mat?.diffuse ?? [1, 1, 1];
+      // Model3D.LoadModel overrides every mesh part's DiffuseColor to White
+      // (only the texture albedo shades the surface); the .xnb material colours
+      // are replaced at load time and never reach the draw call.
+      const d = opts.diffuse ?? [1, 1, 1];
       gl.uniform3f(U.uDiffuse, d[0], d[1], d[2]);
       gl.uniform3f(U.uEmissive, opts.emissive[0], opts.emissive[1], opts.emissive[2]);
       gl.uniform1f(U.uShininess, 1024);
@@ -245,7 +255,13 @@ export class Draw {
     gl.bindVertexArray(this.bbqVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.bbqVbo);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.bbqVerts), gl.DYNAMIC_DRAW);
+    // Draws.DrawBillBoard temporarily sets RasterizerState.CullNone (the camera
+    // basis builds the quad clockwise on screen, so back-face culling hides
+    // every star/smoke/cloud/flare); restore the caller's state afterwards.
+    const cull = gl.isEnabled(gl.CULL_FACE);
+    if (cull) gl.disable(gl.CULL_FACE);
     gl.drawArrays(gl.TRIANGLES, 0, this.bbqVerts.length / 9);
+    if (cull) gl.enable(gl.CULL_FACE);
     gl.bindVertexArray(null);
     this.bbqVerts.length = 0;
     this.bbqTex = null;
@@ -299,7 +315,11 @@ export class Draw {
     gl.uniform3f(U.uColor, color[0], color[1], color[2]);
     gl.uniform1f(U.uAlpha, alpha);
     gl.bindVertexArray(q.vao);
+    // Draws.TextureSquare also switches to RasterizerState.CullNone.
+    const cull = gl.isEnabled(gl.CULL_FACE);
+    if (cull) gl.disable(gl.CULL_FACE);
     gl.drawArrays(gl.TRIANGLES, 0, q.count);
+    if (cull) gl.enable(gl.CULL_FACE);
     gl.bindVertexArray(null);
   }
 }

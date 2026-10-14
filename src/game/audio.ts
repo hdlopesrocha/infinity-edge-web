@@ -50,6 +50,11 @@ class AudioManager {
     if (this.musicEl) this.musicEl.volume = this.muted ? 0 : v;
   }
 
+  /** True while the looping soundtrack is audible. */
+  playing(): boolean {
+    return !!this.musicEl && !this.musicEl.paused;
+  }
+
   private async buffer(name: string): Promise<AudioBuffer | null> {
     if (!this.ctx) return null;
     const hit = this.buffers.get(name);
