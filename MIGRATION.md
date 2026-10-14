@@ -219,6 +219,20 @@ was removed. Matches SS8.
 `ico173.png` (as `apple-touch-icon.png`); the 404 that every route produced is
 gone.
 
+**Face winding (visual fix).** The compiled content is authored for
+Direct3D/XNA, whose front faces are **clockwise**, while WebGL defaults to
+counter-clockwise fronts. Rendering the meshes as uploaded therefore culled the
+true front faces and shaded the far side of every hull (asteroids looked hollow,
+ships were dark silhouettes). Measured on the converted sidecars: only 0.0-3.8 %
+of triangles (per mesh, all 43 models) are CCW-consistent with their stored
+outward normals, and the procedural fallbacks are identical (0 %). The loader
+now re-winds the index order on upload (`flipWinding`, mirrors `initGL`'s CCW
+front face) for both the inline and the binary path, and derives fallback
+normals from the re-wound indices; the sidecar bytes stay verbatim, which
+`tests/model.test.ts` asserts both ways (< 10 % agreement on disk, > 90 % after
+upload). Confirmed in the browser against SS3/SS4/SS7: the player ship renders as
+the light grey dart of the reference screenshots instead of a dark silhouette.
+
 **Context-loss recovery + high-DPI.** `webglcontextlost` stops the loop;
 `webglcontextrestored` now also drops the GPU texture and model caches
 (`clearTextureCache()` / `clearModelCache()`) before rebuilding the draw

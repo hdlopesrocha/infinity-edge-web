@@ -254,12 +254,12 @@ export function createGpuModel(gl: WebGL2RenderingContext, data: ConvertedModel)
   const meshes: GpuMesh[] = data.meshes.map((mesh) => {
     const positions = mesh.positions ?? [];
     const pos = new Float32Array(positions);
-    const nor = ensureNormals(mesh);
+    const indices = mesh.indices ?? [];
+    const idx = flipWinding(indices.some((i) => i > 65535) ? new Uint32Array(indices) : new Uint16Array(indices));
+    const nor = ensureNormals(mesh, idx);
     const nv = positions.length / 3;
     const uvs = mesh.uvs ?? [];
     const uv = uvs.length === nv * 2 ? new Float32Array(uvs) : new Float32Array(nv * 2);
-    const indices = mesh.indices ?? [];
-    const idx = indices.some((i) => i > 65535) ? new Uint32Array(indices) : new Uint16Array(indices);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -283,7 +283,7 @@ export function createGpuModel(gl: WebGL2RenderingContext, data: ConvertedModel)
     gl.bindVertexArray(null);
     return {
       vao, vbo, nbo, uvbo, ibo,
-      indexCount: indices.length,
+      indexCount: idx.length,
       indexType: idx instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
       materialIndex: mesh.material ? (matIndex.get(mesh.material) ?? 0) : 0,
       bounds: meshBounds(pos),
@@ -316,14 +316,15 @@ export function createGpuModelBinary(
     const s = mesh.section!;
     const nv = mesh.vertexCount!;
     const pos = new Float32Array(buffer, s.position.offset, nv * 3);
+    // D3D clockwise-front -> GL counter-clockwise-front (see flipWinding).
+    const idx = flipWinding(idxOf(buffer, mesh));
     let nor: Float32Array;
     if (s.normal.length === nv * 12) {
       nor = new Float32Array(buffer, s.normal.offset, nv * 3);
     } else {
-      nor = computeNormalsTyped(pos, idxOf(buffer, mesh));
+      nor = computeNormalsTyped(pos, idx);
     }
     const uv = s.uv.length === nv * 8 ? new Float32Array(buffer, s.uv.offset, nv * 2) : new Float32Array(nv * 2);
-    const idx = idxOf(buffer, mesh);
     const bounds = mesh.bounds
       ? { center: vec3.fromValues(...mesh.bounds.center), radius: mesh.bounds.radius }
       : meshBounds(pos);
