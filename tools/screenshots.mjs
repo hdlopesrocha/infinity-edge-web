@@ -40,6 +40,8 @@ const SHOTS = [
   ['/game/ctf-easy', 6000, 'game-ctf'],
   ['/options', 1200, 'options'],
   ['/about', 1200, 'about'],
+  ['/victory/tt-easy-01', 1500, 'victory'],
+  ['/defeat/ctf-easy', 1500, 'defeat'],
   ['/definitely-not-a-route', 800, 'unknown'],
 ];
 

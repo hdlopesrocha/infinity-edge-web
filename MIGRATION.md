@@ -103,6 +103,14 @@ Source: `../IE3D_37_T` (174 `.cs`, 38 FBX, ~100 textures, 26 sounds, 13 levels,
   reach the draw call), lighting stays per-pixel with
   `SpecularColor = Color.LightBlue` (0.6784, 0.8471, 0.9020), `SpecularPower
   1024`, ambient 0.001, emissive = the per-object color parameter.
+- **Model winding (fix)**: the compiled XNA content (and the procedural
+  fallbacks) is wound *clockwise* when seen from outside — Direct3D's front-face
+  convention — while GL's default front is counter-clockwise. The loader now
+  swaps the 2nd/3rd index of every triangle on upload (and derives the
+  area-weighted normals of meshes without a normal section from the flipped
+  order), so `cullFace(BACK)` keeps the outside. Without the flip every hull
+  rendered its *inside*: asteroids looked hollow and ships/planets were lit by
+  the inward normals — which is what read as a wrong light direction/lighting.
 - **Billboard culling (fix)**: `Draws.DrawBillBoard` / `Draws.TextureSquare`
   switch to `RasterizerState.CullNone` (and restore) before drawing — the
   camera-basis quad is clockwise on screen, so with `CULL_FACE BACK` left

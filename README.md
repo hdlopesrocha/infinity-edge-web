@@ -124,6 +124,11 @@ buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
 
 ## Verified behaviors (browser)
 
+- Rendering matches the 2013 reference screenshots: engine/color flares, smoke
+  trail, miniStar/cloud billboards and the hexagon walls (all previously culled
+  by the missing `CullNone`), the plain-BasicEffect light (`Direction.Down`,
+  white) and the corrected model winding (SS1 menu, SS3 chase view, SS6 CTF
+  base).
 - TT Easy 01: throttle run from origin through all 6 gates → **Gold**
   (5.90 s < 6 s), ghost recorded (2563 samples).
 - TT Easy 02: all gates → **Victory** screen with medal, score + ghost saved.
