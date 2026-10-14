@@ -198,6 +198,65 @@ check('frustum culling rejects objects', game && game.culled > 0, `culled ${game
 check('culling never drops a visible object', game && game.wronglyDropped === 0,
   `visible ships ${game?.visibleShips}, invisible ${game?.invisibleShips}, wrongly dropped ${game?.wronglyDropped}`);
 
+// --- context loss recovery ------------------------------------------------
+await goto('/game/tt-easy-01', 6000);
+const loss = await evaluate(`(() => {
+  const gl = document.querySelector('canvas').getContext('webgl2');
+  const ext = gl.getExtension('WEBGL_lose_context');
+  if (!ext) return { supported: false };
+  // The extension instance is invalidated while the context is lost, so it is
+  // kept on window for the restore call.
+  window.__loseExt = ext;
+  window.__drawBefore = window.__ieRenderer.draw;
+  ext.loseContext();
+  return { supported: true, lost: gl.isContextLost() };
+})()`);
+await sleep(1500);
+const halted = await evaluate(`(() => {
+  const d0 = window.__drawBefore;
+  return { sameDraw: window.__ieRenderer.draw === d0 };
+})()`);
+const recovery = await evaluate(`new Promise((resolve) => {
+  const gl = document.querySelector('canvas').getContext('webgl2');
+  window.__loseExt.restoreContext();
+  const t0 = performance.now();
+  const tick = () => {
+    const r = window.__ieRenderer;
+    const alive = !gl.isContextLost() && r.draw !== window.__drawBefore
+      && (r.stats.fps ?? 0) > 0 && (r.stats.draws ?? 0) > 0;
+    if (alive) {
+      resolve({ ok: true, ms: Math.round(performance.now() - t0), fps: r.stats.fps, drawn: r.stats.draws });
+      return;
+    }
+    if (performance.now() - t0 > 12000) {
+      resolve({ ok: false, ms: Math.round(performance.now() - t0), lost: gl.isContextLost(),
+                rebuilt: r.draw !== window.__drawBefore, fps: r.stats.fps, drawn: r.stats.draws });
+      return;
+    }
+    setTimeout(tick, 250);
+  };
+  tick();
+})`);
+check('context loss stops the loop and restore rebuilds GL state',
+  loss?.supported !== false && halted?.sameDraw === true && !!recovery?.ok,
+  `lost=${String(loss?.lost)} paused=${String(halted?.sameDraw)} recovery ${JSON.stringify(recovery)}`);
+
+// --- high-DPI --------------------------------------------------------------
+// Emulate a 2x display and confirm the backing store (not just the CSS size)
+// follows the device pixel ratio, capped at 2.
+await send('Emulation.setDeviceMetricsOverride',
+  { width: 800, height: 480, deviceScaleFactor: 2, mobile: false });
+await sleep(1500);
+const dpr = await evaluate(`(() => {
+  const c = document.querySelector('canvas');
+  return { dpr: window.devicePixelRatio || 1, w: c.width, h: c.height, cw: c.clientWidth, ch: c.clientHeight };
+})()`);
+check('canvas backing store honours device pixel ratio',
+  dpr.dpr === 2 && dpr.w === dpr.cw * 2 && dpr.h === dpr.ch * 2, JSON.stringify(dpr));
+await send('Emulation.setDeviceMetricsOverride',
+  { width: 800, height: 480, deviceScaleFactor: 1, mobile: false });
+await sleep(600);
+
 // --- no page errors overall ----------------------------------------------
 check('no uncaught page errors', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | '));
 

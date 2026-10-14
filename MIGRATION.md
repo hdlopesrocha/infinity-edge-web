@@ -219,13 +219,24 @@ was removed. Matches SS8.
 `ico173.png` (as `apple-touch-icon.png`); the 404 that every route produced is
 gone.
 
+**Context-loss recovery + high-DPI.** `webglcontextlost` stops the loop;
+`webglcontextrestored` now also drops the GPU texture and model caches
+(`clearTextureCache()` / `clearModelCache()`) before rebuilding the draw
+programs and the active scene, because VAOs/buffers/textures from the lost
+context cannot be reused. Verified end to end with
+`WEBGL_lose_context` + `tools/context-probe.mjs`: loss pauses rendering, the
+restore rebuilds (`draw` object replaced, scene re-uploaded, 60 fps resumed)
+with no console errors. The backing store follows `devicePixelRatio` (checked
+with an emulated 2x display: 800x480 CSS -> 1600x960 drawing buffer, capped at 2).
+
 **Test + verification tooling.** `npm test` (vitest, 41 tests): protocol framing,
 gzip threshold/flag/corruption/version/malformed JSON, binary-payload id, frustum
 planes (near/far/side, sphere-touching edges), ocTree selection (counter parity,
 large maps, insert/refresh/remove, the verbatim `_active`-only-uncullidable
 quirk), converted models (sidecar sizes, ranges, bounds, GPU upload shape), and
 physics/life (integration, clamp, lead-shot, GetH/GetV, Life3 branch quirk).
-`tools/verify.mjs` (15 checks) covers routing/history, a single surviving WebGL
+`tools/verify.mjs` (17 checks) covers routing/history, a single surviving WebGL
 context across routes, navigation→scene mapping, audio unlock + soundtrack,
-frame rate, culling correctness and console errors; `tools/screenshots.mjs`
+frame rate, culling correctness, context-loss recovery, high-DPI backing store
+and console errors; `tools/screenshots.mjs`
 captures every route and fails on 4xx/console errors.

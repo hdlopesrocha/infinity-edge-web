@@ -6,6 +6,8 @@ import { createFrustum, extractFrustum } from './frustum';
 import type { FrustumPlanes } from './frustum';
 import type { CullStats } from './octree';
 import { initGL, resizeGL, watchContextLoss } from './gl';
+import { clearTextureCache } from './texture';
+import { clearModelCache } from './model';
 import { vec3 } from './math';
 
 export interface RenderStats {
@@ -62,7 +64,11 @@ export class Renderer {
   }
 
   private handleRestored(): void {
+    // Every GPU object from the lost context is invalid: rebuild the draw
+    // programs and drop the texture/model caches before the scenes re-upload.
     this.draw = new Draw(this.gl);
+    clearTextureCache();
+    clearModelCache();
     this.onRebuilt?.();
     if (!this.running) this.start();
   }

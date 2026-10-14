@@ -24,6 +24,7 @@ node tools/verify.mjs   # behavioural checks: routing, history, single GL contex
                         # navigation -> scene, audio, fps, frustum culling
 node tools/probe.mjs <url> "<js>"      # evaluate an expression in the page
 node tools/hangprobe.mjs <url> "<js>"  # poll an expression, detect main-thread stalls
+node tools/context-probe.mjs           # step-by-step WebGL context loss/restore trace
 ```
 
 Model conversion reads the **original compiled XNA content** (the 2013 build
@@ -132,9 +133,12 @@ buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
 - Options screen matches SS8: right-aligned labels with a shared right edge,
   192 px black `_pixel` bars with `_ball` knobs and value text, black square
   checks with a white ball when set, `Clear All` at 90 % of the right list.
-- `node tools/verify.mjs`: 15/15 checks — deep link, menu navigation, history
+- `node tools/verify.mjs`: 17/17 checks — deep link, menu navigation, history
   back/forward, unknown route, one surviving WebGL context across routes,
   navigation→scene mapping (background/engine/level), audio unlock + soundtrack,
-  60 fps, culling (19k objects rejected, nothing visible dropped), no page errors.
+  60 fps, culling (19k objects rejected, nothing visible dropped), context-loss
+  recovery (loop pauses, GL caches drop, scene rebuilds), 2x DPR backing store,
+  no page errors. Run against both the dev server and the production build, over
+  HTTP and over the WebSocket channel.
 - `npm test`: 41 unit tests (protocol framing/gzip/threshold/malformed input,
   frustum + ocTree culling, converted model sidecars, physics and life pools).

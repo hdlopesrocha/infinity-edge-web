@@ -80,3 +80,14 @@ export async function loadTextureAny(gl: WebGL2RenderingContext, urls: string[])
 export function peekTexture(url: string): TexEntry | undefined {
   return cache.get(url);
 }
+
+/**
+ * Drop every GPU texture. Called when a WebGL context is restored: the cached
+ * WebGLTexture objects belong to the lost context and must not be reused.
+ * Decoded sources are re-fetched (served by the HTTP cache).
+ */
+export function clearTextureCache(): void {
+  cache.clear();
+  pending.clear();
+  fallback = null;
+}

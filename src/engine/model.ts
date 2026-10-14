@@ -118,6 +118,25 @@ function idxOf(buffer: ArrayBuffer, mesh: ConvertedMesh): Uint16Array | Uint32Ar
     : new Uint16Array(buffer, s.index.offset, mesh.indexCount!);
 }
 
+/**
+ * The compiled XNA content (and every procedural fallback) is wound clockwise
+ * when seen from outside — Direct3D's front-face convention; the vertex normals
+ * point outward. OpenGL's default front face is counter-clockwise, so without
+ * this flip `cullFace(BACK)` removes the outside of every mesh and the scene
+ * renders the *inside* of the hulls (inverted normals -> "wrong" lighting, the
+ * asteroids look hollow). Swap the 2nd/3rd index of every triangle on upload;
+ * the copies are small (indices only) and the sidecar data stays verbatim.
+ */
+function flipWinding(idx: Uint16Array | Uint32Array): Uint16Array | Uint32Array {
+  const out = idx.slice();
+  for (let i = 0; i + 2 < out.length; i += 3) {
+    const t = out[i + 1];
+    out[i + 1] = out[i + 2];
+    out[i + 2] = t;
+  }
+  return out;
+}
+
 /** Area-weighted normals for meshes whose sidecar has no normal section. */
 function computeNormalsTyped(pos: Float32Array, idx: Uint16Array | Uint32Array): Float32Array {
   const acc = new Float32Array(pos.length);
@@ -360,6 +379,12 @@ export async function loadModelOptional(gl: WebGL2RenderingContext, url: string)
   pending.set(url, job);
   job.finally(() => pending.delete(url));
   return job;
+}
+
+/** Drop every GPU model (VAOs/buffers) — see clearTextureCache(). */
+export function clearModelCache(): void {
+  cache.clear();
+  pending.clear();
 }
 
 export async function loadModel(gl: WebGL2RenderingContext, url: string): Promise<GpuModel> {
