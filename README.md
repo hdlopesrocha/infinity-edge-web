@@ -91,6 +91,12 @@ LeftAlt homing, LeftShift nitro (WASD/C/M/N aliases). Touch: left 2/3 stick
 buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
 (web addition) sits below the top-right corner chrome.
 
+The throttle slider is a **cruise control**: dragging it sets the speed and
+releasing the finger keeps it (the original only zeroed it in the `#if WINDOWS`
+branch; on the phone the value survives the frame), so the ship keeps moving
+while you steer and fire. The keyboard is hold-to-thrust and falls back to the
+value left on the slider.
+
 ## Layout
 
 - `src/engine/` — GL context/loop, BasicEffect-exact GLSL (plain-BasicEffect

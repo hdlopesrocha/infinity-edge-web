@@ -65,6 +65,10 @@ export class AnalogStick {
 export class AnalogAcel {
   value = 0;
   old = 0;
+  /** Last value set by a touch drag: the throttle stays where it was left. */
+  touchValue = 0;
+  /** True while the throttle is being commanded by the keyboard. */
+  keyThrust = false;
   // Area/Back rectangles: Area (W-96, H-400, 96x400); Back (Area.X+48, Area.Y+48, 16x304)
   areaX = 0;
   areaY = 0;
@@ -80,12 +84,15 @@ export class AnalogAcel {
     this.areaY = h - 400;
     this.backX = this.areaX + 48;
     this.backY = this.areaY + 48;
-    this.value = 0; // WINDOWS branch
+    // The original only zeroes the throttle in the `#if WINDOWS` branch; on the
+    // phone the value survives the frame, so dragging the slider sets a cruise
+    // speed and releasing the finger keeps it (steer/fire while moving).
   }
 
   receiveTouch(x: number, y: number): void {
     if (x >= this.areaX && x <= this.areaX + 96 && y >= this.areaY && y <= this.areaY + 400) {
       this.value = clamp((this.backY + this.backH - y) / this.backH, 0, 1);
+      this.touchValue = this.value;
     }
   }
 
@@ -152,7 +159,16 @@ export class Control {
     if (has('ArrowRight', 'KeyD')) this.analogStick.value.x = 1;
     if (has('ArrowUp', 'KeyW')) this.analogStick.value.y = -1;
     if (has('ArrowDown', 'KeyS')) this.analogStick.value.y = 1;
-    if (has('ControlLeft', 'KeyC')) this.analogAcel.value = 1;
+    // Keyboard throttle is hold-to-thrust: releasing it falls back to the
+    // cruise value set with the touch slider (which persists).
+    const keyThrust = has('ControlLeft', 'KeyC');
+    if (keyThrust) {
+      this.analogAcel.value = 1;
+      this.analogAcel.keyThrust = true;
+    } else if (this.analogAcel.keyThrust) {
+      this.analogAcel.keyThrust = false;
+      this.analogAcel.value = this.analogAcel.touchValue;
+    }
     if (has('AltLeft', 'KeyM')) this.homingButton.value = true;
     if (has('ShiftLeft', 'ShiftRight', 'KeyN')) this.nitroButton.value = true;
     this.analogStick.finish();
