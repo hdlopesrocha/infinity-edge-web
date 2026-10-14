@@ -89,7 +89,7 @@ export class GameInstance {
       modelNames.add(m);
     }
     await rc.preload([...modelNames], [
-      'flare1', 'flare3',
+      'flare1', 'flare2', 'flare3',
       'holoSmoke1', 'holoSmoke2', 'holoSmoke3', 'holoSmoke4', 'holoSmoke5', 'holoSmoke6', 'holoSmoke7',
       'hexagon', 'aim', 'over',
       'Fighter1_icon', 'Fighter2_icon', 'Fighter3_icon', 'Ark_icon', 'Base_icon', 'Flag_icon',
@@ -281,7 +281,11 @@ export class GameInstance {
     draw.setCull('none');
     const m = mat4.create();
     mat4.fromTranslation(m, r.camera.position);
-    draw.drawUnlit(this.skyGpu, this.skyTex, m, r.camera.view, r.camera.proj, [1, 1, 1], 1);
+    // The dome is camera-locked: comparing against the *previous* camera
+    // translation keeps its motion-blur velocity at zero (it is "at infinity").
+    const prev = mat4.create();
+    mat4.fromTranslation(prev, r.prevCameraPos);
+    draw.drawUnlit(this.skyGpu, this.skyTex, m, r.camera.view, r.camera.proj, [1, 1, 1], 1, prev);
     r.trackDraws(this.skyGpu.meshes.length);
     draw.setCull('none');
     draw.setDepth();
@@ -299,7 +303,7 @@ export class GameInstance {
     const L = sel.lod(d, 'solid');
     if (!L) return;
     d.draw.drawModel(L.gpu, sel.model.tex, m, d.view, d.proj, d.camPos, {
-      alpha: 0.5 * L.alpha, emissive: [0.2, 0.2, 0.2], light: true,
+      alpha: 0.5 * L.alpha, emissive: [0.2, 0.2, 0.2], light: true, prevWorld: m,
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length);
   }

@@ -98,7 +98,9 @@ buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
   LightBlue specular 1024, white material diffuse), texture cache,
   converted-model loader with validation + LOD/fade, camera (follow + orbit),
   frustum, OcTree (frag > 32), draw primitives (billboards/quads drawn
-  CullNone like `Draws.DrawBillBoard`, billboards gated on Special Effects).
+  CullNone like `Draws.DrawBillBoard`, billboards gated on Special Effects),
+  `post.ts` (scene target + velocity motion blur + lens flare),
+  `noise.ts` (tileable 3D Perlin field for smoke/plume).
 - `src/game/` — math (GetH/GetV verbatim), life pools (Life1/Life3 quirks),
   physics presets + NextPosition + PreviewDirection, Team/Score/Reward/
   Conditions (Destroyed = !active, MorePoints = strictly above minimum),
@@ -124,6 +126,25 @@ buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
 
 ## Verified behaviors (browser)
 
+- **Rendering (web additions beyond the 2013 build)**: the scene is drawn into
+  an offscreen target (color + per-object velocity + depth) and composited by
+  `src/engine/post.ts`:
+  - **Real motion blur over the 3D objects** (Options → Motion Blur): every
+    scene shader writes its screen-space velocity from the previous frame's
+    world/view-projection (objects, particles, camera-locked sky), and the post
+    pass blurs along it. No temporal accumulation / fading frames.
+  - **Real flares, no billboards**: engine flares are additive cone plumes in
+    the ship's frame (3D, parallax, noise-driven flicker) and the lens flare is
+    a screen-space ghost chain sampled from the rendered bright pass (occluded
+    sources cannot flare); bullets/addons/pickups use additive glow shells.
+  - **Perlin smoke**: particles sample a tileable 3D Perlin field
+    (`src/engine/noise.ts`) in world space with a time drift, grow, drift and
+    dissolve over their lifetime and fade against the scene depth copy (soft
+    particles) instead of scrolling `holoSmoke` sprite billboards.
+- **Options (live + rollback)**: every control applies immediately (renderer
+  post options, camera far plane, LOD, music, scene rebuild for Special
+  Effects); leaving the screen without pressing "save" restores the saved
+  values, "save" persists them (localStorage).
 - Rendering matches the 2013 reference screenshots: engine/color flares, smoke
   trail, miniStar/cloud billboards and the hexagon walls (all previously culled
   by the missing `CullNone`), the plain-BasicEffect light (`Direction.Down`,

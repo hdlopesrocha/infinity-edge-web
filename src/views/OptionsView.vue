@@ -5,10 +5,11 @@
      0-1; the RU corner saves. Sliders are a black `_pixel` bar with a `_ball`
      knob, checks are a black square with the same ball when set. -->
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import MenuShell from '../components/MenuShell.vue';
 import { clearGameData, saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
+import type { Options } from '../game/resources';
 
 const o = store.options;
 const showKbd = ref(false);
@@ -16,6 +17,45 @@ const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
 const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
 const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
 const ball = `url(${base}_ball.png)`;
+
+// Snapshot of the saved state: every control below applies live (the renderer,
+// camera far plane, music and LOD read rc.options every frame), and leaving the
+// screen without pressing "save" restores this snapshot.
+const saved: Options = { ...store.options };
+let persisted = false;
+
+function rcOptions(): Options | null {
+  const rc = (window as unknown as { __ieRC?: { options: Options } }).__ieRC;
+  return rc ? rc.options : null;
+}
+
+/** Push the live edits into the running game (no persistence). */
+function applyLive(): void {
+  const target = rcOptions();
+  if (target) Object.assign(target, o);
+  store.username = o.username;
+}
+
+watch(
+  () => ({ ...o }),
+  () => {
+    applyLive();
+    audio.setMusicVolume(o.musicVolume);
+  },
+  { deep: true },
+);
+
+onMounted(() => {
+  applyLive();
+});
+
+onBeforeUnmount(() => {
+  if (persisted) return;
+  // Not saved: roll the whole screen back to the values the game started with.
+  Object.assign(store.options, saved);
+  applyLive();
+  audio.setMusicVolume(saved.musicVolume);
+});
 
 function typeLetter(l: string): void {
   audio.unlock();
@@ -29,10 +69,10 @@ function backspace(): void {
 function save(): void {
   if (o.username === '') o.username = 'Infinity Edge Fan';
   saveOptions(o);
+  persisted = true;
   if (o.username === 'suckmyrocket') o.cheats = !o.cheats;
   audio.setMusicVolume(o.musicVolume);
-  const rc = (window as unknown as { __ieRC?: { options: typeof o } }).__ieRC;
-  if (rc) Object.assign(rc.options, o);
+  applyLive();
   store.username = o.username;
   history.back();
 }

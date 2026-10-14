@@ -6,9 +6,9 @@ import { ObKind, OctNode } from '../engine/octree';
 import type { OctItem } from '../engine/octree';
 import type { DrawCtx } from './objects';
 import {
-  Abstract3D, Addon, Ark, Asteroid, Base, Billboard, Bullet, Flag, SpaceObject, SpaceShip, Fragment,
+  Abstract3D, Addon, Ark, Asteroid, Base, Billboard, Bullet, Flag, SmokePuff, SpaceObject, SpaceShip, Fragment,
 } from './objects';
-import type { AddonKind } from './objects';
+import type { AddonKind, SmokeOpts } from './objects';
 import { stringToLife } from './life';
 import { P } from './physics';
 import type { Team } from './team';
@@ -44,6 +44,9 @@ export class GameMap {
   allBullets: BulletTimer[] = [];
   respawned: OutsideTimer[] = [];
   timedBillboards: { obj: Billboard; elapsed: number; max: number }[] = [];
+  /** Real smoke particles (Perlin density, soft-particle depth fade). */
+  smokePuffs: SmokePuff[] = [];
+  private smokeSeed = 1;
   outsideObjects: OutsideTimer[] = [];
   fragments: { obj: Fragment; elapsed: number; max: number }[] = [];
   path: Ark[] = [];
@@ -60,6 +63,15 @@ export class GameMap {
     obj.update();
     this.octree.insert(obj as unknown as OctItem);
     obj.active = true;
+  }
+
+  /** Spawn one smoke particle (see SmokePuff / SMOKE_FRAG). */
+  spawnSmoke(position: vec3, vel: vec3, opts: SmokeOpts): SmokePuff {
+    this.smokeSeed = (this.smokeSeed * 1664525 + 1013904223) >>> 0;
+    const seed = (this.smokeSeed % 1000) / 37;
+    const puff = new SmokePuff(this, position, vel, opts, seed);
+    this.smokePuffs.push(puff);
+    return puff;
   }
 
   removeObject(obj: Abstract3D): void {
@@ -263,16 +275,17 @@ export class GameMap {
             const inter = obj.bulletHit(bullet);
             if (inter !== null) {
               found.push(obj);
-              const spark = new Billboard(
-                this, obj.team,
-                vec3.fromValues(
-                  bullet.pos[0] - inter * bullet.dir[0],
-                  bullet.pos[1] - inter * bullet.dir[1],
-                  bullet.pos[2] - inter * bullet.dir[2],
-                ),
-                rc.tex('holoSmoke' + (1 + Math.floor(rc.random() * 7))), 2, 1,
+              // Impact puff: real smoke burst at the hit point.
+              const hp = vec3.fromValues(
+                bullet.pos[0] - inter * bullet.dir[0],
+                bullet.pos[1] - inter * bullet.dir[1],
+                bullet.pos[2] - inter * bullet.dir[2],
               );
-              this.timedBillboards.push({ obj: spark, elapsed: 0, max: 1000 });
+              const drift = vec3.create();
+              vec3.scale(drift, bullet.dir, 2.5);
+              this.spawnSmoke(hp, drift, {
+                size0: 0.5, size1: 3.2, life: 900, alpha: 1, turbulence: 0.75,
+              });
               collide = true;
               break;
             }
@@ -286,7 +299,20 @@ export class GameMap {
       }
       this.allBullets = keep;
     }
-    // MANAGE_SMOKE (alpha drains -0.075 per 30 fps frame while active)
+    // SMOKE PARTICLES (Perlin-driven puffs: grow, drift, dissolve)
+    {
+      const keep: SmokePuff[] = [];
+      for (const puff of this.smokePuffs) {
+        if (puff.step(dtMs)) {
+          this.refreshObject(puff);
+          keep.push(puff);
+        } else {
+          this.removeObject(puff);
+        }
+      }
+      this.smokePuffs = keep;
+    }
+    // MANAGE_SMOKE (legacy sprite billboards: alpha drains per 30 fps frame)
     {
       const keep: { obj: Billboard; elapsed: number; max: number }[] = [];
       for (const timer of this.timedBillboards) {

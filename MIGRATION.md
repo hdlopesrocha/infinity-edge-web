@@ -168,7 +168,6 @@ Source: `../IE3D_37_T` (174 `.cs`, 38 FBX, ~100 textures, 26 sounds, 13 levels,
   clamps).
 
 ## 4. Known approximations
-
 - **UI implementation**: the original's `FloatingGear` widget engine is
   re-created as app-specific Vue components with the same measured values
   (the scene XML surface is parsed, not a general widget engine).
@@ -262,3 +261,40 @@ context across routes, navigation→scene mapping, audio unlock + soundtrack,
 frame rate, culling correctness, context-loss recovery, high-DPI backing store
 and console errors; `tools/screenshots.mjs`
 captures every route and fails on 4xx/console errors.
+
+**Web rendering additions (beyond the 2013 build).** The original's only
+"motion blur" was a temporal accumulation of the frame into a mixer render
+target (a fading smear); the port instead implements real, per-object motion
+blur and replaces the sprite-based effects with geometry/procedural versions:
+
+- **Scene target + post chain** (`src/engine/post.ts`): the 3D scene renders
+  into an offscreen FBO (RGBA8 color, RG16F velocity when `EXT_color_buffer_float`
+  is available, DEPTH_COMPONENT24) and is composited to the canvas. The depth is
+  blitted to a sampleable copy right before the transparent pass (soft particles,
+  no feedback loop).
+- **Motion blur over 3D objects** (Options → Motion Blur, live): every scene
+  shader writes `oVelocity` from the previous frame's world matrix and
+  view-projection (`(cur.xy/w - prev.xy/w) * 0.5`), including the particle batch
+  (per-vertex previous position) and camera-locked geometry (the sky dome is
+  compared against the previous camera translation, so it stays unblurred). The
+  post pass samples the color 13x along the velocity vector with a 1.6x shutter
+  and a 0.09 UV clamp. No accumulation, no fading frames.
+- **Flares without billboards**: engine flares are additive cone plumes built in
+  the ship's frame (volumetric thickness term, 3D-noise flicker, length scaled by
+  thrust) with additive glow shells for the team-colour core; bullets, missiles,
+  addons, flags and pickup flashes use additive sphere glow shells. The
+  screen-space lens flare is a ghost chain sampled from the rendered bright pass
+  (threshold 0.8, `_flare2` shapes the ghosts), so an occluded source cannot
+  flare. Gated on Special Effects.
+- **Perlin smoke**: `src/engine/noise.ts` bakes a deterministic tileable RGBA
+  Perlin/fBm 3D texture (48^3). Smoke particles (`SmokePuff`) sample it in world
+  space with a time drift plus a second, differently-moving octave (the puff
+  "boils"), grow ~5x over their lifetime, drift with drag + buoyancy and fade
+  against the scene depth (soft particles). Ship trails, missile trails and
+  bullet impacts spawn these instead of `holoSmoke` sprite billboards; the level
+  scenery billboards (miniStar / cloud) still use the original textures.
+- **Options live + rollback**: the Options screen edits a live copy — renderer
+  post options (motion blur, flare), camera far plane, LOD detail, music volume
+  and the scene rebuild for Special Effects all react immediately; "save"
+  persists to localStorage, and leaving the screen without saving restores the
+  snapshot taken on entry (store + running RC).

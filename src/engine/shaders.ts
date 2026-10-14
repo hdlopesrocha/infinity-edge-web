@@ -5,21 +5,26 @@ layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 uniform mat4 uWorld; uniform mat4 uView; uniform mat4 uProj; uniform mat4 uWorldInvT;
-out vec3 vN; out vec3 vW; out vec2 vUV;
+uniform mat4 uPrevWorld; uniform mat4 uViewProjPrev;
+out vec3 vN; out vec3 vW; out vec2 vUV; out vec2 vVel;
 void main() {
   vec4 w = uWorld * vec4(aPos, 1.0);
   vW = w.xyz; vN = mat3(uWorldInvT) * aNormal; vUV = aUV;
-  gl_Position = uProj * uView * w;
+  vec4 cur = uProj * uView * w;
+  vec4 prev = uViewProjPrev * (uPrevWorld * vec4(aPos, 1.0));
+  vVel = (cur.xy / max(cur.w, 1e-4) - prev.xy / max(prev.w, 1e-4)) * 0.5;
+  gl_Position = cur;
 }`;
 
 export const LIT_FRAG = `#version 300 es
 precision highp float;
-in vec3 vN; in vec3 vW; in vec2 vUV;
+in vec3 vN; in vec3 vW; in vec2 vUV; in vec2 vVel;
 uniform sampler2D uTex; uniform bool uHasTex;
 uniform vec3 uDiffuse; uniform vec3 uEmissive; uniform vec3 uAmbient;
 uniform vec3 uLightDir; uniform vec3 uLightDiffuse; uniform vec3 uLightSpec;
 uniform float uShininess; uniform vec3 uCamPos; uniform float uAlpha;
-out vec4 oColor;
+layout(location = 0) out vec4 oColor;
+layout(location = 1) out vec4 oVelocity;
 void main() {
   vec3 base = uDiffuse;
   vec4 sampled = uHasTex ? texture(uTex, vUV) : vec4(1.0);
@@ -32,6 +37,7 @@ void main() {
   float spec = pow(max(dot(N, H), 0.0), uShininess) * step(0.001, nd);
   vec3 col = base * (uAmbient + uLightDiffuse * nd) + uLightSpec * spec + uEmissive;
   oColor = vec4(col, uAlpha * sampled.a);
+  oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
 export const UNLIT_VERT = `#version 300 es
@@ -39,17 +45,26 @@ layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 uniform mat4 uWorld; uniform mat4 uView; uniform mat4 uProj;
-out vec2 vUV;
-void main() { vUV = aUV; gl_Position = uProj * uView * uWorld * vec4(aPos, 1.0); }`;
+uniform mat4 uPrevWorld; uniform mat4 uViewProjPrev;
+out vec2 vUV; out vec2 vVel;
+void main() {
+  vUV = aUV;
+  vec4 cur = uProj * uView * uWorld * vec4(aPos, 1.0);
+  vec4 prev = uViewProjPrev * (uPrevWorld * vec4(aPos, 1.0));
+  vVel = (cur.xy / max(cur.w, 1e-4) - prev.xy / max(prev.w, 1e-4)) * 0.5;
+  gl_Position = cur;
+}`;
 
 export const UNLIT_FRAG = `#version 300 es
 precision highp float;
-in vec2 vUV;
+in vec2 vUV; in vec2 vVel;
 uniform sampler2D uTex; uniform bool uHasTex; uniform vec3 uColor; uniform float uAlpha;
-out vec4 oColor;
+layout(location = 0) out vec4 oColor;
+layout(location = 1) out vec4 oVelocity;
 void main() {
   vec4 t = uHasTex ? texture(uTex, vUV) : vec4(1.0);
   oColor = vec4(uColor * t.rgb, uAlpha * t.a);
+  oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
 export const BB_VERT = `#version 300 es
@@ -74,27 +89,253 @@ void main() {
   oColor = vec4(uColor * t.rgb, uAlpha * t.a);
 }`;
 
-// Batched billboards (same math as Draws.DrawBillBoard, one draw call per texture).
+// Batched billboards (same math as Draws.DrawBillBoard, one draw call per
+// texture). aPrevPos carries the previous frame's world position so the pass
+// can write real per-object velocity for the motion-blur stage.
 export const BBQ_VERT = `#version 300 es
 layout(location=0) in vec3 aPos;
-layout(location=1) in vec2 aUV;
-layout(location=2) in vec3 aColor;
-layout(location=3) in float aAlpha;
-uniform mat4 uView; uniform mat4 uProj;
-out vec2 vUV; out vec3 vColor; out float vAlpha;
+layout(location=1) in vec3 aPrevPos;
+layout(location=2) in vec2 aUV;
+layout(location=3) in vec3 aColor;
+layout(location=4) in float aAlpha;
+uniform mat4 uView; uniform mat4 uProj; uniform mat4 uViewProjPrev;
+out vec2 vUV; out vec3 vColor; out float vAlpha; out vec2 vVel;
 void main() {
   vUV = aUV; vColor = aColor; vAlpha = aAlpha;
-  gl_Position = uProj * uView * vec4(aPos, 1.0);
+  vec4 cur = uProj * uView * vec4(aPos, 1.0);
+  vec4 prev = uViewProjPrev * vec4(aPrevPos, 1.0);
+  vVel = (cur.xy / max(cur.w, 1e-4) - prev.xy / max(prev.w, 1e-4)) * 0.5;
+  gl_Position = cur;
 }`;
 
 export const BBQ_FRAG = `#version 300 es
 precision highp float;
-in vec2 vUV; in vec3 vColor; in float vAlpha;
+in vec2 vUV; in vec3 vColor; in float vAlpha; in vec2 vVel;
 uniform sampler2D uTex;
-out vec4 oColor;
+layout(location = 0) out vec4 oColor;
+layout(location = 1) out vec4 oVelocity;
 void main() {
   vec4 t = texture(uTex, vUV);
   oColor = vec4(vColor * t.rgb, vAlpha * t.a);
+  oVelocity = vec4(vVel, 0.0, 1.0);
+}`;
+
+// ---------------------------------------------------------------- smoke
+// Real (non-sprite) smoke: each particle is a camera-facing disc whose density
+// comes from a tileable 3D Perlin field sampled in world space, animated over
+// the particle's lifetime (drift + turbulence), with a soft-particle depth fade
+// against the scene depth copy so puffs dissolve into geometry instead of
+// intersecting it hard.
+export const SMOKE_VERT = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aPrevPos;
+layout(location=2) in vec2 aUV;
+layout(location=3) in vec4 aData;   // x seed, y age01, z alpha, w turbulence
+uniform mat4 uView; uniform mat4 uProj; uniform mat4 uViewProjPrev;
+out vec2 vUV; out vec4 vData; out vec3 vWorld; out vec4 vClip; out vec2 vVel;
+void main() {
+  vUV = aUV; vData = aData; vWorld = aPos;
+  vec4 cur = uProj * uView * vec4(aPos, 1.0);
+  vec4 prev = uViewProjPrev * vec4(aPrevPos, 1.0);
+  vVel = (cur.xy / max(cur.w, 1e-4) - prev.xy / max(prev.w, 1e-4)) * 0.5;
+  vClip = cur;
+  gl_Position = cur;
+}`;
+
+export const SMOKE_FRAG = `#version 300 es
+precision highp float;
+precision highp sampler3D;
+in vec2 vUV; in vec4 vData; in vec3 vWorld; in vec4 vClip; in vec2 vVel;
+uniform sampler3D uNoise;
+uniform sampler2D uDepth;
+uniform float uTime; uniform float uNear; uniform float uFar;
+uniform vec3 uTint; uniform float uFreq; uniform float uSoftness; uniform float uDensity;
+layout(location = 0) out vec4 oColor;
+layout(location = 1) out vec4 oVelocity;
+
+float linearDepth(float ndc) {
+  float z = ndc * 2.0 - 1.0;
+  return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+}
+
+void main() {
+  float seed = vData.x;
+  float age = vData.y;
+  float alpha = vData.z;
+  float turb = vData.w;
+
+  // round puff with a soft edge
+  vec2 q = vUV * 2.0 - 1.0;
+  float r = length(q);
+  if (r > 1.0) discard;
+  float edge = smoothstep(1.0, 0.1, r);
+
+  // world-space noise field: drifts upward and swirls; two octaves move at
+  // different speeds so the puff keeps "boiling" instead of scrolling rigidly
+  vec3 p = vWorld * uFreq + vec3(seed * 11.7, -uTime * 0.35, seed * 3.1);
+  float n = texture(uNoise, p).r;
+  float ridged = texture(uNoise, p * 2.1 + vec3(uTime * 0.06, -uTime * 0.21, 0.0)).g;
+  float density = n * (0.55 + 0.75 * ridged) * (1.0 - turb * 0.35 * (1.0 - age));
+  density = clamp((density - 0.35) * 2.2, 0.0, 1.0);
+
+  // life curve: quick fade-in, long fade-out
+  float life = smoothstep(0.0, 0.12, age) * (1.0 - smoothstep(0.35, 1.0, age));
+
+  float a = edge * density * life * alpha * uDensity;
+
+  // soft particles: fade where the puff is about to intersect geometry
+  vec2 suv = (vClip.xy / max(vClip.w, 1e-4)) * 0.5 + 0.5;
+  float sceneZ = linearDepth(texture(uDepth, suv).r);
+  float fragZ = linearDepth(vClip.z / max(vClip.w, 1e-4));
+  a *= clamp((sceneZ - fragZ) * uSoftness, 0.0, 1.0);
+  if (a <= 0.002) discard;
+
+  oColor = vec4(uTint, a);
+  oVelocity = vec4(vVel, 0.0, 1.0);
+}`;
+
+// ---------------------------------------------------------------- flare mesh
+// Engine flare as real 3D geometry: an additive cone plume that lives in the
+// ship's frame (parallax when the camera moves) with a volumetric thickness
+// term and noise-driven flicker instead of a camera-facing sprite.
+export const PLUME_VERT = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNormal;
+layout(location=2) in vec2 aUV;
+uniform mat4 uWorld; uniform mat4 uPrevWorld; uniform mat4 uView; uniform mat4 uProj; uniform mat4 uViewProjPrev;
+out vec3 vN; out vec3 vW; out vec2 vUV; out vec2 vVel;
+void main() {
+  vec4 w = uWorld * vec4(aPos, 1.0);
+  vW = w.xyz; vN = mat3(uWorld) * aNormal; vUV = aUV;
+  vec4 cur = uProj * uView * w;
+  vec4 prev = uViewProjPrev * (uPrevWorld * vec4(aPos, 1.0));
+  vVel = (cur.xy / max(cur.w, 1e-4) - prev.xy / max(prev.w, 1e-4)) * 0.5;
+  gl_Position = cur;
+}`;
+
+export const PLUME_FRAG = `#version 300 es
+precision highp float;
+precision highp sampler3D;
+in vec3 vN; in vec3 vW; in vec2 vUV; in vec2 vVel;
+uniform sampler3D uNoise;
+uniform vec3 uCamPos; uniform vec3 uColor; uniform float uTime; uniform float uIntensity;
+layout(location = 0) out vec4 oColor;
+layout(location = 1) out vec4 oVelocity;
+void main() {
+  vec3 V = normalize(uCamPos - vW);
+  // volumetric thickness: brightest through the core of the cone
+  float thickness = pow(max(0.0, abs(dot(normalize(vN), V))), 0.75);
+  float t = clamp(vUV.y, 0.0, 1.0);              // 0 nozzle -> 1 tip
+  float axial = exp(-t * 2.6) * (1.0 - t * 0.35);
+  float flicker = texture(uNoise, vec3(vUV.x * 3.0, t * 2.0 - uTime * 1.7, uTime * 0.3)).r;
+  flicker = 0.65 + 0.7 * flicker;
+  float a = thickness * axial * flicker * uIntensity;
+  if (a <= 0.002) discard;
+  oColor = vec4(uColor * a, a);
+  oVelocity = vec4(vVel, 0.0, 1.0);
+}`;
+
+// ---------------------------------------------------------------- glow shell
+// Spherical additive halo used for bullets, addons and pickup flashes: real
+// geometry with a thickness term, no camera-facing quad.
+export const GLOW_VERT = PLUME_VERT;
+
+export const GLOW_FRAG = `#version 300 es
+precision highp float;
+in vec3 vN; in vec3 vW; in vec2 vUV; in vec2 vVel;
+uniform vec3 uCamPos; uniform vec3 uColor; uniform float uIntensity;
+layout(location = 0) out vec4 oColor;
+layout(location = 1) out vec4 oVelocity;
+void main() {
+  vec3 V = normalize(uCamPos - vW);
+  float a = pow(max(0.0, abs(dot(normalize(vN), V))), 2.2) * uIntensity;
+  if (a <= 0.002) discard;
+  oColor = vec4(uColor * a, a);
+  oVelocity = vec4(vVel, 0.0, 1.0);
+}`;
+
+// ---------------------------------------------------------------- post chain
+export const FS_VERT = `#version 300 es
+layout(location=0) in vec2 aCorner;
+out vec2 vUV;
+void main() { vUV = aCorner * 0.5 + 0.5; gl_Position = vec4(aCorner, 0.0, 1.0); }`;
+
+export const POST_MB_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uColor; uniform sampler2D uVelocity;
+uniform float uScale; uniform float uMaxLen;
+out vec4 oColor;
+void main() {
+  vec4 c = texture(uColor, vUV);
+  // 1.6x shutter: the blur spans a bit more than one frame of motion
+  vec2 px = texture(uVelocity, vUV).xy * uScale * 1.6;
+  float len = length(px);
+  if (len < 1e-5) { oColor = c; return; }
+  if (len > uMaxLen) px *= uMaxLen / len;
+  vec3 sum = c.rgb;
+  for (int i = 1; i <= 12; i++) {
+    float t = float(i) / 12.0 - 0.5;
+    sum += texture(uColor, vUV + px * t).rgb;
+  }
+  oColor = vec4(sum / 13.0, c.a);
+}`;
+
+export const POST_BRIGHT_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uColor; uniform float uThreshold;
+out vec4 oColor;
+void main() {
+  vec3 c = texture(uColor, vUV).rgb;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float k = smoothstep(uThreshold, uThreshold + 0.4, l);
+  oColor = vec4(c * k, 1.0);
+}`;
+
+export const POST_BLUR_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uTex; uniform vec2 uDir;
+out vec4 oColor;
+void main() {
+  vec3 sum = texture(uTex, vUV).rgb * 0.227;
+  sum += (texture(uTex, vUV + uDir * 1.0).rgb + texture(uTex, vUV - uDir * 1.0).rgb) * 0.194;
+  sum += (texture(uTex, vUV + uDir * 2.0).rgb + texture(uTex, vUV - uDir * 2.0).rgb) * 0.121;
+  sum += (texture(uTex, vUV + uDir * 3.0).rgb + texture(uTex, vUV - uDir * 3.0).rgb) * 0.054;
+  oColor = vec4(sum, 1.0);
+}`;
+
+// Lens flare: broad halo + ghost chain of the bright pass, mirrored and scaled
+// through the screen centre and shaped by the flare2 sprite (the original's
+// flare texture). Because the bright pass is taken from the *rendered* scene,
+// occluded sources never produce a flare.
+export const POST_COMPOSITE_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uColor; uniform sampler2D uBloom; uniform sampler2D uFlareTex;
+uniform float uFlare; uniform float uExposureKnee;
+out vec4 oColor;
+void main() {
+  vec3 col = texture(uColor, vUV).rgb;
+  vec2 d = vUV - vec2(0.5);
+  if (uFlare > 0.0) {
+    vec3 flare = texture(uBloom, vUV).rgb * 0.30;
+    for (int i = 0; i < 5; i++) {
+      float k = -0.35 + float(i) * 0.55;
+      vec2 g = vec2(0.5) + d * (1.0 + k) * -1.0 + d * k;
+      g = clamp(g, vec2(0.0), vec2(1.0));
+      vec3 s = texture(uBloom, g).rgb;
+      vec2 fuv = (g - vec2(0.5)) * 1.5 + vec2(0.5);
+      float shape = texture(uFlareTex, fuv).r * 0.5 + texture(uFlareTex, fuv.yx * 0.9).g * 0.5;
+      flare += s * shape * (0.6 / (1.0 + float(i) * 0.8));
+    }
+    col += flare * uFlare;
+  }
+  // gentle knee above 1.0 so additive highlights roll off instead of clipping
+  vec3 over = max(vec3(0.0), col - 1.0);
+  col = col - over * uExposureKnee;
+  oColor = vec4(col, 1.0);
 }`;
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {

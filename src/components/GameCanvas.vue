@@ -130,11 +130,19 @@ onMounted(() => {
       void rebuild();
     };
     renderer.onFrame = (dtMs) => {
-      if (!renderer) return;
+      if (!renderer || !rc) return;
+      // Live render options: the post chain reads them every frame, so the
+      // Options screen changes take effect immediately (and roll back on
+      // cancel).
+      renderer.renderOptions.motionBlur = rc.options.motionBlur;
+      renderer.renderOptions.flareTex = rc.tex('flare2');
+      // Lens flare belongs to the game/menu scenes; the boot wheel stays crisp.
+      renderer.renderOptions.flare = rc.options.billboards && store.sceneKey !== 'engine' ? 0.45 : 0;
       if (store.sceneKey === 'engine') {
         if (!engineScene) {
           void buildEngineScene();
           renderer.beginFrame();
+          renderer.endFrame();
           return;
         }
         const s = engineScene;
@@ -155,6 +163,8 @@ onMounted(() => {
           alpha: a, emissive: [0.5019608, 0.5019608, 0.5019608], light: true,
         });
         draw.flushBillboards();
+        draw.flushSmoke();
+        renderer.endFrame();
         return;
       }
       if (!instance || !renderer) return;
@@ -163,6 +173,7 @@ onMounted(() => {
       instance.update(dtMs);
       renderer.beginFrame();
       instance.draw();
+      renderer.endFrame();
       if (instance.result && store.route === 'game') {
         const lv = store.levelKey;
         const won = instance.result.won;

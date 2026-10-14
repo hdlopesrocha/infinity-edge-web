@@ -94,6 +94,9 @@ export abstract class Object3D extends Abstract3D {
   up = vec3.fromValues(0, 1, 0);
   side = vec3.fromValues(1, 0, 0);
   rot = quat.create();
+  /** Previous-frame pose, for the motion-blur velocity buffer. */
+  prevPos = vec3.create();
+  prevRot = quat.create();
 
   get kind(): ObKind {
     return this.physics.objectType;
@@ -108,6 +111,14 @@ export abstract class Object3D extends Abstract3D {
     this.model = model;
     this.insideMap = true;
     this.update();
+    vec3.copy(this.prevPos, this.pos);
+    quat.copy(this.prevRot, this.rot);
+  }
+
+  /** Snapshot the pose before this frame's integration. */
+  markPrev(): void {
+    vec3.copy(this.prevPos, this.pos);
+    quat.copy(this.prevRot, this.rot);
   }
 
   /** GetMatrix() = Scale·Rot·Trans, composed fresh. */
@@ -115,6 +126,14 @@ export abstract class Object3D extends Abstract3D {
     const m = out ?? mat4.create();
     const s = vec3.fromValues(this.scale, this.scale, this.scale);
     mat4.fromRotationTranslationScale(m, this.rot, this.pos, s);
+    return m;
+  }
+
+  /** Previous-frame GetMatrix(): what the velocity buffer compares against. */
+  prevMatrix(out?: mat4): mat4 {
+    const m = out ?? mat4.create();
+    const s = vec3.fromValues(this.scale, this.scale, this.scale);
+    mat4.fromRotationTranslationScale(m, this.prevRot, this.prevPos, s);
     return m;
   }
 
@@ -141,6 +160,7 @@ export abstract class Object3D extends Abstract3D {
 
   step(dtMs: number, refresh: () => void): void {
     vec3.copy(this.lastPos, this.pos);
+    this.markPrev();
     nextPosition(
       {
         pos: this.pos, vel: this.vel, accel: this.accel,
@@ -321,7 +341,7 @@ export class SpaceObject extends Object3D {
     const L = this.lod(d, 'solid');
     if (!L) return;
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: this.alpha * L.alpha, emissive: this.color, light: true,
+      alpha: this.alpha * L.alpha, emissive: this.color, light: true, prevWorld: this.prevMatrix(),
     }, L.gpu === this.model.solid[0] ? this.model.texes : null);
     d.rc.renderer.trackDraws(L.gpu.meshes.length);
   }
@@ -446,13 +466,15 @@ export class SpaceShip extends SpaceObject {
       }
     }
     if (!inside) return;
-    const tex = rc.tex('holoSmoke' + (1 + Math.floor(rc.random() * 7)));
-    const bill = new Billboard(
-      gi.map, this.team, vec3.clone(this.lastPos), tex,
-      0.75, vec3.length(this.vel) / this.physics.velMax - 0.25,
-    );
-    bill.alpha = vec3.length(this.vel) / this.physics.velMax;
-    gi.map.timedBillboards.push({ obj: bill, elapsed: 0, max: 500 });
+    const speed = vec3.length(this.vel) / this.physics.velMax;
+    // Real smoke: a noise-driven particle that grows, drifts and dissolves
+    // instead of a fading sprite.
+    const drift = vec3.create();
+    vec3.scale(drift, this.vel, 0.06);
+    gi.map.spawnSmoke(vec3.clone(this.lastPos), drift, {
+      size0: 0.35, size1: 1.9 + 1.4 * speed, life: 1500,
+      alpha: clamp(speed * 0.85, 0, 1), turbulence: 0.55,
+    });
   }
 
   alphaDraw(d: DrawCtx): void {
@@ -463,27 +485,42 @@ export class SpaceShip extends SpaceObject {
     const accelFrac = vec3.length(this.accel) / this.physics.accelMax;
     const camDir = d.rc.renderer.camera.direction;
     const facing = camDir[0] * this.dir[0] + camDir[1] * this.dir[1] + camDir[2] * this.dir[2];
-    const flare3 = d.rc.tex('flare3');
-    // XNA: (Matrix.CreateTranslation(v) * CreateFromQuaternion(rot)).Translation
-    // -> the offset is rotated by the ship's rotation, then scaled by radius.
+    const world = this.getMatrix();
+    const prev = this.prevMatrix();
+    // Engine flare: a real additive cone plume in the ship's frame (parallax,
+    // animated with the 3D noise field) instead of a camera-facing billboard.
+    const thrust = clamp(facing * accelFrac, 0, 1);
     const vr = vec3.create();
+    const rotX = mat4.create();
+    mat4.fromRotation(rotX, -Math.PI / 2, vec3.fromValues(1, 0, 0));
     for (const v of f.engine) {
       vec3.transformQuat(vr, v as unknown as vec3, this.rot);
-      draw.drawBillboard(
-        flare3, this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
-        2, [1, 1, 1], facing * accelFrac, view, proj,
-      );
-      d.rc.renderer.trackDraws();
+      mat4.fromTranslation(this.plumeMat, vec3.fromValues(
+        this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
+      ));
+      const length = 1.5 + 2.4 * (0.35 + 0.65 * this.thrustLevel());
+      const radius = 0.5;
+      const scale = mat4.create();
+      mat4.fromScaling(scale, vec3.fromValues(radius, length, radius));
+      const local = mat4.create();
+      mat4.multiply(local, this.plumeMat, rotX);
+      mat4.multiply(local, local, scale);
+      draw.drawPlume(local, local, view, proj, d.camPos, [1, 0.82, 0.55], 0.95 * thrust + 0.12 * this.thrustLevel());
+      d.rc.renderer.trackDraws(1);
     }
-    const flare1 = d.rc.tex('flare1');
+    // Team-colour core: small additive glow shells at the same flare offsets.
     const pulse = (1 + Math.sin(this.lol)) / 2;
     for (const v of f.color) {
       vec3.transformQuat(vr, v as unknown as vec3, this.rot);
-      draw.drawBillboard(
-        flare1, this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
-        0.35, this.team.color, pulse, view, proj,
-      );
-      d.rc.renderer.trackDraws();
+      const gl = mat4.create();
+      mat4.fromTranslation(gl, vec3.fromValues(this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2]));
+      const sc = mat4.create();
+      const s = 0.28 + 0.1 * pulse;
+      mat4.fromScaling(sc, vec3.fromValues(s, s, s));
+      const m = mat4.create();
+      mat4.multiply(m, gl, sc);
+      draw.drawGlow(m, m, view, proj, d.camPos, this.team.color, 0.65 + 0.35 * pulse);
+      d.rc.renderer.trackDraws(1);
     }
     this.lol += Math.PI / 10;
     if (this.shield > 0 && this.shieldModel) {
@@ -508,10 +545,25 @@ export class SpaceShip extends SpaceObject {
         0.2 + (this.glowColor[1] - 0.2) * perc,
         0.2 + (this.glowColor[2] - 0.2) * perc,
       ];
-      draw.drawBillboard(flare1, this.pos[0], this.pos[1], this.pos[2], 1.5, this.glowColor, perc, view, proj);
-      d.rc.renderer.trackDraws();
+      // Pickup flash: an expanding additive glow shell around the ship.
+      const s = 1.5 + 0.6 * (1 - this.glow);
+      const sc = mat4.create();
+      mat4.fromTranslation(sc, this.pos);
+      mat4.scale(sc, sc, vec3.fromValues(s, s, s));
+      draw.drawGlow(sc, sc, view, proj, d.camPos, this.glowColor, perc);
+      d.rc.renderer.trackDraws(1);
       this.glow -= 0.03;
     }
+    void world;
+    void prev;
+  }
+
+  /** Scratch matrix for the plume transform (avoids per-frame garbage). */
+  private plumeMat = mat4.create();
+
+  /** 0..1 thrust indicator (accel fraction, boost included). */
+  private thrustLevel(): number {
+    return clamp(vec3.length(this.accel) / this.physics.accelMax, 0, 1);
   }
 
   automaticAction(gi: GameInstance, dtMs: number): void {
@@ -616,7 +668,13 @@ export class Addon extends SpaceObject {
 
   alphaDraw(d: DrawCtx): void {
     if (!d.rc.options.billboards) return;
-    d.draw.drawBillboard(d.rc.tex('flare1'), this.pos[0], this.pos[1], this.pos[2], 7, this.glowColor, 1, d.view, d.proj);
+    const s = 2.4;
+    const m = mat4.create();
+    mat4.fromTranslation(m, this.pos);
+    const sc = mat4.create();
+    mat4.fromScaling(sc, vec3.fromValues(s, s, s));
+    mat4.multiply(m, m, sc);
+    d.draw.drawGlow(m, m, d.view, d.proj, d.camPos, this.glowColor, 0.75);
     d.rc.renderer.trackDraws();
   }
 }
@@ -657,11 +715,11 @@ export class Base extends SpaceObject {
     const gl = d.draw.gl;
     gl.cullFace(gl.FRONT);
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: 1 * L.alpha, emissive: this.team.color, light: true,
+      alpha: 1 * L.alpha, emissive: this.team.color, light: true, prevWorld: this.prevMatrix(),
     });
     gl.cullFace(gl.BACK);
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: 1 * L.alpha, emissive: this.team.color, light: true,
+      alpha: 1 * L.alpha, emissive: this.team.color, light: true, prevWorld: this.prevMatrix(),
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length * 2);
   }
@@ -779,7 +837,7 @@ export class Flag extends SpaceObject {
     const L = this.lod(d, 'solid');
     if (!L) return;
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: 1 * L.alpha, emissive: [0.2, 0.2, 0.2], light: true,
+      alpha: 1 * L.alpha, emissive: [0.2, 0.2, 0.2], light: true, prevWorld: this.prevMatrix(),
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length);
   }
@@ -791,18 +849,22 @@ export class Flag extends SpaceObject {
     const m = this.getMatrix();
     gl.cullFace(gl.FRONT);
     d.draw.drawModel(L.gpu, this.model.tex, m, d.view, d.proj, d.camPos, {
-      alpha: 0.2 * L.alpha, emissive: this.team.color, light: true,
+      alpha: 0.2 * L.alpha, emissive: this.team.color, light: true, prevWorld: this.prevMatrix(),
     });
     gl.cullFace(gl.BACK);
     d.draw.drawModel(L.gpu, this.model.tex, m, d.view, d.proj, d.camPos, {
-      alpha: 0.2 * L.alpha, emissive: this.team.color, light: true,
+      alpha: 0.2 * L.alpha, emissive: this.team.color, light: true, prevWorld: this.prevMatrix(),
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length * 2);
     if (d.rc.options.billboards) {
-      d.draw.drawBillboard(
-        d.rc.tex('flare1'), m[12], m[13], m[14],
-        this.sradius * 1.5, [1, 1, 1], 1, d.view, d.proj,
-      );
+      // Marker glow on the flag: additive shell instead of a billboard.
+      const s = this.sradius * 0.8;
+      const g = mat4.create();
+      mat4.fromTranslation(g, vec3.fromValues(m[12], m[13], m[14]));
+      const sc = mat4.create();
+      mat4.fromScaling(sc, vec3.fromValues(s, s, s));
+      mat4.multiply(g, g, sc);
+      d.draw.drawGlow(g, g, d.view, d.proj, d.camPos, [1, 1, 1], 0.85);
       d.rc.renderer.trackDraws();
     }
   }
@@ -844,14 +906,20 @@ export class Bullet extends SpaceObject {
     const L = this.lod(d, 'solid');
     if (!L) return;
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: this.alpha * L.alpha, emissive: [1, 0.55, 0], light: true,
+      alpha: this.alpha * L.alpha, emissive: [1, 0.55, 0], light: true, prevWorld: this.prevMatrix(),
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length);
   }
 
   alphaDraw(d: DrawCtx): void {
     if (!d.rc.options.billboards) return;
-    d.draw.drawBillboard(d.rc.tex('flare1'), this.pos[0], this.pos[1], this.pos[2], 1, [1, 1, 0], 1, d.view, d.proj);
+    const s = 0.55;
+    const m = mat4.create();
+    mat4.fromTranslation(m, this.pos);
+    const sc = mat4.create();
+    mat4.fromScaling(sc, vec3.fromValues(s, s, s));
+    mat4.multiply(m, m, sc);
+    d.draw.drawGlow(m, m, d.view, d.proj, d.camPos, [1, 1, 0.35], 0.85);
     d.rc.renderer.trackDraws();
   }
 }
@@ -870,13 +938,13 @@ export class HomingMissile extends Bullet {
 
   createSmoke(gi: GameInstance): void {
     if (!gi.rc.options.billboards) return;
-    const tex = gi.rc.tex('holoSmoke' + (1 + Math.floor(gi.rc.random() * 7)));
-    const bill = new Billboard(
-      gi.map, this.team,
+    const drift = vec3.create();
+    vec3.scale(drift, this.vel, 0.05);
+    gi.map.spawnSmoke(
       vec3.fromValues(this.pos[0] - this.dir[0] * 3, this.pos[1] - this.dir[1] * 3, this.pos[2] - this.dir[2] * 3),
-      tex, 0.25, 1,
+      drift,
+      { size0: 0.2, size1: 1.3, life: 1100, alpha: 0.9, turbulence: 0.6 },
     );
-    gi.map.timedBillboards.push({ obj: bill, elapsed: 0, max: 500 });
   }
 
   automaticAction(gi: GameInstance, dtMs: number): void {
@@ -889,7 +957,7 @@ export class HomingMissile extends Bullet {
     const L = this.lod(d, 'solid');
     if (!L) return;
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: this.alpha * L.alpha, emissive: [0.2, 0.2, 0.2], light: true,
+      alpha: this.alpha * L.alpha, emissive: [0.2, 0.2, 0.2], light: true, prevWorld: this.prevMatrix(),
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length);
   }
@@ -897,11 +965,15 @@ export class HomingMissile extends Bullet {
   alphaDraw(d: DrawCtx): void {
     if (!d.rc.options.billboards) return;
     const r = this.model.solid[0]?.boundingSphere.radius ?? 1;
-    d.draw.drawBillboard(
-      d.rc.tex('flare1'),
+    const s = 0.6;
+    const m = mat4.create();
+    mat4.fromTranslation(m, vec3.fromValues(
       this.pos[0] - this.dir[0] * r, this.pos[1] - this.dir[1] * r, this.pos[2] - this.dir[2] * r,
-      1, [1, 0.55, 0], 1, d.view, d.proj,
-    );
+    ));
+    const sc = mat4.create();
+    mat4.fromScaling(sc, vec3.fromValues(s, s, s));
+    mat4.multiply(m, m, sc);
+    d.draw.drawGlow(m, m, d.view, d.proj, d.camPos, [1, 0.62, 0.2], 0.9);
     d.rc.renderer.trackDraws();
   }
 }
@@ -934,7 +1006,7 @@ export class Shield extends SpaceObject {
     if (!L) return;
     d.draw.setDepthWrite(true);
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: 0.1 * L.alpha, emissive: this.team.color, light: true,
+      alpha: 0.1 * L.alpha, emissive: this.team.color, light: true, prevWorld: this.prevMatrix(),
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length);
     d.draw.setDepthWrite(false);
@@ -955,7 +1027,7 @@ export class Ark extends SpaceObject {
     const L = this.lod(d, 'solid');
     if (!L) return;
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: this.alpha * L.alpha, emissive: this.color, light: true,
+      alpha: this.alpha * L.alpha, emissive: this.color, light: true, prevWorld: this.prevMatrix(),
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length);
   }
@@ -965,15 +1037,110 @@ export class Ark extends SpaceObject {
     const L = this.lod(d, 'solid');
     if (!L) return;
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: this.alpha * L.alpha, emissive: this.color, light: true,
+      alpha: this.alpha * L.alpha, emissive: this.color, light: true, prevWorld: this.prevMatrix(),
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length);
+  }
+}
+
+// --------------------------------------------------------------- SmokePuff
+// Particle of the real smoke system: no sprite texture, the density comes from
+// the 3D Perlin field sampled in world space (see SMOKE_FRAG), the particle
+// grows/drifts/dissolves over its lifetime, and it fades out where it meets
+// geometry (soft particles against the scene depth copy).
+export interface SmokeOpts {
+  size0: number;
+  size1: number;
+  life: number;
+  alpha: number;
+  turbulence: number;
+}
+
+export class SmokePuff extends Abstract3D {
+  pos = vec3.create();
+  prevPos = vec3.create();
+  vel = vec3.create();
+  size0: number;
+  size1: number;
+  life: number;
+  elapsed = 0;
+  alpha0: number;
+  turbulence: number;
+  size: number;
+  seed: number;
+
+  get kind(): ObKind {
+    return ObKind.Uncollidable;
+  }
+
+  constructor(
+    map: import('./map').GameMap, position: vec3, vel: vec3, opts: SmokeOpts, seed: number,
+  ) {
+    super(P.EMPTY);
+    vec3.copy(this.pos, position);
+    vec3.copy(this.prevPos, position);
+    vec3.copy(this.vel, vel);
+    this.size0 = opts.size0;
+    this.size1 = opts.size1;
+    this.life = opts.life;
+    this.alpha0 = opts.alpha;
+    this.turbulence = opts.turbulence;
+    this.size = opts.size0;
+    this.seed = seed;
+    this.alpha = 1;
+    map.insertObject(this);
+  }
+
+  setBoundingSphere(): void {
+    this.sx = this.pos[0];
+    this.sy = this.pos[1];
+    this.sz = this.pos[2];
+    this.sradius = Math.max(this.size0, this.size1);
+  }
+
+  update(): void {
+    this.setBoundingSphere();
+  }
+
+  age01(): number {
+    return this.life <= 0 ? 1 : clamp(this.elapsed / this.life, 0, 1);
+  }
+
+  step(dtMs: number): boolean {
+    const dt = dtMs / 1000;
+    vec3.copy(this.prevPos, this.pos);
+    this.elapsed += dtMs;
+    vec3.scaleAndAdd(this.pos, this.pos, this.vel, dt);
+    // drag + slight buoyancy so the plume slows down and rises like hot smoke
+    const drag = Math.max(0, 1 - 2.2 * dt);
+    vec3.scale(this.vel, this.vel, drag);
+    this.vel[1] += 0.9 * dt;
+    const a = this.age01();
+    const ease = 1 - (1 - a) * (1 - a);
+    this.size = this.size0 + (this.size1 - this.size0) * ease;
+    this.setBoundingSphere();
+    return this.elapsed < this.life;
+  }
+
+  solidDraw(_d: DrawCtx): void {
+    /* transparent only */
+  }
+
+  alphaDraw(d: DrawCtx): void {
+    d.draw.drawSmoke(
+      this.pos[0], this.pos[1], this.pos[2],
+      this.prevPos[0], this.prevPos[1], this.prevPos[2],
+      this.size, this.alpha0, this.seed, this.age01(), this.turbulence,
+      d.view, d.proj,
+    );
+    d.rc.renderer.trackDraws();
   }
 }
 
 // --------------------------------------------------------------- Billboard
 export class Billboard extends Abstract3D {
   pos = vec3.create();
+  prevPos = vec3.create();
   team: Team;
   tex: TexEntry | null;
 
@@ -988,6 +1155,7 @@ export class Billboard extends Abstract3D {
     super(P.EMPTY);
     this.team = team;
     vec3.copy(this.pos, position);
+    vec3.copy(this.prevPos, position);
     this.tex = tex;
     this.scale = scale;
     this.alpha = alpha;
@@ -1013,6 +1181,7 @@ export class Billboard extends Abstract3D {
     if (!d.rc.options.billboards) return;
     const dist = d.camDistance(this.pos);
     const a = this.alpha * clamp((d.rc.options.distance - dist) / 32, 0, 1);
+    d.draw.setBillboardPrev(this.prevPos[0], this.prevPos[1], this.prevPos[2]);
     d.draw.drawBillboard(this.tex, this.pos[0], this.pos[1], this.pos[2], this.sradius, [1, 1, 1], a, d.view, d.proj);
     d.rc.renderer.trackDraws();
   }
@@ -1056,14 +1225,14 @@ export class Fragment extends SpaceObject {
     const S = this.lod(d, 'solid');
     if (S) {
       d.draw.drawModel(S.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-        alpha: Math.max(0, a), emissive: this.color, light: true,
+        alpha: Math.max(0, a), emissive: this.color, light: true, prevWorld: this.prevMatrix(),
       });
       d.rc.renderer.trackDraws(S.gpu.meshes.length);
     }
     const C = this.lod(d, 'color');
     if (C && C.gpu !== S?.gpu) {
       d.draw.drawModel(C.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-        alpha: Math.max(0, a), emissive: this.color, light: true,
+        alpha: Math.max(0, a), emissive: this.color, light: true, prevWorld: this.prevMatrix(),
       });
       d.rc.renderer.trackDraws(C.gpu.meshes.length);
     }
