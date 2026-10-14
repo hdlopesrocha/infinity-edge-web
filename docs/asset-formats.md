@@ -91,6 +91,14 @@ Effect of the split (all 43 converted models, 72 meshes):
 | `Asteroid3.json` | 657 KB | 1 KB + 408 KB |
 | all models | 2.6 MB | 1.9 MB (and ~1 KB parsed per model) |
 
+Vertices are baked into model space, exactly as the runtime does
+(`World = boneAbsolute * vertex`), so the bone hierarchy is kept in `nodes`
+for reference only. **There is no skinning or animation data to port**: every
+asset in the original content is a `ModelReader` file (checked across all 43
+`.xnb` files) — no `AnimationClip`, no skin-weight vertex elements — and every
+object in the game is a rigid mesh. Physics, rotation and flares supply all of
+the motion seen in the original.
+
 ## 3. Levels and menus: `*.json`
 
 `tools/convert-levels.mjs` converts `Level.xml` (+ the sibling `Menu.xml`) into

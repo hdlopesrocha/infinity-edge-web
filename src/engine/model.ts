@@ -181,12 +181,12 @@ function meshBounds(positions: Float32Array): { center: vec3; radius: number } {
   return { center, radius };
 }
 
-function ensureNormals(mesh: ConvertedMesh): Float32Array {
+function ensureNormals(mesh: ConvertedMesh, idx: Uint16Array | Uint32Array): Float32Array {
   const positions = mesh.positions ?? [];
   const normals = mesh.normals ?? [];
   if (normals.length === positions.length) return new Float32Array(normals);
   const acc = new Float32Array(positions.length);
-  const p = positions, idx = mesh.indices ?? [];
+  const p = positions;
   for (let i = 0; i < idx.length; i += 3) {
     const a = idx[i] * 3, b = idx[i + 1] * 3, c = idx[i + 2] * 3;
     const abx = p[b] - p[a], aby = p[b + 1] - p[a + 1], abz = p[b + 2] - p[a + 2];
