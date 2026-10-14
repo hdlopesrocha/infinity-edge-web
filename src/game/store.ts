@@ -15,6 +15,8 @@ export const store = reactive({
   username: '' as string,
   levelText: '' as string,
   result: null as { won: boolean; reward: string; message: string | null; level: string } | null,
+  /** Eager asset load (all models/textures/levels) shown by the boot screens. */
+  loading: { active: true, done: 0, total: 0, failed: 0 },
 });
 
 export function saveOptions(o: Options): void {

@@ -6,7 +6,8 @@ import { loadTextureAny, peekTexture } from '../engine/texture';
 import type { TexEntry } from '../engine/texture';
 import type { Renderer } from '../engine/renderer';
 import type { ModelData } from './objects';
-import { MODELS } from './config';
+import { MODELS, TEXTURES } from './config';
+import { LEVEL_FILES, loadLevel } from './levels';
 import { audio } from './audio';
 
 export interface Options {
@@ -205,6 +206,35 @@ export class RC {
       friction: 1,
       detail,
     });
+  }
+
+  /**
+   * Eagerly load *everything* the game can ask for (all models with their LODs,
+   * icons and textures, every UI/texture alias and the level JSONs) so the boot
+   * screen can show a real progress bar and the menus/games never stall.
+   * `onProgress(done, total)` is called as items complete.
+   */
+  async preloadAll(onProgress?: (done: number, total: number) => void): Promise<void> {
+    const gl = this.renderer.gl;
+    const extraTex = [
+      'holoSmoke1', 'holoSmoke2', 'holoSmoke3', 'holoSmoke4', 'holoSmoke5', 'holoSmoke6', 'holoSmoke7',
+      'hexagon', 'aim', 'over',
+    ];
+    const texAliases = [...new Set([...Object.keys(TEXTURES), ...extraTex])];
+    const modelNames = MODELS.map((m) => m.name);
+    const levelKeys = Object.keys(LEVEL_FILES);
+    const total = texAliases.length + modelNames.length + levelKeys.length;
+    let done = 0;
+    const bump = (): void => {
+      done++;
+      onProgress?.(done, total);
+    };
+    const texJobs = texAliases.map((t) => this.ensureTex(t).then(bump, bump));
+    const modelJobs = modelNames.map((n) => this.loadModel(gl, n).then(bump, bump));
+    const levelJobs = levelKeys.map((k) => loadLevel(k).then(bump, bump));
+    await Promise.all([...texJobs, ...modelJobs, ...levelJobs]);
+    // Assets are in; the RC caches are warm, so rebuilds from now on are cheap.
+    onProgress?.(total, total);
   }
 
   model(name: string): ModelData | null {

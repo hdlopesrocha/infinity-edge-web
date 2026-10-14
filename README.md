@@ -49,7 +49,7 @@ composition; the compiled XNB is exact. It is kept only for reference.
 
 | URL | Original |
 |---|---|
-| `#/` → `#/engine` → `#/start` | EngineScreen (wheel + logo, 3 s) → StartScreen (logo, 3 s) → MainMenu |
+| `#/` → `#/engine` → `#/start` | EngineScreen (wheel + logo, 3 s) → StartScreen (logo, 3 s) → MainMenu. Both boot screens show the Floating-Gear loading bar while every model, texture and level is preloaded; the sequence only advances to the menu once that finishes |
 | `#/menu` | MainMenu (SINGLE PLAYER / OPTIONS / ABOUT) |
 | `#/single-player` | CTF / TIME TRIAL |
 | `#/ctf`, `#/tt`, `#/tt/{easy,normal,hard}` | Difficulty menus; TT lists Track 01.. / Demo Track |

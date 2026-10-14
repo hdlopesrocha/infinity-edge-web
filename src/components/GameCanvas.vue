@@ -129,6 +129,25 @@ onMounted(() => {
       building = '';
       void rebuild();
     };
+    // Boot: load every model, texture and level up front (the boot screens show
+    // a Floating-Gear loading bar until this finishes).
+    store.loading.active = true;
+    store.loading.done = 0;
+    store.loading.total = 0;
+    store.loading.failed = 0;
+    void rc
+      .preloadAll((done, total) => {
+        store.loading.done = done;
+        store.loading.total = total;
+      })
+      .catch((e) => {
+        store.loading.failed++;
+        console.warn('[boot] preload finished with errors:', e);
+      })
+      .finally(() => {
+        store.loading.done = store.loading.total;
+        store.loading.active = false;
+      });
     renderer.onFrame = (dtMs) => {
       if (!renderer || !rc) return;
       // Live render options: the post chain reads them every frame, so the

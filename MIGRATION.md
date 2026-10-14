@@ -298,3 +298,13 @@ blur and replaces the sprite-based effects with geometry/procedural versions:
   and the scene rebuild for Special Effects all react immediately; "save"
   persists to localStorage, and leaving the screen without saving restores the
   snapshot taken on entry (store + running RC).
+
+**Boot preload + loading bar (web addition).** The original loaded content from
+the local store per scene; the web build now preloads *everything* up front
+(`RC.preloadAll`: all 30 models with their LODs/textures/icons, every texture
+alias incl. `holoSmoke*`/`hexagon`/`aim`/`over`, and the 14 level JSONs — 94
+items) and the boot screens (`/engine`, `/start`) show a Floating-Gear styled
+progress bar (Black40 panel, black `_pixel` track, white fill, DejaVu labels,
+`done / total`). The engine/start screens keep their original 3 s / 1.5 s
+minimums but the transition to the menu is gated on the preload finishing, so
+menus and games never stall on a fetch.
