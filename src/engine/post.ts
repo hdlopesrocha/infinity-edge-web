@@ -185,8 +185,12 @@ export class Post {
   /** Copy the opaque scene depth so soft particles can sample it. */
   blitDepth(): void {
     const gl = this.gl;
+    // Resolve the destination FBO first: creating it binds FRAMEBUFFER
+    // (read+draw), which would clobber the READ binding below on the very
+    // first call and turn the blit into a feedback-loop error.
+    const dst = this.depthCopyFbo();
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.sceneFbo);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.depthCopyFbo());
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, dst);
     gl.blitFramebuffer(0, 0, this.w, this.h, 0, 0, this.w, this.h, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
     // Restore the scene target as the draw framebuffer: the transparent pass
     // (flares, smoke, shells, walls) must keep rendering into it, otherwise the
