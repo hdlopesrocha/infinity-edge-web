@@ -1,4 +1,5 @@
-<!-- SinglePlayer/Menu.xml: CAPTURE THE FLAG / TIME TRIAL. -->
+<!-- SinglePlayer/Menu.xml: CAPTURE THE FLAG / TIME TRIAL, plus the two
+     web-only modes (King of the System, Survival). -->
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
@@ -25,6 +26,14 @@ function go(path: string): void {
         <button class="icon-btn" @click="go('/tt')">
           <img :src="base + '_timeTrial.png'" alt="" />
           <span class="cap">TIME TRIAL</span>
+        </button>
+        <button class="icon-btn" @click="go('/kots')">
+          <img :src="base + '_kots.png'" alt="" />
+          <span class="cap">KING OF THE SYSTEM</span>
+        </button>
+        <button class="icon-btn" @click="go('/survival')">
+          <img :src="base + '_survival.png'" alt="" />
+          <span class="cap">SURVIVAL</span>
         </button>
       </div>
     </template>
