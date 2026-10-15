@@ -1,9 +1,11 @@
-<!-- Game HUD + corner buttons (Description tag chrome). -->
+<!-- Game HUD + corner buttons (Description tag chrome). The HUD renders from
+     `store.hud`, a snapshot the render loop publishes after every movement and
+     draw of the frame (see GameCanvas.syncHud), so markers/aim/life never trail
+     the 3D scene by a frame or by an interval tick. -->
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import type { GameInstance, PointerMark } from '../game/instance';
-import { Life3 } from '../game/life';
+import type { GameInstance } from '../game/instance';
 import { store } from '../game/store';
 import { audio } from '../game/audio';
 
@@ -15,59 +17,29 @@ function game(): GameInstance | null {
   return (window as unknown as { __ieGame?: GameInstance }).__ieGame ?? null;
 }
 
-const hud = reactive({
-  score: '', notify: '', aimX: 0, aimY: 0, lifeHtml: '',
-  homings: 0, nitroPct: 0, stickOn: false,
-  backX: 0, backY: 0, knobX: 0, knobY: 0, acel: 0,
-  pointers: [] as PointerMark[], canvasW: 1280, canvasH: 720,
-});
+const hud = store.hud;
 
 const layerRef = ref<HTMLDivElement | null>(null);
-let timer = 0;
 
-function lifeBar(): string {
-  const sel = game()?.selectedObject;
-  if (!sel || !sel.life) return '';
-  const col = (v: number, max: number) => {
-    const p = max === 0 ? 0 : Math.max(0, v / max);
-    const r = (((1 * (1 - p) + 0.2 * p) / 2) * 0.7 * 255) | 0;
-    const gg = (((0.27 * (1 - p) + 0.8 * p) / 2) * 0.7 * 255) | 0;
-    const b = (((0 * (1 - p) + 0.2 * p) / 2) * 0.7 * 255) | 0;
-    return `rgb(${r},${gg},${b})`;
-  };
-  if (sel.life instanceof Life3) {
-    const l = sel.life;
-    return `<div style="width:150px;height:16px;background:rgba(0,0,0,0.5);display:flex;gap:4px;padding:4px;">` +
-      `<div style="width:44px;height:8px;background:${col(l.left, l.maxLeft)};"></div>` +
-      `<div style="width:44px;height:8px;background:${col(l.center, l.maxCenter)};"></div>` +
-      `<div style="width:44px;height:8px;background:${col(l.right, l.maxRight)};"></div>` +
-      `</div>`;
+function lifeColor(v: number, max: number): string {
+  const p = max === 0 ? 0 : Math.max(0, v / max);
+  const r = (((1 * (1 - p) + 0.2 * p) / 2) * 0.7 * 255) | 0;
+  const gg = (((0.27 * (1 - p) + 0.8 * p) / 2) * 0.7 * 255) | 0;
+  const b = (((0 * (1 - p) + 0.2 * p) / 2) * 0.7 * 255) | 0;
+  return `rgb(${r},${gg},${b})`;
+}
+
+const lifeHtml = computed(() => {
+  const seg = hud.life;
+  if (seg.length === 0) return '';
+  if (seg.length === 1) {
+    return `<div style="width:50px;height:16px;background:rgba(0,0,0,0.5);padding:4px;">` +
+      `<div style="width:42px;height:8px;background:${lifeColor(seg[0].value, seg[0].max)};"></div></div>`;
   }
-  return `<div style="width:50px;height:16px;background:rgba(0,0,0,0.5);padding:4px;">` +
-    `<div style="width:42px;height:8px;background:${col(sel.life.total(), sel.life instanceof Life3 ? 1 : 100)};"></div></div>`;
-}
-
-function refresh(): void {
-  const g = game();
-  if (!g || g.gameType === 'BACK') return;
-  hud.score = g.scoreText();
-  hud.notify = g.notificationText;
-  const aim = g.aimPos();
-  hud.aimX = aim.x;
-  hud.aimY = aim.y;
-  hud.lifeHtml = lifeBar();
-  hud.homings = g.control.homings;
-  hud.nitroPct = Math.floor(g.control.nitroFrac * 100);
-  hud.stickOn = g.control.analogStick.enabled;
-  hud.backX = g.control.analogStick.backX;
-  hud.backY = g.control.analogStick.backY;
-  hud.knobX = g.control.analogStick.stickX;
-  hud.knobY = g.control.analogStick.stickY;
-  hud.acel = g.control.analogAcel.value;
-  hud.pointers = g.pointers();
-  hud.canvasW = g.canvasW;
-  hud.canvasH = g.canvasH;
-}
+  return `<div style="width:150px;height:16px;background:rgba(0,0,0,0.5);display:flex;gap:4px;padding:4px;">` +
+    seg.map((s) => `<div style="width:44px;height:8px;background:${lifeColor(s.value, s.max)};"></div>`).join('') +
+    `</div>`;
+});
 
 function layerPos(e: PointerEvent): { x: number; y: number } {
   const r = layerRef.value!.getBoundingClientRect();
@@ -104,21 +76,16 @@ function goBriefing(): void {
 
 onMounted(() => {
   window.addEventListener('keydown', onKey);
-  timer = window.setInterval(refresh, 66);
-  refresh();
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
-  window.clearInterval(timer);
 });
 
-function markerStyle(m: PointerMark): string {
+function markerStyle(m: { color: [number, number, number]; x: number; y: number }): string {
   const c = `rgb(${(m.color[0] * 255) | 0},${(m.color[1] * 255) | 0},${(m.color[2] * 255) | 0})`;
   return `left:${m.x}px;top:${m.y}px;transform:translate(-50%,-50%);filter:drop-shadow(0 0 3px ${c});`;
 }
-
-void store;
 </script>
 
 <template>
@@ -126,7 +93,7 @@ void store;
     <div class="hud-score">{{ hud.score }}</div>
     <div v-if="hud.notify" class="hud-notify">{{ hud.notify }}</div>
     <img class="hud-aim" :src="base + '_aim.png'" alt="" draggable="false" :style="`left:${hud.aimX}px;top:${hud.aimY}px;`" />
-    <div class="hud-life" v-html="hud.lifeHtml"></div>
+    <div class="hud-life" v-html="lifeHtml"></div>
     <div v-for="(m, i) in hud.pointers" :key="i" class="hud-marker" :style="markerStyle(m)">
       <img v-if="m.over" :src="base + '_over.png'" width="48" height="48" alt="" draggable="false" />
       <img v-else-if="m.iconUrl" :src="m.iconUrl" :width="m.w" :height="m.h" alt="" draggable="false" />

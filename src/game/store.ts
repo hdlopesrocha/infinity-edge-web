@@ -6,6 +6,24 @@ import type { Options } from './resources';
 import { GameScore } from './team';
 import type { ScoreEntry } from './team';
 
+/** One life-bar segment (the HUD builds the coloured bar from these). */
+export interface HudLifeSegment {
+  value: number;
+  max: number;
+}
+
+/** Marker drawn over another ship / base / goal (PointerMark, plain copy). */
+export interface HudPointer {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  iconUrl: string | null;
+  over: boolean;
+  color: [number, number, number];
+  label: string | null;
+}
+
 export const store = reactive({
   options: defaultOptions() as Options,
   route: 'boot' as string,
@@ -17,6 +35,30 @@ export const store = reactive({
   result: null as { won: boolean; reward: string; message: string | null; level: string } | null,
   /** Eager asset load (all models/textures/levels) shown by the boot screens. */
   loading: { active: true, done: 0, total: 0, failed: 0 },
+  /**
+   * HUD snapshot, written by the render loop *after* the frame's movements and
+   * draw (see GameCanvas.syncHud). The DOM overlay renders straight from this,
+   * so the markers/aim/life are never a frame (or an interval tick) behind.
+   */
+  hud: {
+    score: '',
+    notify: '',
+    aimX: 0,
+    aimY: 0,
+    life: [] as HudLifeSegment[],
+    homings: 0,
+    nitroPct: 0,
+    stickOn: false,
+    backX: 0,
+    backY: 0,
+    knobX: 0,
+    knobY: 0,
+    acel: 0,
+    pointers: [] as HudPointer[],
+    canvasW: 1280,
+    canvasH: 720,
+    frame: 0,
+  },
 });
 
 export function saveOptions(o: Options): void {
