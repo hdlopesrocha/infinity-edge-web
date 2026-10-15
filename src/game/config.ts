@@ -39,7 +39,7 @@ export const TEXTURES: Record<string, string> = {
   _aim: 'System/aim',
   _flare1: 'System/flare1', _flare2: 'System/flare2',
   _gold: 'System/gold', _silver: 'System/silver', _bronze: 'System/bronze',
-  _ball: 'System/ball', _backWindow: 'System/backWindow',
+  _backWindow: 'System/backWindow',
   _singlePlayer: 'System/singlePlayer',
   _optionsIcon: 'System/options', _about: 'System/about', _back: 'System/back',
   _timeTrial: 'System/timeTrial', _ctf: 'System/ctf', _easy: 'System/easy', _normal: 'System/normal', _hard: 'System/hard',
