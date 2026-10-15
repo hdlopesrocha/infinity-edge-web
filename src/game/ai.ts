@@ -1,7 +1,7 @@
 // Intelligence 37_T verbatim.
 
 import { quat, vec3, steerToward, ypr } from '../engine/math';
-import { Base, Flag, setAIHomingFactory } from './objects';
+import { Addon, Base, Flag, SpaceObject as SpaceObjectCls, setAIHomingFactory } from './objects';
 import type { Command, HomingMissile, SpaceObject, SpaceShip } from './objects';
 import { previewDirection } from './physics';
 import type { GameInstance } from './instance';
@@ -333,11 +333,110 @@ export class HILocal implements Command {
   }
 }
 
+/**
+ * Experimental "smart" brain (web addition, opt-in with `?ai=smart`): it keeps
+ * the ship's original strategy as its core but layers the tactics the 2013 AI
+ * lacks — retreat when badly damaged, grab nearby addons, break away when an
+ * enemy is on its tail — and the shared arena guard keeps everyone inside.
+ */
+export class AISmart implements Command {
+  private jinkTime = 0;
+  private jinkSign = 1;
+
+  constructor(private gi: GameInstance, private obj: SpaceObject, private inner: Command) {}
+
+  execute(): void {
+    const o = this.obj;
+    const base = o.team.base;
+    const life = o.lifePercentage();
+
+    // 1. badly damaged: run home and keep the base between us and the enemy
+    if (life < 0.35 && base) {
+      new AIGoPoint(this.gi, o, base).execute();
+      return;
+    }
+
+    // 2. an addon nearby is worth more than a stray shot
+    if (this.grabAddon()) return;
+
+    // 3. someone on our tail (and we just took fire): break away for a moment
+    if (this.evade()) return;
+
+    // 4. otherwise: the ship's own strategy, verbatim
+    this.inner.execute();
+  }
+
+  /** Steer to the closest addon within 260 units (2.5 s of interest max). */
+  private grabAddon(): boolean {
+    const o = this.obj;
+    const found: SpaceObject[] = [];
+    this.gi.map.octree.sphereSelectInteractive(
+      o.sx, o.sy, o.sz, 260, found as unknown as import('../engine/octree').OctItem[],
+    );
+    let best: Addon | null = null;
+    let bestD = Infinity;
+    for (const f of found) {
+      if (!(f instanceof Addon) || !f.active) continue;
+      const d = Math.hypot(f.pos[0] - o.pos[0], f.pos[1] - o.pos[1], f.pos[2] - o.pos[2]);
+      if (d < bestD) { bestD = d; best = f; }
+    }
+    if (!best) return false;
+    new AIGoPoint(this.gi, o, best).execute();
+    return true;
+  }
+
+  /** Barrel away when an enemy sits behind us right after taking damage. */
+  private evade(): boolean {
+    const o = this.obj;
+    if (this.jinkTime > 0) {
+      this.jinkTime -= this.gi.dtMs / 1000;
+      const side = this.jinkSign >= 0 ? o.side : [-o.side[0], -o.side[1], -o.side[2]];
+      steerTo(o, o.pos[0] + o.dir[0] * 200 + side[0] * 160, o.pos[1] + o.dir[1] * 200 + side[1] * 160,
+        o.pos[2] + o.dir[2] * 200 + side[2] * 160, o.physics.maxAngular);
+      vec3.scale(o.accel, o.dir, o.physics.accelMax);
+      o.update();
+      return true;
+    }
+    if (o.hitAge > 1.2) return false;
+    const found: SpaceObject[] = [];
+    this.gi.map.octree.sphereSelectInteractive(
+      o.sx, o.sy, o.sz, 220, found as unknown as import('../engine/octree').OctItem[],
+    );
+    for (const f of found) {
+      if (f === o || f instanceof Base || f instanceof Flag || !(f instanceof SpaceObjectCls)) continue;
+      if (!o.team.enemys.includes(f.team) || !f.active) continue;
+      const dx = f.pos[0] - o.pos[0], dy = f.pos[1] - o.pos[1], dz = f.pos[2] - o.pos[2];
+      const l = Math.hypot(dx, dy, dz) || 1;
+      const behind = (dx * o.dir[0] + dy * o.dir[1] + dz * o.dir[2]) / l;
+      if (behind < -0.35 && l < 200) {
+        this.jinkTime = 0.9;
+        this.jinkSign = this.gi.rc.random() < 0.5 ? -1 : 1;
+        return this.evade();
+      }
+    }
+    return false;
+  }
+}
+
+/** `?ai=smart` upgrades every AI ship to the AISmart brain. */
+export function smartAIRequested(): boolean {
+  const hash = typeof window !== 'undefined' ? window.location.hash : '';
+  const q = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+  try {
+    return new URLSearchParams(q).get('ai') === 'smart';
+  } catch {
+    return false;
+  }
+}
+
 export function applyAction(gi: GameInstance, name: string, fromId: string, toId: string | null): void {
   const from = gi.objects.get(fromId) as SpaceShip | undefined;
   if (!from) return;
   const to = toId ? (gi.objects.get(toId) as SpaceObject | undefined) : undefined;
-  if (name === 'HILocal') from.intelligence = new HILocal(gi, from, gi.control, gi.rc);
+  if (name === 'HILocal') {
+    from.intelligence = new HILocal(gi, from, gi.control, gi.rc);
+    from.isPlayer = true;
+  }
   else if (name === 'AIBodyGuard' && to) from.intelligence = new AIBreak(gi, from, new AIFollow(gi, from, to, 128, 32));
   else if (name === 'AIFlagCap') from.intelligence = new AIBreak(gi, from, new AIFlagCap(gi, from, 128));
   else if (name === 'AIFlagProt' && from.team.flag) {

@@ -1,7 +1,7 @@
 // Object hierarchy (37_T verbatim): GetMatrix fresh, pos-centered spheres,
 // LOD + fade, model/color variants, ship starts (homings 2, nitro 0).
 
-import { mat4, quat, vec3, ypr, dirFromQuat, sideFromQuat, upFromQuat, getH, getV, clamp } from '../engine/math';
+import { mat4, quat, vec3, ypr, dirFromQuat, sideFromQuat, upFromQuat, getH, getV, clamp, steerToward } from '../engine/math';
 import { ObKind } from '../engine/octree';
 import type { OctItem, OctNode } from '../engine/octree';
 import { rayIntersectModel } from '../engine/model';
@@ -175,6 +175,8 @@ export abstract class Object3D extends Abstract3D {
 
 export class SpaceObject extends Object3D {
   teleported = false;
+  /** Seconds since the last hit (used by the experimental AISmart brain). */
+  hitAge = 99;
   life: Life | null;
   team: Team;
   flag: Flag | null = null;
@@ -187,6 +189,7 @@ export class SpaceObject extends Object3D {
   }
 
   receiveDamage(gi: GameInstance, amount: number, direction: vec3): void {
+    this.hitAge = 0;
     if (!this.life) return;
     this.life.receiveDamage(amount, direction, this.up, this.dir, () => this.destroyObject(gi));
   }
@@ -360,6 +363,10 @@ export class SpaceShip extends SpaceObject {
   homings = 0;
   nitro = 0;
   shield = 0;
+  /** True when HILocal drives this ship (the player may leave the arena). */
+  isPlayer = false;
+  /** Seconds since the last hit (used by the experimental AISmart brain). */
+  hitAge = 99;
   private lol = 0;
 
   constructor(
@@ -445,6 +452,7 @@ export class SpaceShip extends SpaceObject {
 
   receiveDamage(gi: GameInstance, amount: number, direction: vec3): void {
     if (!this.life) return;
+    this.hitAge = 0;
     if (this.shield <= 0) {
       this.life.receiveDamage(amount, direction, this.up, this.dir, () => this.destroyObject(gi));
       if (this === gi.selectedObject) gi.rc.playSfx('hitSound');
@@ -595,8 +603,40 @@ export class SpaceShip extends SpaceObject {
   automaticAction(gi: GameInstance, dtMs: number): void {
     if (!this.active) return;
     if (this.intelligence && this.active) this.intelligence.execute();
+    // Bots keep their strategy but never leave the arena: outside the margin
+    // they steer back to the centre and the border acts as a soft wall. The
+    // player is exempt (the original's "leaving the field of battle" + 10 s
+    // outsider rule still applies to it).
+    if (!this.isPlayer) this.arenaGuard(gi);
+    this.hitAge += dtMs / 1000;
     this.launchSpan += dtMs;
     this.move(gi, dtMs);
+  }
+
+  /** Turn an AI ship around near the map border and keep it inside. */
+  private arenaGuard(gi: GameInstance): void {
+    const half = gi.map.size / 2;
+    const margin = 64;
+    const p = this.pos;
+    const over = Math.max(Math.abs(p[0]), Math.abs(p[1]), Math.abs(p[2])) - (half - margin);
+    if (over <= 0) return;
+    // Steer back to the centre a bit harder than the ship's normal turn rate.
+    const target = vec3.fromValues(-p[0], -p[1], -p[2]);
+    steerToward(this.rot, this.dir, target, this.side, this.physics.maxAngular * 2);
+    this.update();
+    vec3.scale(this.accel, this.dir, this.physics.accelMax);
+    // Soft wall: clamp the position and drop the outward velocity component.
+    const wall = half - 8;
+    for (let i = 0; i < 3; i++) {
+      if (p[i] > wall) {
+        p[i] = wall;
+        if (this.vel[i] > 0) this.vel[i] = 0;
+      } else if (p[i] < -wall) {
+        p[i] = -wall;
+        if (this.vel[i] < 0) this.vel[i] = 0;
+      }
+    }
+    this.update();
   }
 }
 

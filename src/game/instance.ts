@@ -14,7 +14,7 @@ import {
 import type { RewardType, ScoreEntry } from './team';
 import { TEAMS } from './config';
 import { Control } from './controls';
-import { applyAction } from './ai';
+import { AISmart, applyAction, smartAIRequested } from './ai';
 import { addScore } from './store';
 import { loadGhostFile, saveGhostFile } from './ghost';
 import type { GhostRecord } from './ghost';
@@ -121,6 +121,17 @@ export class GameInstance {
     }
     renderer.camera.far = rc.options.distance;
     for (const a of def.actions) applyAction(gi, a.name, a.from, a.to ?? null);
+    // Web addition: `#/game/<level>?ai=smart` wraps every AI ship in the
+    // experimental brain (retreat / addon hunting / evade) around its original
+    // strategy; the arena guard is always on.
+    if (smartAIRequested()) {
+      for (const o of gi.objects.values()) {
+        const ship = o as SpaceShip;
+        if (ship.intelligence && !ship.isPlayer) {
+          ship.intelligence = new AISmart(gi, ship, ship.intelligence);
+        }
+      }
+    }
     for (const g of def.goals) {
       const reward = (
         g.reward === 'Gold' || g.reward === 'Silver' || g.reward === 'Bronze' ||
