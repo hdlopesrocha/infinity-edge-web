@@ -510,6 +510,11 @@ export class SpaceShip extends SpaceObject {
     const vr = vec3.create();
     const rotX = mat4.create();
     mat4.fromRotation(rotX, -Math.PI / 2, vec3.fromValues(1, 0, 0));
+    // The plume mesh runs along +Y, so the ship's own orientation has to be in
+    // the matrix: T(nozzle) · R_ship · R_x(-90°) · S maps +Y onto the ship's
+    // -Z (straight out of the tail), instead of the world -Z.
+    const shipRot = mat4.create();
+    mat4.fromQuat(shipRot, this.rot);
     const scale = mat4.create();
     const local = mat4.create();
     const glow = mat4.create();
@@ -524,7 +529,8 @@ export class SpaceShip extends SpaceObject {
       const length = 0.7 + 1.5 * (0.3 + 0.7 * level);
       const radius = 0.16;
       mat4.fromScaling(scale, vec3.fromValues(radius, length, radius));
-      mat4.multiply(local, this.plumeMat, rotX);
+      mat4.multiply(local, this.plumeMat, shipRot);
+      mat4.multiply(local, local, rotX);
       mat4.multiply(local, local, scale);
       draw.drawPlume(local, local, view, proj, d.camPos, [1, 0.62, 0.2], 0.8 * thrust + 0.1 * level);
       // Hot core + team-coloured halo right at the nozzle (additive shells).
