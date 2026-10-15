@@ -29,6 +29,10 @@ export interface RenderOptions {
   flareTex: TexEntry | null;
 }
 
+// Motion-blur exposure: how much world motion one frame integrates. A fixed
+// *time* (like a real camera shutter) keeps the streak identical at any fps.
+const MOTION_BLUR_EXPOSURE_S = 1 / 60;
+
 export class Renderer {
   canvas: HTMLCanvasElement;
   gl: WebGL2RenderingContext;
@@ -56,6 +60,8 @@ export class Renderer {
   private lastViewProj = mat4.create();
   private hasPrevViewProj = false;
   private startTime = performance.now();
+  /** Last frame's delta, used to keep the motion-blur exposure time-constant. */
+  private frameDtMs = 1000 / 60;
   /** Previous frame's camera position (camera-locked geometry velocity). */
   readonly prevCameraPos = vec3.create();
 
@@ -139,11 +145,17 @@ export class Renderer {
     mat4.copy(this.lastViewProj, this.camera.viewProj);
     vec3.copy(this.prevCameraPos, this.camera.position);
     this.hasPrevViewProj = true;
+    // The velocity buffer holds one frame of screen motion, so scale it to a
+    // fixed exposure *time* (1/60 s) instead of a fixed fraction of a frame:
+    // the streak then looks the same at 30, 60 or 120 fps.
+    const dtS = Math.max(this.frameDtMs, 1) / 1000;
+    const shutter = Math.min(2, Math.max(0.25, MOTION_BLUR_EXPOSURE_S / dtS));
     this.post.present({
       motionBlur: this.renderOptions.motionBlur,
       flare: this.renderOptions.flare,
       flareTex: this.renderOptions.flareTex,
-      maxBlur: 0.16,
+      shutter,
+      maxBlur: 0.08,
     });
   }
 
@@ -174,6 +186,7 @@ export class Renderer {
       this.last = now;
       if (dt > 100) dt = 100;
       if (dt > 0) {
+        this.frameDtMs = dt;
         this.onFrame?.(dt);
         this.frames++;
         this.fpsT += dt / 1000;

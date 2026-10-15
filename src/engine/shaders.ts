@@ -289,22 +289,27 @@ export const POST_MB_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D uColor; uniform sampler2D uVelocity;
-uniform float uScale; uniform float uMaxLen;
+uniform float uShutter;   // exposure length in frames
+uniform float uMaxLen;    // streak clamp, in UV units
 out vec4 oColor;
+// Interleaved gradient noise: offsets the tap pattern per pixel so the streak
+// comes out smooth instead of a stack of discrete, faded copies.
+float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 void main() {
   vec4 c = texture(uColor, vUV);
-  // 2.4x shutter: the streak spans a bit more than one frame of motion, which
-  // makes the effect obvious on near objects while staying physical
-  vec2 px = texture(uVelocity, vUV).xy * uScale * 2.4;
+  // Raw per-pixel screen velocity (UV/frame, signed) written by the scene
+  // shaders from the previous frame's world/view-projection.
+  vec2 px = texture(uVelocity, vUV).xy * uShutter;
   float len = length(px);
-  if (len < 1e-5) { oColor = c; return; }
+  if (len < 0.0015) { oColor = c; return; }
   if (len > uMaxLen) px *= uMaxLen / len;
-  vec3 sum = c.rgb;
-  for (int i = 1; i <= 16; i++) {
-    float t = float(i) / 16.0 - 0.5;
+  float j = ign(gl_FragCoord.xy);
+  vec3 sum = vec3(0.0);
+  for (int i = 0; i < 24; i++) {
+    float t = (float(i) + j) / 24.0 - 0.5;
     sum += texture(uColor, vUV + px * t).rgb;
   }
-  oColor = vec4(sum / 17.0, c.a);
+  oColor = vec4(sum / 24.0, c.a);
 }`;
 
 export const POST_BRIGHT_FRAG = `#version 300 es

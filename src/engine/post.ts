@@ -26,6 +26,8 @@ export interface PresentOptions {
   /** 0 disables the lens flare; ~0.6 is the tuned default. */
   flare: number;
   flareTex: TexEntry | null;
+  /** Exposure length in frames (1.0 = exactly one frame of motion). */
+  shutter: number;
   /** Maximum blur length in UV units per frame. */
   maxBlur: number;
 }
@@ -43,7 +45,8 @@ export class Post {
   sceneFbo: WebGLFramebuffer | null = null;
   private depthRb: WebGLTexture | null = null;
   private floatTargets = false;
-  private velDecode: [number, number] = [1, 0];
+  /** Per-object motion blur needs a signed velocity target (RG16F). */
+  private mbSupported = false;
   private bright: Target = { fbo: null, tex: null, w: 0, h: 0 };
   private blurA: Target = { fbo: null, tex: null, w: 0, h: 0 };
   private blurB: Target = { fbo: null, tex: null, w: 0, h: 0 };
@@ -66,7 +69,7 @@ export class Post {
     this.progBright = linkProgram(gl, FS_VERT, POST_BRIGHT_FRAG);
     this.progBlur = linkProgram(gl, FS_VERT, POST_BLUR_FRAG);
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
-    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uScale', 'uMaxLen']);
+    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uShutter', 'uMaxLen']);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
     this.uComposite = uniforms(gl, this.progComposite, ['uColor', 'uBloom', 'uFlareTex', 'uFlare', 'uExposureKnee']);
@@ -120,14 +123,15 @@ export class Post {
     if (this.depthRb) gl.deleteTexture(this.depthRb);
 
     this.colorTex = this.colorTarget(w, h);
-    // Velocity: float target when available (accurate slow-motion vectors),
-    // otherwise RGBA8 with velocity*0.5+0.5 encoding.
+    // Velocity: signed RG16F when float targets are available. Without them a
+    // RGBA8 target cannot represent negative velocities, so the blur stage is
+    // skipped rather than sampling a clamped/garbage buffer.
     if (this.floatTargets) {
       this.velocityTex = this.makeColor(w, h, gl.RG16F, gl.RG, gl.HALF_FLOAT);
-      this.velDecode = [1, 0];
+      this.mbSupported = true;
     } else {
       this.velocityTex = this.colorTarget(w, h);
-      this.velDecode = [2, 0.5];
+      this.mbSupported = false;
     }
     // Depth: attached to the scene FBO (rendered into) ...
     this.depthRb = gl.createTexture()!;
@@ -238,11 +242,11 @@ export class Post {
     const gl = this.gl;
     let source = this.colorTex;
     // 1. per-object motion blur
-    if (opts.motionBlur) {
+    if (opts.motionBlur && this.mbSupported) {
       this.blitPass(this.progMb, this.mbColor, () => {
         this.bindTex(this.uMb.uColor, 0, this.colorTex);
         this.bindTex(this.uMb.uVelocity, 1, this.velocityTex);
-        gl.uniform2f(this.uMb.uScale, this.velDecode[0], this.velDecode[1]);
+        gl.uniform1f(this.uMb.uShutter, opts.shutter);
         gl.uniform1f(this.uMb.uMaxLen, opts.maxBlur);
       }, this.mbColor.w, this.mbColor.h);
       source = this.mbColor.tex;
