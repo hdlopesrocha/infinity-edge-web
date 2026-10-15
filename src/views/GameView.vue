@@ -41,6 +41,16 @@ const lifeHtml = computed(() => {
     `</div>`;
 });
 
+// Countdown badge: leaving the field of battle (the ship is destroyed when it
+// runs out) or the respawn wait after the ship was destroyed.
+const timer = computed(() => hud.outside ?? hud.respawn);
+const timerLabel = computed(() => (hud.outside ? 'Leaving the field of battle' : 'Waiting to respawn'));
+const timerSecs = computed(() => (timer.value ? Math.max(0, Math.ceil(timer.value.left / 1000)) : 0));
+const timerPct = computed(() => {
+  const t = timer.value;
+  return t && t.total > 0 ? Math.max(0, Math.min(100, (t.left / t.total) * 100)) : 0;
+});
+
 function layerPos(e: PointerEvent): { x: number; y: number } {
   const r = layerRef.value!.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -92,6 +102,11 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
   <div class="hud">
     <div class="hud-score">{{ hud.score }}</div>
     <div v-if="hud.notify" class="hud-notify">{{ hud.notify }}</div>
+    <div v-if="timer" class="hud-timer" :class="{ warn: !!hud.outside }">
+      <div class="hud-timer-label">{{ timerLabel }}</div>
+      <div class="hud-timer-value">{{ timerSecs }}<span>s</span></div>
+      <div class="hud-timer-bar"><i :style="`width:${timerPct}%`"></i></div>
+    </div>
     <img class="hud-aim" :src="base + '_aim.png'" alt="" draggable="false" :style="`left:${hud.aimX}px;top:${hud.aimY}px;`" />
     <div class="hud-life" v-html="lifeHtml"></div>
     <div v-for="(m, i) in hud.pointers" :key="i" class="hud-marker" :style="markerStyle(m)">

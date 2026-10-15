@@ -116,6 +116,20 @@ function syncHud(g: GameInstance): void {
   } else {
     hud.life = [];
   }
+  // Timers the original showed as voices only: the 10 s window before a ship
+  // that left the field of battle is destroyed, and the 10 s respawn wait
+  // after the player's ship is destroyed (Map MANAGE_OUTSIDERS / MANAGE
+  // RESPAWNS). The HUD shows them as countdowns.
+  hud.outside = null;
+  hud.respawn = null;
+  if (sel && !sel.insideMap) {
+    const t = g.map.outsideObjects.find((o) => o.obj === sel);
+    if (t) hud.outside = { left: Math.max(0, t.max - t.elapsed), total: t.max };
+  }
+  if (sel) {
+    const r = g.map.respawned.find((o) => o.obj === sel);
+    if (r) hud.respawn = { left: Math.max(0, r.max - r.elapsed), total: r.max };
+  }
   hud.homings = g.control.homings;
   hud.nitroPct = Math.floor(g.control.nitroFrac * 100);
   hud.stickOn = g.control.analogStick.enabled;

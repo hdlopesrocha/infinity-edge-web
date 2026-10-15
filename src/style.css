@@ -87,6 +87,24 @@ body {
 .hud { position: absolute; inset: 0; pointer-events: none; }
 .hud-score { position: absolute; top: 4px; width: 100%; text-align: center; color: #fff; font-size: 18px; text-shadow: 0 1px 3px #000; }
 .hud-notify { position: absolute; top: 64px; width: 100%; text-align: center; color: #fff; font-size: 16px; transform: scale(0.8); text-shadow: 0 2px 6px #000; }
+/* Leaving-the-field / respawn countdown (the original only spoke these). */
+.hud-timer {
+  position: absolute; top: 92px; left: 50%; transform: translateX(-50%);
+  min-width: 220px; padding: 6px 14px 8px; text-align: center; color: #fff;
+  background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.25);
+  font-family: var(--font-ui); text-shadow: 0 1px 3px #000;
+}
+.hud-timer-label { font-size: 13px; letter-spacing: 0.06em; opacity: 0.9; }
+.hud-timer-value { font-size: 30px; line-height: 1.05; }
+.hud-timer-value span { font-size: 15px; opacity: 0.85; margin-left: 2px; }
+.hud-timer-bar { height: 4px; margin-top: 4px; background: rgba(255, 255, 255, 0.18); }
+.hud-timer-bar i { display: block; height: 100%; background: #7fe8d8; transition: width 0.1s linear; }
+.hud-timer.warn { border-color: rgba(255, 122, 82, 0.8); animation: hud-timer-pulse 1s ease-in-out infinite; }
+.hud-timer.warn .hud-timer-bar i { background: #ff7a52; }
+@keyframes hud-timer-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(255, 122, 82, 0); }
+  50% { box-shadow: 0 0 14px rgba(255, 122, 82, 0.55); }
+}
 .hud-aim { position: absolute; transform: translate(-50%, -50%); }
 .hud-life { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); }
 .hud-marker { position: absolute; transform: translate(-50%, -50%); text-align: center; }

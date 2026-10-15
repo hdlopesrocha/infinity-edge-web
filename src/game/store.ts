@@ -46,6 +46,10 @@ export const store = reactive({
     aimX: 0,
     aimY: 0,
     life: [] as HudLifeSegment[],
+    /** Countdown before the player's ship is destroyed for leaving the arena. */
+    outside: null as { left: number; total: number } | null,
+    /** Countdown until the destroyed player's ship respawns at its base. */
+    respawn: null as { left: number; total: number } | null,
     homings: 0,
     nitroPct: 0,
     stickOn: false,
