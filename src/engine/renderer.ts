@@ -143,7 +143,7 @@ export class Renderer {
       motionBlur: this.renderOptions.motionBlur,
       flare: this.renderOptions.flare,
       flareTex: this.renderOptions.flareTex,
-      maxBlur: 0.09,
+      maxBlur: 0.16,
     });
   }
 

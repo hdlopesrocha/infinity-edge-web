@@ -293,17 +293,18 @@ uniform float uScale; uniform float uMaxLen;
 out vec4 oColor;
 void main() {
   vec4 c = texture(uColor, vUV);
-  // 1.6x shutter: the blur spans a bit more than one frame of motion
-  vec2 px = texture(uVelocity, vUV).xy * uScale * 1.6;
+  // 2.4x shutter: the streak spans a bit more than one frame of motion, which
+  // makes the effect obvious on near objects while staying physical
+  vec2 px = texture(uVelocity, vUV).xy * uScale * 2.4;
   float len = length(px);
   if (len < 1e-5) { oColor = c; return; }
   if (len > uMaxLen) px *= uMaxLen / len;
   vec3 sum = c.rgb;
-  for (int i = 1; i <= 12; i++) {
-    float t = float(i) / 12.0 - 0.5;
+  for (int i = 1; i <= 16; i++) {
+    float t = float(i) / 16.0 - 0.5;
     sum += texture(uColor, vUV + px * t).rgb;
   }
-  oColor = vec4(sum / 13.0, c.a);
+  oColor = vec4(sum / 17.0, c.a);
 }`;
 
 export const POST_BRIGHT_FRAG = `#version 300 es
