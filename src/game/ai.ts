@@ -300,6 +300,111 @@ export class AITimeTrial implements Command {
   }
 }
 
+/**
+ * King of the System: hold the scoring region. Fights anything that comes near
+ * (the same offensive check the other brains use), otherwise flies to the
+ * region and circles inside it instead of wandering off.
+ */
+export class AIKingOfHill implements Command {
+  private aio: AIOffensive;
+  private orbit = 0;
+
+  constructor(private gi: GameInstance, private obj: SpaceObject, radius = 200) {
+    // Only fight for the hill itself: a wider offensive radius pulls the ship
+    // off the region chasing strays, which is exactly what the mode punishes.
+    this.aio = new AIOffensive(gi, obj, radius);
+  }
+
+  execute(): void {
+    const region = this.gi.map.region;
+    if (!region) {
+      this.aio.execute();
+      return;
+    }
+    this.aio.execute();
+    if (this.aio.executed) return;
+    const o = this.obj;
+    const dx = o.pos[0] - region.pos[0];
+    const dy = o.pos[1] - region.pos[1];
+    const dz = o.pos[2] - region.pos[2];
+    const d = Math.hypot(dx, dy, dz);
+    if (d > region.radius * 0.65) {
+      // Outside (or at the rim): head straight for the middle.
+      steerTo(o, region.pos[0], region.pos[1], region.pos[2], o.physics.maxAngular);
+      vec3.scale(o.accel, o.dir, o.physics.accelMax);
+      o.update();
+      return;
+    }
+    // Inside: orbit the centre so the ship keeps moving instead of parking.
+    this.orbit += 0.6 * (this.gi.dtMs / 1000);
+    const r = Math.max(40, region.radius * 0.45);
+    const tx = region.pos[0] + Math.cos(this.orbit) * r - dx * 0.5;
+    const ty = region.pos[1] + Math.sin(this.orbit * 0.7) * r * 0.4;
+    const tz = region.pos[2] + Math.sin(this.orbit) * r - dz * 0.5;
+    steerTo(o, tx, ty, tz, o.physics.maxAngular);
+    vec3.scale(o.accel, o.dir, o.physics.accelMax * 0.85);
+    o.update();
+  }
+}
+
+/**
+ * Survival: hunt. Picks the nearest live enemy ship anywhere in the arena and
+ * runs it down (the random-offensive brain only reacts to what is already
+ * close, which makes matches stall once the ships scatter).
+ */
+export class AIHunt implements Command {
+  private aio: AIOffensive;
+  private target: SpaceObject | null = null;
+  private retarget = 0;
+
+  constructor(private gi: GameInstance, private obj: SpaceObject, private radius = 4096) {
+    this.aio = new AIOffensive(gi, obj, 300);
+  }
+
+  execute(): void {
+    const o = this.obj;
+    this.aio.execute();
+    if (this.aio.executed) return;
+    this.retarget -= this.gi.dtMs;
+    if (this.retarget <= 0 || !this.target || !this.target.active) {
+      this.target = this.nearestEnemy();
+      this.retarget = 1500;
+    }
+    if (!this.target) {
+      // Nobody alive within reach: sweep the middle of the arena so the pack
+      // meets instead of idling in a corner.
+      steerTo(o, 0, 0, 0, o.physics.maxAngular);
+      vec3.scale(o.accel, o.dir, o.physics.accelMax * 0.8);
+      o.update();
+      return;
+    }
+    new AIGoPoint(this.gi, o, this.target).execute();
+    if (o.canLaunchBullet()) {
+      const dir = vec3.create();
+      previewDirection(dir, o.pos, o.dir, this.target.pos, this.target.vel);
+      o.launchBullet(this.gi, dir);
+    }
+  }
+
+  private nearestEnemy(): SpaceObject | null {
+    const o = this.obj;
+    const found: SpaceObject[] = [];
+    this.gi.map.octree.sphereSelectInteractive(
+      o.sx, o.sy, o.sz, this.radius, found as unknown as import('../engine/octree').OctItem[],
+    );
+    let best: SpaceObject | null = null;
+    let bestD = Infinity;
+    for (const f of found) {
+      if (f === o || !f.active || !(f instanceof SpaceObjectCls)) continue;
+      if (f instanceof Base || f instanceof Flag) continue;
+      if (!o.team.enemys.includes(f.team)) continue;
+      const d = Math.hypot(f.pos[0] - o.pos[0], f.pos[1] - o.pos[1], f.pos[2] - o.pos[2]);
+      if (d < bestD) { bestD = d; best = f; }
+    }
+    return best;
+  }
+}
+
 export class HILocal implements Command {
   warning = false;
   inside = true;
@@ -555,5 +660,9 @@ export function applyAction(gi: GameInstance, name: string, fromId: string, toId
     from.intelligence = new AIBreak(gi, from, new AIFollow(gi, from, to, 128, 32));
   } else if (name === 'AIGoRandomOffensive') {
     from.intelligence = new AIBreak(gi, from, new AIGoRandomOffensive(gi, from));
+  } else if (name === 'AIKingOfHill') {
+    from.intelligence = new AIKingOfHill(gi, from);
+  } else if (name === 'AIHunt') {
+    from.intelligence = new AIHunt(gi, from);
   }
 }

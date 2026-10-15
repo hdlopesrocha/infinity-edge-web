@@ -6,6 +6,10 @@ import type { SpaceObject } from './objects';
 export class Team {
   points = 0;
   timeMs = 0;
+  /** Ships this team destroyed (Survival). */
+  kills = 0;
+  /** Time its ships spent inside the King of the System region. */
+  hillMs = 0;
   name: string;
   color: [number, number, number];
   base: import('./objects').Base | null = null;
@@ -36,7 +40,12 @@ export interface ScoreEntry {
   points: number;
   timeMs: number;
   control: boolean;
+  /** Survival: ships destroyed. King of the System: time held (ms). */
+  score?: number;
 }
+
+/** High-score buckets: one list per mode. */
+export type ScoreType = 'TT' | 'CTF' | 'KOTS' | 'SURV';
 
 export class GameScore {
   scores: ScoreEntry[] = [];
@@ -45,15 +54,33 @@ export class GameScore {
     this.scores = scores;
   }
 
-  hashCode(type: 'CTF' | 'TT'): number {
+  /** Sort key: best first (ascending). */
+  hashCode(type: ScoreType): number {
     if (type === 'CTF') {
       let total = 0;
       for (const s of this.scores) total += s.control ? -s.points : s.points;
       return total;
     }
+    if (type === 'KOTS' || type === 'SURV') {
+      let best = 0;
+      for (const s of this.scores) if (s.control) best = s.score ?? 0;
+      return -best;
+    }
     let total = 0;
     for (const s of this.scores) total = Math.max(total, s.timeMs + 1);
     return total;
+  }
+
+  /** Our entry and the best of the others (King of the System / Survival). */
+  private duel(type: ScoreType): { ours: ScoreEntry | null; theirs: ScoreEntry | null } {
+    let ours: ScoreEntry | null = null;
+    let theirs: ScoreEntry | null = null;
+    for (const s of this.scores) {
+      if (s.control) ours = s;
+      else if (!theirs || (s.score ?? 0) > (theirs.score ?? 0)) theirs = s;
+    }
+    void type;
+    return { ours, theirs };
   }
 
   /** Briefing list (name + time, first control only). */
@@ -63,6 +90,13 @@ export class GameScore {
       for (const s of this.scores) if (s.control) ret = String(s.points) + ret;
       for (const s of this.scores) if (!s.control) ret = ret + ' : ' + s.points;
       return ret;
+    }
+    if (type === 'KOTS' || type === 'SURV') {
+      const { ours, theirs } = this.duel(type as ScoreType);
+      const fmt = type === 'KOTS' ? fmtClock : (n: number) => String(n);
+      const me = fmt(ours?.score ?? 0);
+      const rival = theirs ? fmt(theirs.score ?? 0) : '-';
+      return (ours?.name ?? 'You') + ' - ' + me + ' (' + rival + ')';
     }
     let ret = '';
     for (const s of this.scores) {
@@ -74,13 +108,20 @@ export class GameScore {
     return ret;
   }
 
-  /** In-game scoreboard (time only, first control only). */
+  /** In-game scoreboard. */
   toVisualIngame(type: string): string {
     if (type === 'CTF') {
       let ret = '';
       for (const s of this.scores) if (s.control) ret = String(s.points) + ret;
       for (const s of this.scores) if (!s.control) ret = ret + ' : ' + s.points;
       return ret;
+    }
+    if (type === 'KOTS' || type === 'SURV') {
+      const { ours, theirs } = this.duel(type as ScoreType);
+      if (type === 'KOTS') {
+        return fmtClock(ours?.score ?? 0) + ' : ' + (theirs ? fmtClock(theirs.score ?? 0) : '-');
+      }
+      return String(ours?.score ?? 0) + ' : ' + (theirs ? String(theirs.score ?? 0) : '-');
     }
     let ret = '';
     for (const s of this.scores) {
@@ -91,6 +132,12 @@ export class GameScore {
     }
     return ret;
   }
+}
+
+/** m:ss (King of the System hill time). */
+function fmtClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
 }
 
 function fmtTime(timeMs: number): string {
@@ -148,6 +195,28 @@ export class CondMorePoints extends Condition {
     let min = 99999;
     for (const t of gi.teams.values()) min = Math.min(min, t.points);
     return this.team.points > min;
+  }
+}
+
+/**
+ * King of the System / Survival: the controlled team's metric (hill time or
+ * kills) is the best of the match -- ties count as a win for everyone tied at
+ * the top.
+ */
+export class CondTopScore extends Condition {
+  constructor(private metric: (t: Team) => number) {
+    super();
+  }
+
+  check(gi: GameInstance): boolean {
+    const sel = gi.selectedObject;
+    if (!sel) return false;
+    const mine = this.metric(sel.team);
+    for (const t of gi.teams.values()) {
+      if (t === sel.team || t.name === 'ambient' || t.objects.length === 0) continue;
+      if (this.metric(t) > mine) return false;
+    }
+    return true;
   }
 }
 

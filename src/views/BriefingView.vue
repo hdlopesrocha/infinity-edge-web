@@ -19,7 +19,9 @@ onMounted(async () => {
   try {
     const def = await loadLevel(key);
     text.value = def.menuText ?? def.description.text;
-    const type = def.description.type === 'TT' ? 'TT' : 'CTF';
+    const known = ['TT', 'CTF', 'KOTS', 'SURV'];
+    const type = (known.includes(def.description.type) ? def.description.type : 'CTF') as
+      'TT' | 'CTF' | 'KOTS' | 'SURV';
     const sb = def.scoreBoard ?? { type, save: def.description.save };
     const list = loadScores(type, sb.save);
     const rows: string[] = [];

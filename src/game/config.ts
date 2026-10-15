@@ -60,6 +60,13 @@ export const TEAMS: TeamCfg[] = [
   { name: 'human', color: [64 / 255, 224 / 255, 208 / 255] },
   { name: 'ambient', color: [50 / 255, 205 / 255, 50 / 255] },
   { name: 'alien', color: [1, 0, 0] },
+  // Free-for-all competitors (King of the System / Survival, solo): each one
+  // fields a single ship, and every competitor is every other's enemy.
+  { name: 'falcon', color: [1, 0.78, 0.24] },
+  { name: 'viper', color: [0.72, 0.45, 1] },
+  { name: 'raptor', color: [0.35, 0.62, 1] },
+  { name: 'comet', color: [1, 0.45, 0.25] },
+  { name: 'nova', color: [0.45, 1, 0.75] },
 ];
 
 export const VOICES: { field: string; file: string; text: string }[] = [

@@ -4,7 +4,7 @@ import { reactive } from 'vue';
 import { defaultOptions, clearGameData as rcClearGameData, saveOptions as rcSaveOptions } from './resources';
 import type { Options } from './resources';
 import { GameScore } from './team';
-import type { ScoreEntry } from './team';
+import type { ScoreEntry, ScoreType } from './team';
 
 /** One life-bar segment (the HUD builds the coloured bar from these). */
 export interface HudLifeSegment {
@@ -112,13 +112,13 @@ function writeScores(savefile: string, list: GameScore[]): void {
   } catch { /* ignore */ }
 }
 
-export function loadScores(type: 'TT' | 'CTF', savefile: string): GameScore[] {
+export function loadScores(type: ScoreType, savefile: string): GameScore[] {
   const list = readScores(savefile);
   list.sort((a, b) => a.hashCode(type) - b.hashCode(type));
   return list.slice(0, 10);
 }
 
-export function addScore(gs: GameScore, type: 'TT' | 'CTF', savefile: string): boolean {
+export function addScore(gs: GameScore, type: ScoreType, savefile: string): boolean {
   const list = readScores(savefile);
   list.push(gs);
   list.sort((a, b) => a.hashCode(type) - b.hashCode(type));

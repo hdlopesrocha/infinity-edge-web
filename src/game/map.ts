@@ -1,7 +1,7 @@
 // Map 37_T verbatim: stack timer lists, outsider rule (root node + box
 // disjoint), first-hit bullets, no shield special-case, walls.
 
-import { vec3, stringToVec3, getH, getV, ypr, clamp } from '../engine/math';
+import { vec3, mat4, quat, stringToVec3, getH, getV, ypr, clamp } from '../engine/math';
 import { ObKind, OctNode } from '../engine/octree';
 import type { OctItem } from '../engine/octree';
 import type { DrawCtx } from './objects';
@@ -54,6 +54,10 @@ export class GameMap {
   fragments: { obj: Fragment; elapsed: number; max: number }[] = [];
   path: Ark[] = [];
   visible: Abstract3D[] = [];
+  /** King of the System: the sun at the arena centre (decor + landmark). */
+  sun: { pos: vec3; radius: number } | null = null;
+  /** King of the System: the scoring region (hexagon sphere, light green). */
+  region: { pos: vec3; radius: number } | null = null;
   private wallQuads: import('../engine/draw').QuadMesh[] | null = null;
 
   constructor(skyName: string, size: number) {
@@ -153,6 +157,16 @@ export class GameMap {
     const modelOf = (n: string) => gi.rc.model(n);
     let obj: SpaceObject | null = null;
     const t = def.type;
+    if (t === 'sun') {
+      // King of the System landmark: a glowing sphere at the arena centre.
+      this.sun = { pos: vec3.clone(pos), radius: def.amount ?? 60 };
+      return null;
+    }
+    if (t === 'region') {
+      // King of the System scoring sphere (drawn with the hexagon texture).
+      this.region = { pos: vec3.clone(pos), radius: def.amount ?? 300 };
+      return null;
+    }
     if (t === 'spaceShip') {
       const mdl = modelOf(def.model);
       if (mdl) obj = new SpaceShip(P.SS1, gi, team, pos, mdl, life, modelOf('Base'));
@@ -297,7 +311,7 @@ export class GameMap {
           }
         }
         for (const obj of found) {
-          obj.receiveDamage(gi, bullet.totalLife(), vec3.clone(bullet.dir));
+          obj.receiveDamage(gi, bullet.totalLife(), vec3.clone(bullet.dir), bullet.launcher);
         }
         if (timer.elapsed < timer.max && !collide) keep.push(timer);
         else this.removeObject(bullet);
@@ -412,6 +426,51 @@ export class GameMap {
     for (const o of list) o.alphaDraw(d);
     draw.setOpaque();
     this.drawWalls(d, list.length);
+    this.drawSun(d);
+    this.drawRegion(d);
+  }
+
+  /** King of the System: the sun — a solid core with warm additive shells. */
+  private drawSun(d: DrawCtx): void {
+    if (!this.sun) return;
+    const sphere = d.rc.model('Sky1')?.solid[0] ?? null;
+    if (!sphere) return;
+    const r = sphere.boundingSphere.radius || 1;
+    const s = this.sun.radius / r;
+    const m = mat4.create();
+    mat4.fromRotationTranslationScale(m, quat.create(), this.sun.pos, vec3.fromValues(s, s, s));
+    d.draw.setCull('back');
+    d.draw.drawUnlit(sphere, null, m, d.view, d.proj, [1, 0.95, 0.78], 1, m);
+    d.rc.renderer.trackDraws(sphere.meshes.length);
+    const shells: [number, [number, number, number], number][] = [
+      [1.5, [1, 0.86, 0.5], 1.0],
+      [2.6, [1, 0.62, 0.24], 0.6],
+      [4.2, [1, 0.44, 0.14], 0.32],
+    ];
+    for (const [scale, color, intensity] of shells) {
+      const g = mat4.create();
+      mat4.fromRotationTranslationScale(g, quat.create(), this.sun.pos, vec3.fromValues(s * scale, s * scale, s * scale));
+      d.draw.drawGlow(g, g, d.view, d.proj, d.camPos, color, intensity, 1.6);
+      d.rc.renderer.trackDraws();
+    }
+  }
+
+  /** King of the System: the scoring region — a light-green hexagon sphere. */
+  private drawRegion(d: DrawCtx): void {
+    if (!this.region) return;
+    const sphere = d.rc.model('Sky1')?.solid[0] ?? null;
+    if (!sphere) return;
+    const r = sphere.boundingSphere.radius || 1;
+    const s = this.region.radius / r;
+    const m = mat4.create();
+    mat4.fromRotationTranslationScale(m, quat.create(), this.region.pos, vec3.fromValues(s, s, s));
+    // Seen from inside and outside (players fly through it), so no culling.
+    d.draw.setTransparent();
+    d.draw.setCull('none');
+    d.draw.drawUnlit(sphere, d.rc.tex('hexagon'), m, d.view, d.proj, [0.5, 1, 0.6], 0.18, m);
+    d.rc.renderer.trackDraws(sphere.meshes.length);
+    d.draw.setCull('back');
+    d.draw.setOpaque();
   }
 
   private drawWalls(d: DrawCtx, visibleCount: number): void {

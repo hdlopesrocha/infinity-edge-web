@@ -9,7 +9,8 @@ import { GameMap } from './map';
 import type { DrawCtx } from './objects';
 import { Ark, Base, Flag, SpaceObject, SpaceShip } from './objects';
 import {
-  Team, GameScore, Reward, CondDestroyed, CondMoreTime, CondLessTime, CondMorePoints, CondNoPath, parseTimeSpan,
+  Team, GameScore, Reward, CondDestroyed, CondMoreTime, CondLessTime, CondMorePoints, CondNoPath,
+  CondTopScore, parseTimeSpan,
 } from './team';
 import type { RewardType, ScoreEntry } from './team';
 import { TEAMS } from './config';
@@ -21,7 +22,7 @@ import type { GhostRecord } from './ghost';
 import type { LevelDef } from './levels';
 import type { RC } from './resources';
 
-export type GameType = 'CTF' | 'TT' | 'BACK';
+export type GameType = 'CTF' | 'TT' | 'BACK' | 'KOTS' | 'SURV';
 
 export interface PointerMark {
   x: number;
@@ -76,7 +77,8 @@ export class GameInstance {
     const gi = new GameInstance(renderer, rc);
     gi.levelKey = def.key;
     const t = def.description.type;
-    gi.gameType = t === 'CTF' || t === 'TT' || t === 'BACK' ? (t as GameType) : 'BACK';
+    const types: GameType[] = ['CTF', 'TT', 'BACK', 'KOTS', 'SURV'];
+    gi.gameType = types.includes(t as GameType) ? (t as GameType) : 'BACK';
     gi.levelTitle = def.description.name;
     gi.levelText = levelText;
     gi.savefile = def.description.save;
@@ -105,8 +107,18 @@ export class GameInstance {
       }
     }
     for (const cfg of TEAMS) gi.teams.set(cfg.name, new Team(cfg.name, [...cfg.color] as [number, number, number]));
-    gi.teams.get('human')!.enemys.push(gi.teams.get('alien')!);
-    gi.teams.get('alien')!.enemys.push(gi.teams.get('human')!);
+    // Every team that fields objects fights every other one (two factions in
+    // CTF, free-for-all in the solo King of the System / Survival levels).
+    const combatants = [...new Set(def.objects.map((o) => o.team))].filter((n) => n !== 'ambient');
+    for (const a of combatants) {
+      const ta = gi.teams.get(a);
+      if (!ta) continue;
+      for (const b of combatants) {
+        if (a === b) continue;
+        const tb = gi.teams.get(b);
+        if (tb) ta.enemys.push(tb);
+      }
+    }
     for (const o of def.objects) {
       gi.map.buildObject(
         { team: o.team, type: o.type, model: o.model, position: o.position, name: o.name, life: o.life, amount: o.amount },
@@ -143,6 +155,8 @@ export class GameInstance {
           gi.matchTimeMs = Math.max(gi.matchTimeMs, limit);
           r.addCondition(new CondMoreTime(limit));
         }
+        else if (goal.name === 'MoreHillTime') r.addCondition(new CondTopScore((t) => t.hillMs));
+        else if (goal.name === 'MoreKills') r.addCondition(new CondTopScore((t) => t.kills));
         else if (goal.name === 'Destroyed') {
           r.addCondition(new CondDestroyed((gi.objects.get(goal.value ?? '') as SpaceObject | undefined) ?? null));
         } else if (goal.name === 'MorePoints') {
@@ -187,6 +201,7 @@ export class GameInstance {
       }
     }
     this.map.update(this, dtMs);
+    this.updateRegion(dtMs);
     if (this.selectedObject) {
       const o = this.selectedObject;
       this.renderer.camera.lookAtObject(
@@ -219,6 +234,26 @@ export class GameInstance {
     }
   }
 
+  /** King of the System: a team whose ship sits inside the region scores time. */
+  private updateRegion(dtMs: number): void {
+    const r = this.map.region;
+    if (!r) return;
+    const r2 = r.radius * r.radius;
+    for (const t of this.teams.values()) {
+      if (t.name === 'ambient') continue;
+      for (const o of t.objects) {
+        if (!(o instanceof SpaceShip) || !o.active) continue;
+        const dx = o.pos[0] - r.pos[0];
+        const dy = o.pos[1] - r.pos[1];
+        const dz = o.pos[2] - r.pos[2];
+        if (dx * dx + dy * dy + dz * dz <= r2) {
+          t.hillMs += dtMs;
+          break;
+        }
+      }
+    }
+  }
+
   private updateObjectUI(): void {
     const obj = this.selectedObject;
     if (obj) {
@@ -241,7 +276,7 @@ export class GameInstance {
     if (!this.result) return;
     if (this.result.won) {
       const gs = this.getGameScore();
-      const best = addScore(gs, this.gameType === 'TT' ? 'TT' : 'CTF', this.savefile);
+      const best = addScore(gs, this.gameType === 'BACK' ? 'CTF' : this.gameType, this.savefile);
       if (best && this.ghostFile) saveGhostFile(this.ghostFile, this.ghostRecords);
     }
   }
@@ -256,6 +291,7 @@ export class GameInstance {
           points: t.points,
           timeMs: t.timeMs,
           control,
+          score: this.gameType === 'KOTS' ? Math.round(t.hillMs) : this.gameType === 'SURV' ? t.kills : undefined,
         });
       }
     }
@@ -431,6 +467,40 @@ export class GameInstance {
     for (const t of sel.team.enemys) {
       if (t.base) pushPointer(t.base);
       if (t.flag && t.flag.getOwner() !== sel) pushPointer(t.flag);
+    }
+    // King of the System: mark the scoring region (the sun at its centre) so
+    // it can be found from anywhere in the arena, clamped to the screen edge
+    // exactly like the base pointers.
+    const region = this.map.region;
+    if (region) {
+      const f2 = this.renderer.frustum;
+      let tx = region.pos[0];
+      let ty = region.pos[1];
+      let tz = region.pos[2];
+      const toObj = vec3.fromValues(tx - cam.position[0], ty - cam.position[1], tz - cam.position[2]);
+      if (vec3.dot(toObj, cam.direction) < 0) {
+        const n = vec3.fromValues(f2[20], f2[21], f2[22]);
+        const d = vec3.dot(vec3.fromValues(tx, ty, tz), n);
+        tx -= 2 * d * n[0];
+        ty -= 2 * d * n[1];
+        tz -= 2 * d * n[2];
+      }
+      const p = this.project(tx, ty, tz);
+      const icon = this.rc.tex('_kots');
+      const iw = 40;
+      const ih = 40;
+      let sx = p.x;
+      let sy = p.y;
+      if (!frustumContains(f2, region.pos[0], region.pos[1], region.pos[2])) {
+        const cl = this.myClamp(sx, sy, iw / 2, ih / 2);
+        sx = cl.x;
+        sy = cl.y;
+      }
+      out.push({
+        x: sx, y: sy, w: iw, h: ih,
+        iconUrl: icon ? icon.url : null, over: false,
+        color: [0.55, 1, 0.65], label: null,
+      });
     }
     return out;
   }

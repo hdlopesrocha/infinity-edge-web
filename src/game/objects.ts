@@ -188,10 +188,10 @@ export class SpaceObject extends Object3D {
     this.team = team;
   }
 
-  receiveDamage(gi: GameInstance, amount: number, direction: vec3): void {
+  receiveDamage(gi: GameInstance, amount: number, direction: vec3, attacker: SpaceObject | null = null): void {
     this.hitAge = 0;
     if (!this.life) return;
-    this.life.receiveDamage(amount, direction, this.up, this.dir, () => this.destroyObject(gi));
+    this.life.receiveDamage(amount, direction, this.up, this.dir, () => this.destroyObject(gi, attacker));
   }
 
   restoreLife(): void {
@@ -258,11 +258,11 @@ export class SpaceObject extends Object3D {
           const d = vec3.create();
           vec3.subtract(d, obj.pos, this.pos);
           vec3.normalize(d, d);
-          this.receiveDamage(gi, b, d);
+          this.receiveDamage(gi, b, d, obj);
           const d2 = vec3.create();
           vec3.subtract(d2, this.pos, obj.pos);
           vec3.normalize(d2, d2);
-          obj.receiveDamage(gi, a, d2);
+          obj.receiveDamage(gi, a, d2, this);
           // Hull-to-hull impact: fireball at the contact point, scaled by the
           // damage traded (asteroid strikes look violent, ship taps small).
           const hit = vec3.fromValues(
@@ -275,9 +275,14 @@ export class SpaceObject extends Object3D {
     }
   }
 
-  destroyObject(gi: GameInstance): void {
+  destroyObject(gi: GameInstance, attacker: SpaceObject | null = null): void {
     const map = gi.map;
     const rc = gi.rc;
+    // Survival: whoever destroyed a *ship* scores for their team (ramming
+    // counts, the other hull is passed as the attacker).
+    if (attacker && attacker !== this && attacker.team !== this.team && this instanceof SpaceShip) {
+      attacker.team.kills++;
+    }
     if (this.flag) this.flag.setOwner(null);
     if (this.physics.reSpawns) {
       map.respawned.push({ obj: this, elapsed: 0, max: 10000 });
@@ -460,11 +465,11 @@ export class SpaceShip extends SpaceObject {
     if (this === gi.selectedObject) gi.rc.playSfx('missileSound');
   }
 
-  receiveDamage(gi: GameInstance, amount: number, direction: vec3): void {
+  receiveDamage(gi: GameInstance, amount: number, direction: vec3, attacker: SpaceObject | null = null): void {
     if (!this.life) return;
     this.hitAge = 0;
     if (this.shield <= 0) {
-      this.life.receiveDamage(amount, direction, this.up, this.dir, () => this.destroyObject(gi));
+      this.life.receiveDamage(amount, direction, this.up, this.dir, () => this.destroyObject(gi, attacker));
       if (this === gi.selectedObject) gi.rc.playSfx('hitSound');
     } else {
       this.shield--;
