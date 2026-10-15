@@ -363,8 +363,9 @@ export class HILocal implements Command {
 /**
  * Experimental "smart" brain (web addition, opt-in with `?ai=smart`): it keeps
  * the ship's original strategy as its core but layers the tactics the 2013 AI
- * lacks — retreat when badly damaged, grab nearby addons, break away when an
- * enemy is on its tail — and the shared arena guard keeps everyone inside.
+ * lacks — retreat when badly damaged and break away when an enemy is on its
+ * tail. (Addon hunting and weapons live in AIAddonSeek, which wraps it; the
+ * shared arena guard keeps everyone inside.)
  */
 export class AISmart implements Command {
   private jinkTime = 0;
@@ -383,33 +384,11 @@ export class AISmart implements Command {
       return;
     }
 
-    // 2. an addon nearby is worth more than a stray shot
-    if (this.grabAddon()) return;
-
-    // 3. someone on our tail (and we just took fire): break away for a moment
+    // 2. someone on our tail (and we just took fire): break away for a moment
     if (this.evade()) return;
 
-    // 4. otherwise: the ship's own strategy, verbatim
+    // 3. otherwise: the ship's own strategy, verbatim
     this.inner.execute();
-  }
-
-  /** Steer to the closest addon within 260 units (2.5 s of interest max). */
-  private grabAddon(): boolean {
-    const o = this.obj;
-    const found: SpaceObject[] = [];
-    this.gi.map.octree.sphereSelectInteractive(
-      o.sx, o.sy, o.sz, 260, found as unknown as import('../engine/octree').OctItem[],
-    );
-    let best: Addon | null = null;
-    let bestD = Infinity;
-    for (const f of found) {
-      if (!(f instanceof Addon) || !f.active) continue;
-      const d = Math.hypot(f.pos[0] - o.pos[0], f.pos[1] - o.pos[1], f.pos[2] - o.pos[2]);
-      if (d < bestD) { bestD = d; best = f; }
-    }
-    if (!best) return false;
-    new AIGoPoint(this.gi, o, best).execute();
-    return true;
   }
 
   /** Barrel away when an enemy sits behind us right after taking damage. */
@@ -442,6 +421,110 @@ export class AISmart implements Command {
       }
     }
     return false;
+  }
+}
+
+/**
+ * Addon hunting + weapons for every AI ship (web addition). The 2013 brains
+ * collected addons only by flying through them and never fired the homing
+ * missiles they were carrying, so this wrapper keeps the ship's own strategy
+ * as the core but, before delegating to it:
+ *
+ *  - diverts to a nearby addon the ship can actually use (repair when hurt,
+ *    nitro when the tank is empty, missiles when low, shield when unshielded),
+ *  - launches a homing missile as soon as it has a lock (an enemy ship inside
+ *    the launcher's own 256 u / dot > 0.75 seek cone — firing blind would just
+ *    throw the missile away, which is what the launch does with no target),
+ *  - burns nitro to travel when nothing is close, or to run when badly hurt.
+ *
+ * Shields and repairs need no decision: picking them up applies them.
+ */
+export class AIAddonSeek implements Command {
+  constructor(private gi: GameInstance, private obj: SpaceShip, private inner: Command) {}
+
+  execute(): void {
+    this.useWeapons();
+    if (!this.grabAddon()) this.inner.execute();
+  }
+
+  private useWeapons(): void {
+    const o = this.obj;
+    if (o.homings > 0 && this.enemyAhead(256, 0.75)) o.launchHoming(this.gi);
+    if (o.nitro > 0 && (!this.enemyAhead(350, -1) || o.lifePercentage() < 0.35)) {
+      o.launchNitro(this.gi.dtMs);
+    }
+  }
+
+  /** Any live enemy inside `range`; with `minDot` also inside the nose cone. */
+  private enemyAhead(range: number, minDot: number): boolean {
+    const o = this.obj;
+    const found: SpaceObject[] = [];
+    this.gi.map.octree.sphereSelectInteractive(o.sx, o.sy, o.sz, range, found as unknown as import('../engine/octree').OctItem[]);
+    for (const t of found) {
+      if (!(t instanceof SpaceObjectCls) || t === o || !t.active) continue;
+      if (t instanceof Base || t instanceof Flag) continue;
+      if (!o.team.enemys.includes(t.team)) continue;
+      if (minDot <= -1) return true;
+      const dx = t.pos[0] - o.pos[0];
+      const dy = t.pos[1] - o.pos[1];
+      const dz = t.pos[2] - o.pos[2];
+      const l = Math.hypot(dx, dy, dz) || 1;
+      const dot = (o.dir[0] * dx + o.dir[1] * dy + o.dir[2] * dz) / l;
+      if (dot > minDot) return true;
+    }
+    return false;
+  }
+
+  /** Steer to the closest addon this ship has a use for. */
+  private grabAddon(): boolean {
+    const o = this.obj;
+    // Addons are ObKind.Environment, so they live in the octree's environment
+    // list: sphereSelectInteractive (enemies only) never returns them, the
+    // broad sphereSelect (what ship-vs-object collisions use) does.
+    const found: SpaceObject[] = [];
+    this.gi.map.octree.sphereSelect(o.sx, o.sy, o.sz, 320, found as unknown as import('../engine/octree').OctItem[]);
+    let best: Addon | null = null;
+    let bestD = Infinity;
+    for (const f of found) {
+      if (!(f instanceof Addon) || !f.active || !this.wants(f)) continue;
+      const d = Math.hypot(f.pos[0] - o.pos[0], f.pos[1] - o.pos[1], f.pos[2] - o.pos[2]);
+      if (d < bestD) { bestD = d; best = f; }
+    }
+    if (!best) return false;
+    // A ship carrying the enemy flag runs home; only a repair detours it, and
+    // nobody breaks off a knife fight for a pickup.
+    if (o.flag && best.addonKind !== 'life') return false;
+    if (this.enemyAhead(180, -1)) return false;
+    new AIGoPoint(this.gi, o, best).execute();
+    return true;
+  }
+
+  private wants(a: Addon): boolean {
+    const o = this.obj;
+    const life = o.lifePercentage();
+    if (life < 0.35) return a.addonKind === 'life';
+    switch (a.addonKind) {
+      case 'life': return life < 0.99;
+      case 'nitro': return o.nitro <= 0;
+      case 'homing': return o.homings < 4;
+      case 'shield': return o.shield <= 0;
+      default: return false;
+    }
+  }
+}
+
+/**
+ * Wrap every AI ship's brain (web addition). The player's HILocal is left
+ * alone, and `?ai=smart` keeps its experimental brain *inside* the wrapper so
+ * addon hunting and weapons run even while that brain retreats or evades.
+ */
+export function upgradeAIShips(gi: GameInstance): void {
+  const smart = smartAIRequested();
+  for (const o of gi.objects.values()) {
+    const ship = o as SpaceShip;
+    if (!ship.intelligence || ship.isPlayer) continue;
+    const inner = smart ? new AISmart(gi, ship, ship.intelligence) : ship.intelligence;
+    ship.intelligence = new AIAddonSeek(gi, ship, inner);
   }
 }
 
