@@ -487,8 +487,8 @@ export class GameInstance {
       }
       const p = this.project(tx, ty, tz);
       const icon = this.rc.tex('_kots');
-      const iw = 40;
-      const ih = 40;
+      const iw = 48;
+      const ih = 48;
       let sx = p.x;
       let sy = p.y;
       if (!frustumContains(f2, region.pos[0], region.pos[1], region.pos[2])) {

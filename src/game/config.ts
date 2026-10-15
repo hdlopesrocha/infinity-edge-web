@@ -49,6 +49,9 @@ export const TEXTURES: Record<string, string> = {
   _fireButton: 'Control/fire', _fireButtonHM: 'Control/fireHM',
   _accelAnalog: 'Control/accelAnalog', _nitro: 'Control/nitro',
   _pixel: 'System/pixel', _hexagon: 'System/hexagon',
+  // Web-only mode icons (authored in the repo, not from the 2013 content):
+  // King of the System's crown also marks the system centre on the HUD.
+  _kots: 'Web/kots', _survival: 'Web/survival',
 };
 
 export interface TeamCfg {
