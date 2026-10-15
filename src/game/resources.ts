@@ -35,6 +35,10 @@ export function defaultOptions(): Options {
   };
 }
 
+/** Textures the 2013 build sampled with LinearWrap (no mipmaps): the map
+ *  border hexagon. */
+const WALL_TEXTURES = new Set(['hexagon', '_hexagon']);
+
 const OPTIONS_KEY = 'options.ie3d';
 
 const OPTIONS_VERSION = '1.0.0.3';
@@ -269,6 +273,17 @@ export class RC {
   async ensureTex(alias: string): Promise<void> {
     if (this.texCache.has(alias)) return;
     const e = await loadTextureAny(this.renderer.gl, this.texCandidates(alias));
+    if (e.url !== '__fallback__' && WALL_TEXTURES.has(alias)) {
+      // The original draws the map border with SamplerState.LinearWrap (no
+      // mipmaps). The border quads tile the hexagon texture ~1024x across a
+      // 2048-unit face, so with mipmapping the sampled level is the 1x1 average
+      // (a flat white wash) and the hexagon grid disappears; linear filtering
+      // keeps the pattern visible, exactly like the 2013 build.
+      const gl = this.renderer.gl;
+      gl.bindTexture(gl.TEXTURE_2D, e.tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+    }
     this.texCache.set(alias, e.url === '__fallback__' ? null : e);
   }
 

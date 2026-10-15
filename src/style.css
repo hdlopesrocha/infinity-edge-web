@@ -112,6 +112,10 @@ body {
 .opt-list-right { align-items: flex-start; }
 .opt-row { display: flex; align-items: center; gap: 10px; margin: 0; color: #fff; }
 .opt-row label { font-size: 16px; white-space: pre; }
+/* Checkbox rows: the whole line is clickable (the original only hit the 20x20
+   square; users click the text). */
+.opt-check-label { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.opt-check-label > span { white-space: pre; }
 .opt-input { background: none; border: none; color: #ffff00; font-size: 16px; font-family: inherit; pointer-events: auto; padding: 0; min-width: 60px; }
 .opt-value { font-size: 16px; white-space: pre; }
 /* InputDrag: 192 x LineSpacing black `_pixel` bar with a `_ball` knob. */

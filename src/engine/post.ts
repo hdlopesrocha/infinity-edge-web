@@ -186,11 +186,13 @@ export class Post {
   blitDepth(): void {
     const gl = this.gl;
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.sceneFbo);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.depthCopyFbo());
     gl.blitFramebuffer(0, 0, this.w, this.h, 0, 0, this.w, this.h, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
+    // Restore the scene target as the draw framebuffer: the transparent pass
+    // (flares, smoke, shells, walls) must keep rendering into it, otherwise the
+    // composite that runs at the end of the frame overwrites it on the canvas.
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.sceneFbo);
   }
 
   private depthCopyFboCache: WebGLFramebuffer | null = null;

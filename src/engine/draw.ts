@@ -536,8 +536,8 @@ export class Draw {
   /** Camera planes + smoke look; set by the renderer once per frame. */
   nearPlane = 0.1;
   farPlane = 192;
-  smokeTint: [number, number, number] = [0.86, 0.88, 0.92];
-  smokeDensity = 1.3;
+  smokeTint: [number, number, number] = [0.88, 0.9, 0.94];
+  smokeDensity = 1.1;
 
   // --------------------------------------------------------- flare geometry
   /** Additive cone plume (engine flare) in the ship's own frame. */

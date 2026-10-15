@@ -505,7 +505,7 @@ export class SpaceShip extends SpaceObject {
       const local = mat4.create();
       mat4.multiply(local, this.plumeMat, rotX);
       mat4.multiply(local, local, scale);
-      draw.drawPlume(local, local, view, proj, d.camPos, [1, 0.82, 0.55], 0.95 * thrust + 0.12 * this.thrustLevel());
+      draw.drawPlume(local, local, view, proj, d.camPos, [1, 0.9, 0.72], 0.75 * thrust + 0.1 * this.thrustLevel());
       d.rc.renderer.trackDraws(1);
     }
     // Team-colour core: small additive glow shells at the same flare offsets.

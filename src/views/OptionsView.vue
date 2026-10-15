@@ -124,24 +124,32 @@ function volumePct(): string {
           <span class="opt-value">{{ ' ' + volumePct() }}</span>
         </div>
         <div class="opt-row">
-          <label>Special Effects: </label>
-          <input v-model="o.billboards" type="checkbox" class="opt-check" :style="`--ball:${ball}`" />
+          <label class="opt-check-label">
+            <span>Special Effects: </span>
+            <input v-model="o.billboards" type="checkbox" class="opt-check" :style="`--ball:${ball}`" />
+          </label>
         </div>
       </div>
     </template>
     <template #right>
       <div class="opt-list opt-list-right">
         <div class="opt-row">
-          <label>Motion Blur: </label>
-          <input v-model="o.motionBlur" type="checkbox" class="opt-check" :style="`--ball:${ball}`" />
+          <label class="opt-check-label">
+            <span>Motion Blur: </span>
+            <input v-model="o.motionBlur" type="checkbox" class="opt-check" :style="`--ball:${ball}`" />
+          </label>
         </div>
         <div class="opt-row">
-          <label>Invert X axis: </label>
-          <input v-model="o.axisX" type="checkbox" class="opt-check" :style="`--ball:${ball}`" />
+          <label class="opt-check-label">
+            <span>Invert X axis: </span>
+            <input v-model="o.axisX" type="checkbox" class="opt-check" :style="`--ball:${ball}`" />
+          </label>
         </div>
         <div class="opt-row">
-          <label>Invert Y axis: </label>
-          <input v-model="o.axisY" type="checkbox" class="opt-check" :style="`--ball:${ball}`" />
+          <label class="opt-check-label">
+            <span>Invert Y axis: </span>
+            <input v-model="o.axisY" type="checkbox" class="opt-check" :style="`--ball:${ball}`" />
+          </label>
         </div>
         <button
           class="track-btn menubtn-wide opt-clear"
