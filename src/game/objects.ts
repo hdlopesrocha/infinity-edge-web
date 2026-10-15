@@ -511,26 +511,27 @@ export class SpaceShip extends SpaceObject {
       mat4.fromTranslation(this.plumeMat, vec3.fromValues(
         this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
       ));
-      // Compact flame: about the length of the engine, tapering fast.
-      const length = 0.55 + 0.95 * (0.3 + 0.7 * level);
-      const radius = 0.2;
+      // Turbine fire: a tapered afterburner plume a little longer than the
+      // engine, blue-white at the nozzle and orange towards the tail.
+      const length = 0.7 + 1.5 * (0.3 + 0.7 * level);
+      const radius = 0.16;
       mat4.fromScaling(scale, vec3.fromValues(radius, length, radius));
       mat4.multiply(local, this.plumeMat, rotX);
       mat4.multiply(local, local, scale);
-      draw.drawPlume(local, local, view, proj, d.camPos, [1, 0.86, 0.66], 0.5 * thrust + 0.06 * level);
+      draw.drawPlume(local, local, view, proj, d.camPos, [1, 0.62, 0.2], 0.8 * thrust + 0.1 * level);
       // Hot core + team-coloured halo right at the nozzle (additive shells).
-      const core = 0.16 + 0.07 * level;
+      const core = 0.09 + 0.04 * level;
       mat4.fromTranslation(glow, vec3.fromValues(
         this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
       ));
       mat4.fromScaling(glowScale, vec3.fromValues(core, core, core));
       mat4.multiply(glow, glow, glowScale);
-      draw.drawGlow(glow, glow, view, proj, d.camPos, [1, 0.96, 0.9], 0.55 + 0.45 * thrust);
-      const halo = core * 2.4;
+      draw.drawGlow(glow, glow, view, proj, d.camPos, [0.75, 0.88, 1.0], 0.3 + 0.3 * thrust);
+      const halo = core * 2.2;
       mat4.fromScaling(glowScale, vec3.fromValues(halo, halo, halo));
       const haloM = mat4.create();
       mat4.multiply(haloM, glow, glowScale);
-      draw.drawGlow(haloM, haloM, view, proj, d.camPos, this.team.color, 0.35 + 0.5 * thrust);
+      draw.drawGlow(haloM, haloM, view, proj, d.camPos, this.team.color, 0.15 + 0.25 * thrust);
       d.rc.renderer.trackDraws(3);
     }
     // Team-colour core: small additive glow shells at the same flare offsets.

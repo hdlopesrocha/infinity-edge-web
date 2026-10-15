@@ -549,6 +549,10 @@ export class Draw {
     const gl = this.gl;
     this.flushBillboards();
     this.flushSmoke();
+    // Fire is additive: alpha blending made the cone read as a solid object
+    // with dark edges.
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
     gl.useProgram(this.plumeProg);
     const U = this.uPlume;
     gl.uniformMatrix4fv(U.uWorld, false, world as Float32Array);
@@ -567,6 +571,7 @@ export class Draw {
     gl.bindVertexArray(this.plumeMesh.vao);
     gl.drawElements(gl.TRIANGLES, this.plumeMesh.count, gl.UNSIGNED_SHORT, 0);
     gl.bindVertexArray(null);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   }
 
   /** Additive glow shell (bullets, addons, pickup flash) — real geometry. */
@@ -578,6 +583,8 @@ export class Draw {
     const gl = this.gl;
     this.flushBillboards();
     this.flushSmoke();
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
     gl.useProgram(this.glowProg);
     const U = this.uGlow;
     gl.uniformMatrix4fv(U.uWorld, false, world as Float32Array);
@@ -591,6 +598,7 @@ export class Draw {
     gl.bindVertexArray(this.glowMesh.vao);
     gl.drawElements(gl.TRIANGLES, this.glowMesh.count, gl.UNSIGNED_SHORT, 0);
     gl.bindVertexArray(null);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   }
 
   /** TextureSquare verbatim UVs: p1 Zero, p2 +Y, p3 One, p4 +X (× tiling). */

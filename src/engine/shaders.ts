@@ -221,18 +221,41 @@ uniform sampler3D uNoise;
 uniform vec3 uCamPos; uniform vec3 uColor; uniform float uTime; uniform float uIntensity;
 layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oVelocity;
+
+// Turbine / afterburner fire: a blue-white core right at the nozzle that turns
+// orange further down the plume, turbulent tongues eating into the envelope,
+// faint shock diamonds and a hot axial core.
 void main() {
   vec3 V = normalize(uCamPos - vW);
-  // volumetric thickness: brightest through the core of the cone
-  float thickness = pow(max(0.0, abs(dot(normalize(vN), V))), 1.1);
+  vec3 N = normalize(vN);
   float t = clamp(vUV.y, 0.0, 1.0);              // 0 nozzle -> 1 tip
-  float axial = exp(-t * 3.4) * (1.0 - t * 0.25);
-  vec3 np = vec3(vUV.x * 4.0, t * 2.5 - uTime * 2.2, uTime * 0.35);
-  float flicker = texture(uNoise, np).r * 0.7 + texture(uNoise, np * 2.7).g * 0.5;
-  flicker = 0.45 + 0.85 * flicker;
-  float a = thickness * axial * flicker * uIntensity;
+
+  // volumetric thickness: the tube is brightest through its middle
+  float thick = pow(max(abs(dot(N, V)), 0.0), 1.0);
+
+  // turbulent burn: two noise octaves scrolling down the flame at different
+  // speeds make the tongues flicker instead of a static cone
+  float n1 = texture(uNoise, vec3(vUV.x * 5.0, t * 3.0 - uTime * 2.6, uTime * 0.40)).r;
+  float n2 = texture(uNoise, vec3(vUV.x * 11.0, t * 7.0 - uTime * 4.2, uTime * 0.75)).g;
+  float turb = n1 * 0.65 + n2 * 0.45;
+
+  // envelope: strong at the nozzle, thinning out (and eaten by the turbulence)
+  float env = exp(-t * 1.9) * (1.0 - smoothstep(0.55, 1.0, t));
+  float burn = env * (0.45 + 1.0 * turb);
+
+  // colour ramp: blue-white core -> orange/yellow tail
+  vec3 coreCol = vec3(0.72, 0.86, 1.0);
+  vec3 tailCol = uColor;
+  vec3 col = mix(coreCol, tailCol, smoothstep(0.0, 0.22, t + turb * 0.15));
+
+  // hot axial core + faint shock diamonds along the plume
+  float axial = pow(max(abs(dot(N, V)), 0.0), 6.0) * exp(-t * 4.0);
+  float diamonds = 0.75 + 0.25 * sin(t * 26.0 - uTime * 9.0);
+  col += vec3(0.65, 0.85, 1.0) * axial * diamonds * 0.9;
+
+  float a = clamp(thick * burn * uIntensity, 0.0, 1.0);
   if (a <= 0.002) discard;
-  oColor = vec4(uColor * a, a);
+  oColor = vec4(col * a, a);
   oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
