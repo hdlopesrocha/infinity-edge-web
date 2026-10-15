@@ -65,6 +65,18 @@ export const LEVEL_FILES: Record<string, string> = {
   'ctf-easy': 'SinglePlayer_CTF_Easy_Level.json',
   'ctf-normal': 'SinglePlayer_CTF_Normal_Level.json',
   'ctf-hard': 'SinglePlayer_CTF_Hard_Level.json',
+  'kots-teams-easy': 'kots-teams-easy.json',
+  'kots-teams-normal': 'kots-teams-normal.json',
+  'kots-teams-hard': 'kots-teams-hard.json',
+  'kots-solo-easy': 'kots-solo-easy.json',
+  'kots-solo-normal': 'kots-solo-normal.json',
+  'kots-solo-hard': 'kots-solo-hard.json',
+  'surv-teams-easy': 'surv-teams-easy.json',
+  'surv-teams-normal': 'surv-teams-normal.json',
+  'surv-teams-hard': 'surv-teams-hard.json',
+  'surv-solo-easy': 'surv-solo-easy.json',
+  'surv-solo-normal': 'surv-solo-normal.json',
+  'surv-solo-hard': 'surv-solo-hard.json',
 };
 
 const cache = new Map<string, LevelDef>();
@@ -86,3 +98,17 @@ export const TT_GROUPS = [
 ] as const;
 
 export const CTF_LEVELS = ['ctf-easy', 'ctf-normal', 'ctf-hard'] as const;
+
+/** King of the System / Survival: same three difficulties, teams or solo. */
+export const KOTS_LEVELS: Record<'teams' | 'solo', readonly string[]> = {
+  teams: ['kots-teams-easy', 'kots-teams-normal', 'kots-teams-hard'],
+  solo: ['kots-solo-easy', 'kots-solo-normal', 'kots-solo-hard'],
+};
+
+export const SURV_LEVELS: Record<'teams' | 'solo', readonly string[]> = {
+  teams: ['surv-teams-easy', 'surv-teams-normal', 'surv-teams-hard'],
+  solo: ['surv-solo-easy', 'surv-solo-normal', 'surv-solo-hard'],
+};
+
+export const MODE_CAPS: Record<string, string> = { easy: 'PEGASUS', normal: 'LEO', hard: 'DRACO' };
+export const MODE_ICONS: Record<string, string> = { easy: '_easy.png', normal: '_normal.png', hard: '_hard.png' };
