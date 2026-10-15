@@ -134,31 +134,11 @@ body {
    square; users click the text). */
 .opt-check-label { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
 .opt-check-label > span { white-space: pre; }
-.opt-input { background: none; border: none; color: #ffff00; font-size: 16px; font-family: inherit; pointer-events: auto; padding: 0; min-width: 60px; }
+.opt-input { font-size: 16px; font-family: inherit; pointer-events: auto; min-width: 60px; }
 .opt-value { font-size: 16px; white-space: pre; }
-/* InputDrag: 192 x LineSpacing black `_pixel` bar with a `_ball` knob. */
-.opt-drag { display: inline-flex; align-items: center; width: 192px; height: 20px; }
-input[type='range'].drag {
-  width: 192px; height: 20px; margin: 0; pointer-events: auto;
-  appearance: none; -webkit-appearance: none; background: #000; border: none;
-}
-input[type='range'].drag::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 20px; height: 20px; border: none;
-  background: var(--ball) center / contain no-repeat; cursor: pointer;
-}
-input[type='range'].drag::-moz-range-thumb {
-  width: 20px; height: 20px; border: none;
-  background: var(--ball) center / contain no-repeat; cursor: pointer;
-}
-/* InputCheck (CheckSkin: black `_pixel`, white `_ball` when checked). */
-input[type='checkbox'].opt-check {
-  appearance: none; -webkit-appearance: none;
-  width: 20px; height: 20px; margin: 0; background: #000; border: none;
-  pointer-events: auto; cursor: pointer;
-}
-input[type='checkbox'].opt-check:checked {
-  background: var(--ball) center / contain no-repeat, #000;
-}
+/* The controls keep the browser's native widgets; only the layout is ours. */
+input[type='range'].drag { width: 192px; margin: 0; pointer-events: auto; }
+input[type='checkbox'].opt-check { width: 20px; height: 20px; margin: 0; pointer-events: auto; cursor: pointer; }
 .opt-clear { align-self: flex-start; width: 90%; }
 
 .splash { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: transparent; pointer-events: auto; transition: opacity 500ms ease; }
@@ -196,8 +176,5 @@ input[type='checkbox'].opt-check:checked {
   cursor: pointer; pointer-events: auto; padding: 0; font: inherit;
 }
 .fs-btn:hover { background: rgba(0, 0, 0, 0.6); color: #fff; }
-
-.kbd { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; max-width: 520px; }
-.kbd button { pointer-events: auto; background: rgba(255,255,255,0.07); color: var(--ink); border: 1px solid rgba(255,255,255,0.2); padding: 6px 0; cursor: pointer; font-family: inherit; }
 
 .medal { width: 128px; height: 128px; cursor: pointer; }
