@@ -468,12 +468,20 @@ export class SpaceShip extends SpaceObject {
     if (!inside) return;
     const speed = vec3.length(this.vel) / this.physics.velMax;
     // Real smoke: a noise-driven particle that grows, drifts and dissolves
-    // instead of a fading sprite.
+    // instead of a fading sprite. It leaves from the engine (behind the hull,
+    // where the plume is) rather than the hull centre, so the trail streams out
+    // of the nozzles.
+    const jitter = (rc.random() - 0.5) * 0.5;
+    const pos = vec3.fromValues(
+      this.lastPos[0] - this.dir[0] * 0.9 + this.side[0] * jitter - this.up[0] * 0.12,
+      this.lastPos[1] - this.dir[1] * 0.9 + this.side[1] * jitter - this.up[1] * 0.12,
+      this.lastPos[2] - this.dir[2] * 0.9 + this.side[2] * jitter - this.up[2] * 0.12,
+    );
     const drift = vec3.create();
-    vec3.scale(drift, this.vel, 0.06);
-    gi.map.spawnSmoke(vec3.clone(this.lastPos), drift, {
-      size0: 0.35, size1: 1.9 + 1.4 * speed, life: 1500,
-      alpha: clamp(speed * 0.85, 0, 1), turbulence: 0.55,
+    vec3.scale(drift, this.vel, 0.05);
+    gi.map.spawnSmoke(pos, drift, {
+      size0: 0.35, size1: 2.3 + 1.5 * speed, life: 1600,
+      alpha: clamp(speed, 0, 1), turbulence: 0.6,
     });
   }
 
@@ -490,23 +498,40 @@ export class SpaceShip extends SpaceObject {
     // Engine flare: a real additive cone plume in the ship's frame (parallax,
     // animated with the 3D noise field) instead of a camera-facing billboard.
     const thrust = clamp(facing * accelFrac, 0, 1);
+    const level = this.thrustLevel();
     const vr = vec3.create();
     const rotX = mat4.create();
     mat4.fromRotation(rotX, -Math.PI / 2, vec3.fromValues(1, 0, 0));
+    const scale = mat4.create();
+    const local = mat4.create();
+    const glow = mat4.create();
+    const glowScale = mat4.create();
     for (const v of f.engine) {
       vec3.transformQuat(vr, v as unknown as vec3, this.rot);
       mat4.fromTranslation(this.plumeMat, vec3.fromValues(
         this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
       ));
-      const length = 1.5 + 2.4 * (0.35 + 0.65 * this.thrustLevel());
-      const radius = 0.5;
-      const scale = mat4.create();
+      // Compact flame: about the length of the engine, tapering fast.
+      const length = 0.55 + 0.95 * (0.3 + 0.7 * level);
+      const radius = 0.2;
       mat4.fromScaling(scale, vec3.fromValues(radius, length, radius));
-      const local = mat4.create();
       mat4.multiply(local, this.plumeMat, rotX);
       mat4.multiply(local, local, scale);
-      draw.drawPlume(local, local, view, proj, d.camPos, [1, 0.9, 0.72], 0.75 * thrust + 0.1 * this.thrustLevel());
-      d.rc.renderer.trackDraws(1);
+      draw.drawPlume(local, local, view, proj, d.camPos, [1, 0.86, 0.66], 0.5 * thrust + 0.06 * level);
+      // Hot core + team-coloured halo right at the nozzle (additive shells).
+      const core = 0.16 + 0.07 * level;
+      mat4.fromTranslation(glow, vec3.fromValues(
+        this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
+      ));
+      mat4.fromScaling(glowScale, vec3.fromValues(core, core, core));
+      mat4.multiply(glow, glow, glowScale);
+      draw.drawGlow(glow, glow, view, proj, d.camPos, [1, 0.96, 0.9], 0.55 + 0.45 * thrust);
+      const halo = core * 2.4;
+      mat4.fromScaling(glowScale, vec3.fromValues(halo, halo, halo));
+      const haloM = mat4.create();
+      mat4.multiply(haloM, glow, glowScale);
+      draw.drawGlow(haloM, haloM, view, proj, d.camPos, this.team.color, 0.35 + 0.5 * thrust);
+      d.rc.renderer.trackDraws(3);
     }
     // Team-colour core: small additive glow shells at the same flare offsets.
     const pulse = (1 + Math.sin(this.lol)) / 2;

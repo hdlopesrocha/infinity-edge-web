@@ -176,7 +176,7 @@ void main() {
   float n = texture(uNoise, p).r;
   float ridged = texture(uNoise, p * 2.1 + vec3(uTime * 0.06, -uTime * 0.21, 0.0)).g;
   float density = n * (0.55 + 0.75 * ridged) * (1.0 - turb * 0.35 * (1.0 - age));
-  density = clamp((density - 0.35) * 2.2, 0.0, 1.0);
+  density = clamp((density - 0.22) * 2.8, 0.0, 1.0);
 
   // life curve: quick fade-in, long fade-out
   float life = smoothstep(0.0, 0.12, age) * (1.0 - smoothstep(0.35, 1.0, age));
@@ -224,11 +224,12 @@ layout(location = 1) out vec4 oVelocity;
 void main() {
   vec3 V = normalize(uCamPos - vW);
   // volumetric thickness: brightest through the core of the cone
-  float thickness = pow(max(0.0, abs(dot(normalize(vN), V))), 0.75);
+  float thickness = pow(max(0.0, abs(dot(normalize(vN), V))), 1.1);
   float t = clamp(vUV.y, 0.0, 1.0);              // 0 nozzle -> 1 tip
-  float axial = exp(-t * 2.6) * (1.0 - t * 0.35);
-  float flicker = texture(uNoise, vec3(vUV.x * 3.0, t * 2.0 - uTime * 1.7, uTime * 0.3)).r;
-  flicker = 0.65 + 0.7 * flicker;
+  float axial = exp(-t * 3.4) * (1.0 - t * 0.25);
+  vec3 np = vec3(vUV.x * 4.0, t * 2.5 - uTime * 2.2, uTime * 0.35);
+  float flicker = texture(uNoise, np).r * 0.7 + texture(uNoise, np * 2.7).g * 0.5;
+  flicker = 0.45 + 0.85 * flicker;
   float a = thickness * axial * flicker * uIntensity;
   if (a <= 0.002) discard;
   oColor = vec4(uColor * a, a);
