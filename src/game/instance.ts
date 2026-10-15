@@ -89,10 +89,10 @@ export class GameInstance {
       modelNames.add(m);
     }
     await rc.preload([...modelNames], [
-      'flare1', 'flare2', 'flare3',
+      'flare1', 'flare2',
       'holoSmoke1', 'holoSmoke2', 'holoSmoke3', 'holoSmoke4', 'holoSmoke5', 'holoSmoke6', 'holoSmoke7',
       'hexagon', 'aim', 'over',
-      'Fighter1_icon', 'Fighter2_icon', 'Fighter3_icon', 'Ark_icon', 'Base_icon', 'Flag_icon',
+      'Fighter3_icon', 'Ark_icon', 'Base_icon', 'Flag_icon',
     ]);
     const sky = rc.model(def.description.sky);
     if (sky) {

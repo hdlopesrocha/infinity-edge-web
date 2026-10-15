@@ -16,19 +16,18 @@ const content = (() => {
 const sanitize = (s) => s.replace(/[^a-zA-Z0-9_.-]/g, '_');
 
 const TEXTURE_ALIASES = {
-  _menubtn: 'System/menubtn', _buttonLU: 'System/buttonLU', _buttonRU: 'System/buttonRU',
-  _buttonLD: 'System/buttonLD', _buttonRD: 'System/buttonRD', _backGame: 'System/backGame',
-  _aim: 'System/aim', _aim2: 'System/aim2', _flag: 'System/flag',
-  _flare1: 'System/flare1', _flare2: 'System/flare2', _flare3: 'System/flare3',
+  _menubtn: 'System/menubtn', _buttonRU: 'System/buttonRU',
+  _aim: 'System/aim',
+  _flare1: 'System/flare1', _flare2: 'System/flare2',
   _gold: 'System/gold', _silver: 'System/silver', _bronze: 'System/bronze',
   _ball: 'System/ball', _backWindow: 'System/backWindow',
-  _singlePlayer: 'System/singlePlayer', _multiPlayer: 'System/multiPlayer',
+  _singlePlayer: 'System/singlePlayer',
   _optionsIcon: 'System/options', _about: 'System/about', _back: 'System/back',
-  _timeTrial: 'System/timeTrial', _challenge: 'System/challenge', _ctf: 'System/ctf',
-  _hex: 'System/hex', _hex1: 'System/hex1', _easy: 'System/easy',
+  _timeTrial: 'System/timeTrial', _ctf: 'System/ctf',
+  _easy: 'System/easy',
   _normal: 'System/normal', _hard: 'System/hard', _key: 'System/key',
   _over: 'System/over', _engineLogo: 'System/engineLogo', _gameLogo: 'System/logo',
-  _arcade: 'System/arcade', _hexagon: 'System/hexagon',
+  _hexagon: 'System/hexagon',
   _holoSmoke1: 'System/holoSmoke1', _holoSmoke2: 'System/holoSmoke2',
   _holoSmoke3: 'System/holoSmoke3', _holoSmoke4: 'System/holoSmoke4',
   _holoSmoke5: 'System/holoSmoke5', _holoSmoke6: 'System/holoSmoke6',
@@ -38,6 +37,16 @@ const TEXTURE_ALIASES = {
   _accelAnalog: 'Control/accelAnalog', _nitro: 'Control/nitro',
   _pixel: 'System/pixel',
 };
+
+// The UI is built in Vue/CSS, so the original's menu-sprite leftovers
+// (arcade/challenge/multiPlayer/hex/hex1/aim2/flag/flare3/corner buttons/
+// backGame) are never drawn and no longer copied; see the SKIP note in
+// tools/convert-xnb.mjs for the model side of the same cleanup.
+const SKIP_FOLDERS = new Set([
+  'Fighter1', 'Fighter2', 'HomingMissile',
+  'Planet1', 'Planet2', 'Planet3',
+  'AddonMultiply2', 'AddonTime',
+]);
 
 function findFile(baseNoExt) {
   for (const ext of ['.png', '.jpg', '.jpeg', '.PNG', '.JPG']) {
@@ -72,13 +81,20 @@ const objOut = join(texOut, 'objects');
 mkdirSync(objOut, { recursive: true });
 try {
   for (const folder of readdirSync(join(content, 'Objects'))) {
+    if (SKIP_FOLDERS.has(folder)) continue;
     const dir = join(content, 'Objects', folder);
     let files = [];
     try { files = readdirSync(dir); } catch { continue; }
     for (const f of files) {
       if (!/\.(png|jpe?g)$/i.test(f)) continue;
-      copyFileSync(join(dir, f), join(objOut, sanitize(`${folder}__${f}`)));
-      if (/^icon\./i.test(f)) copyFileSync(join(dir, f), join(texOut, `${folder}_icon.png`));
+      // Icons: the loader resolves them as assets/textures/<model>_icon.png,
+      // so only the top-level copy is shipped (the objects/<model>__icon.png
+      // duplicate is dead weight).
+      if (/^icon\./i.test(f)) {
+        copyFileSync(join(dir, f), join(texOut, `${folder}_icon.png`));
+      } else {
+        copyFileSync(join(dir, f), join(objOut, sanitize(`${folder}__${f}`)));
+      }
       copied++;
     }
   }

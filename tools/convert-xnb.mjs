@@ -543,7 +543,19 @@ mkdirSync(outDir, { recursive: true });
 const manifest = { generator: 'tools/convert-xnb.mjs', models: {} };
 let ok = 0;
 const failed = [];
+// Models the web port never loads: no level references them and no runtime
+// code asks for them (the ships fly Fighter3, the port does not render the
+// original's planets, HomingMissile v1 was replaced by HomingMissile2, and
+// the multiply/time addons were never implemented). Converting them would
+// only bloat the boot preload with files nothing fetches.
+// Exact folder names -- HomingMissile2 must stay.
+const SKIP_FOLDERS = new Set([
+  'Fighter1', 'Fighter2', 'HomingMissile',
+  'Planet1', 'Planet2', 'Planet3',
+  'AddonMultiply2', 'AddonTime',
+]);
 for (const folder of readdirSync(xnbRoot).sort()) {
+  if (SKIP_FOLDERS.has(folder)) continue;
   const dir = join(xnbRoot, folder);
   if (!statSync(dir).isDirectory()) continue;
   const files = readdirSync(dir).filter((f) => /\.xnb$/i.test(f)).sort();
