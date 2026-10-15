@@ -50,6 +50,8 @@ export const store = reactive({
     outside: null as { left: number; total: number } | null,
     /** Countdown until the destroyed player's ship respawns at its base. */
     respawn: null as { left: number; total: number } | null,
+    /** Time left in the match (null for untimed levels like time trials). */
+    matchLeft: null as number | null,
     homings: 0,
     nitroPct: 0,
     stickOn: false,

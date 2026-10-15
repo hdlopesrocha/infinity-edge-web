@@ -41,6 +41,8 @@ export class GameInstance {
   control = new Control();
   selectedObject: SpaceShip | null = null;
   goals: Reward[] = [];
+  /** Match length in ms from the level's MoreTime goal (0 = untimed). */
+  matchTimeMs = 0;
   bestGhostRecords: GhostRecord[] = [];
   ghostRecords: GhostRecord[] = [];
   gameType: GameType = 'BACK';
@@ -134,7 +136,13 @@ export class GameInstance {
       for (const goal of g.goals) {
         if (goal.name === 'NoPath') r.addCondition(new CondNoPath());
         else if (goal.name === 'LessTime') r.addCondition(new CondLessTime(parseTimeSpan(goal.value ?? '00:00:00')));
-        else if (goal.name === 'MoreTime') r.addCondition(new CondMoreTime(parseTimeSpan(goal.value ?? '00:00:00')));
+        else if (goal.name === 'MoreTime') {
+          const limit = parseTimeSpan(goal.value ?? '00:00:00');
+          // The HUD's match clock: the longest MoreTime goal is when the match
+          // ends (CTF levels: 5:00).
+          gi.matchTimeMs = Math.max(gi.matchTimeMs, limit);
+          r.addCondition(new CondMoreTime(limit));
+        }
         else if (goal.name === 'Destroyed') {
           r.addCondition(new CondDestroyed((gi.objects.get(goal.value ?? '') as SpaceObject | undefined) ?? null));
         } else if (goal.name === 'MorePoints') {

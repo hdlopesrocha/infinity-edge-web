@@ -86,6 +86,9 @@ body {
 
 .hud { position: absolute; inset: 0; pointer-events: none; }
 .hud-score { position: absolute; top: 4px; width: 100%; text-align: center; color: #fff; font-size: 18px; text-shadow: 0 1px 3px #000; }
+/* Match clock (web addition; the original CTF HUD showed only the score). */
+.hud-match { position: absolute; top: 26px; width: 100%; text-align: center; color: #fff; font-size: 14px; letter-spacing: 0.08em; opacity: 0.9; text-shadow: 0 1px 3px #000; font-family: var(--font-ui); }
+.hud-match.low { color: #ffcc55; opacity: 1; }
 .hud-notify { position: absolute; top: 64px; width: 100%; text-align: center; color: #fff; font-size: 16px; transform: scale(0.8); text-shadow: 0 2px 6px #000; }
 /* Leaving-the-field / respawn countdown (the original only spoke these). */
 .hud-timer {

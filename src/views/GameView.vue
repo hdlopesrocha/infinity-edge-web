@@ -51,6 +51,16 @@ const timerPct = computed(() => {
   return t && t.total > 0 ? Math.max(0, Math.min(100, (t.left / t.total) * 100)) : 0;
 });
 
+// Match clock (CTF levels are 5 minutes): m:ss, amber in the last 30 s.
+const matchClock = computed(() => {
+  const ms = hud.matchLeft;
+  if (ms === null) return '';
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  return `${m}:${String(total % 60).padStart(2, '0')}`;
+});
+const matchLow = computed(() => hud.matchLeft !== null && hud.matchLeft <= 30000);
+
 function layerPos(e: PointerEvent): { x: number; y: number } {
   const r = layerRef.value!.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -101,6 +111,7 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
 <template>
   <div class="hud">
     <div class="hud-score">{{ hud.score }}</div>
+    <div v-if="hud.matchLeft !== null" class="hud-match" :class="{ low: matchLow }">{{ matchClock }}</div>
     <div v-if="hud.notify" class="hud-notify">{{ hud.notify }}</div>
     <div v-if="timer" class="hud-timer" :class="{ warn: !!hud.outside }">
       <div class="hud-timer-label">{{ timerLabel }}</div>
