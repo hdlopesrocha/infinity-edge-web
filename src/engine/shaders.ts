@@ -291,15 +291,24 @@ in vec2 vUV;
 uniform sampler2D uColor; uniform sampler2D uVelocity;
 uniform float uShutter;   // exposure length in frames
 uniform float uMaxLen;    // streak clamp, in UV units
+uniform vec2 uFocus;      // screen point the ship is flying toward (UV)
+uniform float uAspect;    // width / height
+uniform float uSpeedBlur; // ship-speed streak length at the screen edge (UV)
 out vec4 oColor;
 // Interleaved gradient noise: offsets the tap pattern per pixel so the streak
 // comes out smooth instead of a stack of discrete, faded copies.
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 void main() {
   vec4 c = texture(uColor, vUV);
-  // Raw per-pixel screen velocity (UV/frame, signed) written by the scene
+  // Per-object screen velocity (UV/frame, signed) written by the scene
   // shaders from the previous frame's world/view-projection.
   vec2 px = texture(uVelocity, vUV).xy * uShutter;
+  // Ship velocity: the world streams radially away from the point the ship is
+  // flying toward, and the streak grows with the distance from it -- so the
+  // vanishing point stays crisp while the frame smears along the flight path.
+  vec2 toFocus = (vUV - uFocus) * vec2(uAspect, 1.0);
+  float r = length(toFocus);
+  if (r > 1e-4) px += (toFocus / r) * (uSpeedBlur * r);
   float len = length(px);
   if (len < 0.0015) { oColor = c; return; }
   if (len > uMaxLen) px *= uMaxLen / len;

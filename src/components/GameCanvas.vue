@@ -235,6 +235,14 @@ onMounted(() => {
       // Options screen changes take effect immediately (and roll back on
       // cancel).
       renderer.renderOptions.motionBlur = rc.options.motionBlur;
+      // Motion blur follows the ship: direction along its velocity, amount by
+      // its speed (see GameInstance.speedBlur).
+      if (instance) {
+        const sb = instance.speedBlur();
+        renderer.renderOptions.speedBlur = sb.amount;
+        renderer.renderOptions.focusX = sb.focusX;
+        renderer.renderOptions.focusY = sb.focusY;
+      }
       renderer.renderOptions.flareTex = rc.tex('flare2');
       // Lens flare belongs to the game/menu scenes; the boot wheel stays crisp.
       renderer.renderOptions.flare = rc.options.billboards && store.sceneKey !== 'engine' ? 0.45 : 0;

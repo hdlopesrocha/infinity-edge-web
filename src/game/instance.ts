@@ -382,6 +382,36 @@ export class GameInstance {
     };
   }
 
+  /**
+   * Speed-driven motion blur for the post chain: the streak runs along the
+   * ship's velocity (radiating from the screen point it is flying toward) and
+   * its length is the speed -- full throttle is 0.025 UV at the screen edge,
+   * nitro up to 1.6x that. Zero when the ship is not moving.
+   */
+  speedBlur(): { amount: number; focusX: number; focusY: number } {
+    const o = this.selectedObject;
+    if (!o) return { amount: 0, focusX: 0.5, focusY: 0.5 };
+    const speed = vec3.length(o.vel);
+    const cap = o.physics.velMax * Math.max(1, o.multiplier) || 1;
+    const f = Math.min(1.6, speed / cap);
+    if (f <= 0.02) return { amount: 0, focusX: 0.5, focusY: 0.5 };
+    const dir = vec3.fromValues(o.vel[0], o.vel[1], o.vel[2]);
+    vec3.scale(dir, dir, 1 / (speed || 1));
+    const cam = this.renderer.camera;
+    // Project a far point along the velocity: that is where the world streams
+    // away from, and it stays crisp while everything around it smears.
+    const p = this.project(
+      cam.position[0] + dir[0] * 1000,
+      cam.position[1] + dir[1] * 1000,
+      cam.position[2] + dir[2] * 1000,
+    );
+    return {
+      amount: f * 0.035,
+      focusX: p.x / Math.max(1, this.canvasW),
+      focusY: p.y / Math.max(1, this.canvasH),
+    };
+  }
+
   pointers(): PointerMark[] {
     const out: PointerMark[] = [];
     const sel = this.selectedObject;

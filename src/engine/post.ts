@@ -30,6 +30,11 @@ export interface PresentOptions {
   shutter: number;
   /** Maximum blur length in UV units per frame. */
   maxBlur: number;
+  /** Ship-velocity streak at the screen edge, in UV (0 = none). */
+  speedBlur: number;
+  /** Screen point (UV) the ship is flying toward; the streak radiates from it. */
+  focusX: number;
+  focusY: number;
 }
 
 export class Post {
@@ -69,7 +74,7 @@ export class Post {
     this.progBright = linkProgram(gl, FS_VERT, POST_BRIGHT_FRAG);
     this.progBlur = linkProgram(gl, FS_VERT, POST_BLUR_FRAG);
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
-    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uShutter', 'uMaxLen']);
+    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uShutter', 'uMaxLen', 'uFocus', 'uAspect', 'uSpeedBlur']);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
     this.uComposite = uniforms(gl, this.progComposite, ['uColor', 'uBloom', 'uFlareTex', 'uFlare', 'uExposureKnee']);
@@ -248,6 +253,9 @@ export class Post {
         this.bindTex(this.uMb.uVelocity, 1, this.velocityTex);
         gl.uniform1f(this.uMb.uShutter, opts.shutter);
         gl.uniform1f(this.uMb.uMaxLen, opts.maxBlur);
+        gl.uniform2f(this.uMb.uFocus, opts.focusX, opts.focusY);
+        gl.uniform1f(this.uMb.uAspect, this.w / Math.max(1, this.h));
+        gl.uniform1f(this.uMb.uSpeedBlur, opts.speedBlur);
       }, this.mbColor.w, this.mbColor.h);
       source = this.mbColor.tex;
     }
