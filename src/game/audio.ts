@@ -3,7 +3,10 @@
 import { SFX, VOICES } from './config';
 
 function soundUrl(name: string): string {
-  return (import.meta.env.BASE_URL + `assets/sounds/${name}.wav`).replace(/([^:])\/\//g, '$1/');
+  // The 2013 cues ship as uncompressed WAV (8.5 MB); the build transcodes them
+  // to MP3 (~0.5 MB, 6%) -- see tools/copy-assets.mjs. The Web Audio API
+  // decodes either, so the only difference is the transfer.
+  return (import.meta.env.BASE_URL + `assets/sounds/${name}.mp3`).replace(/([^:])\/\//g, '$1/');
 }
 
 function musicUrl(): string {

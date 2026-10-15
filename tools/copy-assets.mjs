@@ -1,6 +1,7 @@
 // Copy textures + sounds + icons (IE3D_37_T). Sanitized object filenames.
 import { basename, dirname, join } from 'node:path';
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -102,9 +103,27 @@ try {
 
 const sndOut = join(webRoot, 'public', 'assets', 'sounds');
 mkdirSync(sndOut, { recursive: true });
+// The 2013 cues are uncompressed PCM WAVs (44.1 kHz stereo, 1.4 Mbps): 8.5 MB
+// for the 25 of them. The port fetches + decodes them with the Web Audio API,
+// so they are transcoded to MP3 (~0.5 MB, 6% of the source) on the way in.
+// ffmpeg is required for that step; existing MP3s are copied as-is.
 try {
+  const haveFfmpeg = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status === 0;
   for (const f of readdirSync(join(content, 'Sounds'))) {
-    if (/\.(wav|mp3|wma)$/i.test(f)) { copyFileSync(join(content, 'Sounds', f), join(sndOut, sanitize(f))); copied++; }
+    const src = join(content, 'Sounds', f);
+    if (/\.mp3$/i.test(f)) {
+      copyFileSync(src, join(sndOut, sanitize(f)));
+      copied++;
+    } else if (/\.wav$/i.test(f)) {
+      const out = join(sndOut, sanitize(f.replace(/\.wav$/i, '.mp3')));
+      if (!haveFfmpeg) {
+        missing.push(`${f} (ffmpeg not found)`);
+        continue;
+      }
+      const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', src, '-codec:a', 'libmp3lame', '-q:a', '5', out]);
+      if (r.status !== 0) missing.push(f);
+      else copied++;
+    }
   }
 } catch { /* none */ }
 try {
