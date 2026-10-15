@@ -70,6 +70,25 @@ async function rebuild(): Promise<void> {
   }
 }
 
+/**
+ * Losing the window while a turn key (or a drag) is held used to leave the input
+ * stuck: the browser never delivers the matching keyup/pointerup, so the ship
+ * kept turning in one direction forever. Clearing the held inputs on blur /
+ * hidden-tab fixes it (the player just presses the key again).
+ */
+function clearHeldInputs(): void {
+  instance?.control.keys.clear();
+  instance?.control.touches.clear();
+}
+
+function onWindowBlur(): void {
+  clearHeldInputs();
+}
+
+function onVisibilityChange(): void {
+  if (document.hidden) clearHeldInputs();
+}
+
 function onKeyDown(e: KeyboardEvent): void {
   audio.unlock();
   if (e.code === 'Backspace' && (e.target as HTMLElement)?.tagName !== 'INPUT') {
@@ -216,6 +235,8 @@ onMounted(() => {
     }, 300);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onWindowBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
   } catch (e) {
     glError.value = (e as Error).message || 'WebGL2 unavailable';
   }
@@ -225,6 +246,8 @@ onBeforeUnmount(() => {
   window.clearInterval(sceneTimer);
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
+  window.removeEventListener('blur', onWindowBlur);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
   renderer?.dispose();
   renderer = null;
   instance = null;
