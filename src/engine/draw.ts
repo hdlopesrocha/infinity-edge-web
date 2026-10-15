@@ -208,7 +208,7 @@ export class Draw {
     this.plumeProg = linkProgram(gl, PLUME_VERT, PLUME_FRAG);
     this.uPlume = uniforms(gl, this.plumeProg, ['uWorld', 'uPrevWorld', 'uView', 'uProj', 'uViewProjPrev', 'uNoise', 'uCamPos', 'uColor', 'uTime', 'uIntensity']);
     this.glowProg = linkProgram(gl, GLOW_VERT, GLOW_FRAG);
-    this.uGlow = uniforms(gl, this.glowProg, ['uWorld', 'uPrevWorld', 'uView', 'uProj', 'uViewProjPrev', 'uCamPos', 'uColor', 'uIntensity']);
+    this.uGlow = uniforms(gl, this.glowProg, ['uWorld', 'uPrevWorld', 'uView', 'uProj', 'uViewProjPrev', 'uCamPos', 'uColor', 'uIntensity', 'uSoftness']);
     this.plumeMesh = buildPlumeMesh(gl);
     this.glowMesh = buildGlowMesh(gl);
     const vao = gl.createVertexArray();
@@ -577,7 +577,7 @@ export class Draw {
   /** Additive glow shell (bullets, addons, pickup flash) — real geometry. */
   drawGlow(
     world: mat4, prevWorld: mat4, view: mat4, proj: mat4, camPos: vec3,
-    color: [number, number, number], intensity: number,
+    color: [number, number, number], intensity: number, softness = 2.2,
   ): void {
     if (intensity <= 0.002) return;
     const gl = this.gl;
@@ -595,6 +595,7 @@ export class Draw {
     gl.uniform3f(U.uCamPos, camPos[0], camPos[1], camPos[2]);
     gl.uniform3f(U.uColor, color[0], color[1], color[2]);
     gl.uniform1f(U.uIntensity, intensity);
+    gl.uniform1f(U.uSoftness, softness);
     gl.bindVertexArray(this.glowMesh.vao);
     gl.drawElements(gl.TRIANGLES, this.glowMesh.count, gl.UNSIGNED_SHORT, 0);
     gl.bindVertexArray(null);

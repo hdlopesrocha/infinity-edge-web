@@ -263,6 +263,13 @@ export class SpaceObject extends Object3D {
           vec3.subtract(d2, this.pos, obj.pos);
           vec3.normalize(d2, d2);
           obj.receiveDamage(gi, a, d2);
+          // Hull-to-hull impact: fireball at the contact point, scaled by the
+          // damage traded (asteroid strikes look violent, ship taps small).
+          const hit = vec3.fromValues(
+            (this.pos[0] + obj.pos[0]) / 2, (this.pos[1] + obj.pos[1]) / 2, (this.pos[2] + obj.pos[2]) / 2,
+          );
+          const heavy = Math.max(a, b) > 0;
+          spawnExplosion(map, hit, heavy ? 2.2 : 1.5, { smoke: heavy ? 6 : 4, life: 540 });
         }
       }
     }
@@ -283,6 +290,9 @@ export class SpaceObject extends Object3D {
     const frag = new Fragment(map, this, this.model, this.scale, 500);
     frag.color = [...this.color] as [number, number, number];
     vec3.set(frag.vel, 0, 0, 0);
+    // Killed: a proper fireball (bigger for the player's ship) plus debris.
+    const exScale = this instanceof SpaceShip ? 4.0 : 3.0;
+    spawnExplosion(map, vec3.clone(this.pos), exScale, { smoke: 12, debris: 6, launcher: this, life: 750 });
     const sel = gi.selectedObject;
     if (sel && (this as SpaceObject) !== (sel as SpaceObject)) {
       const vx = this.pos[0] - sel.pos[0];
@@ -1207,6 +1217,114 @@ export class SmokePuff extends Abstract3D {
     );
     d.rc.renderer.trackDraws();
   }
+}
+
+// --------------------------------------------------------------- Explosion
+// Additive fireball used for weapon impacts, collisions and kills: three glow
+// shells that expand and fade (white-hot core -> orange body -> dark halo),
+// plus a smoke burst and optional debris spawned by spawnExplosion().
+export class Explosion extends Abstract3D {
+  pos = vec3.create();
+  elapsed = 0;
+  life: number;
+  scale: number;
+
+  get kind(): ObKind {
+    return ObKind.Uncollidable;
+  }
+
+  constructor(map: import('./map').GameMap, position: vec3, scale: number, life = 650) {
+    super(P.EMPTY);
+    vec3.copy(this.pos, position);
+    this.scale = scale;
+    this.life = life;
+    map.insertObject(this);
+  }
+
+  setBoundingSphere(): void {
+    this.sx = this.pos[0];
+    this.sy = this.pos[1];
+    this.sz = this.pos[2];
+    this.sradius = this.scale * 3;
+  }
+
+  update(): void {
+    this.setBoundingSphere();
+  }
+
+  step(dtMs: number): boolean {
+    this.elapsed += dtMs;
+    return this.elapsed < this.life;
+  }
+
+  solidDraw(_d: DrawCtx): void {
+    /* transparent only */
+  }
+
+  alphaDraw(d: DrawCtx): void {
+    const t = clamp(this.elapsed / this.life, 0, 1);
+    const ease = 1 - (1 - t) * (1 - t);          // fast initial burst
+    const fade = (1 - t) * (1 - t);
+    // Start already big (a flash) and keep expanding.
+    const r = this.scale * (0.8 + 1.5 * ease);
+    const m = mat4.create();
+    mat4.fromTranslation(m, this.pos);
+    const sc = mat4.create();
+    const shell = (mult: number, color: [number, number, number], a: number): void => {
+      const s = r * mult;
+      mat4.fromScaling(sc, vec3.fromValues(s, s, s));
+      const out = mat4.create();
+      mat4.multiply(out, m, sc);
+      // Broad fireball falloff (softness ~1) instead of the tight engine glow.
+      d.draw.drawGlow(out, out, d.view, d.proj, d.camPos, color, a, 1.0);
+    };
+    shell(0.5, [1, 0.95, 0.85], 1.25 * fade);   // white-hot core
+    shell(0.95, [1, 0.62, 0.24], 1.1 * fade);   // orange body
+    shell(1.5, [0.85, 0.32, 0.1], 0.55 * fade); // dark halo
+    d.rc.renderer.trackDraws(3);
+  }
+}
+
+export interface ExplosionOpts {
+  /** Smoke puffs in the burst (default scales with the fireball). */
+  smoke?: number;
+  /** Debris pieces that fly away (needs a launcher for the model). */
+  debris?: number;
+  /** Debris model source (defaults to none). */
+  launcher?: SpaceObject | null;
+  life?: number;
+}
+
+/** Fireball + smoke burst (+ optional debris) at a world position. */
+export function spawnExplosion(
+  map: import('./map').GameMap, position: vec3, scale: number, opts: ExplosionOpts = {},
+): Explosion {
+  const rnd = map.rng;
+  const ex = new Explosion(map, position, scale, opts.life ?? 650);
+  map.explosions.push(ex);
+  const smoke = opts.smoke ?? Math.max(2, Math.round(2 + scale * 2));
+  for (let i = 0; i < smoke; i++) {
+    const a = rnd() * Math.PI * 2;
+    const b = (rnd() - 0.5) * Math.PI;
+    const dx = Math.cos(a) * Math.cos(b), dy = Math.sin(b), dz = Math.sin(a) * Math.cos(b);
+    const off = scale * 0.45;
+    const vel = scale * (1.2 + rnd() * 2.4);
+    map.spawnSmoke(
+      vec3.fromValues(position[0] + dx * off, position[1] + dy * off, position[2] + dz * off),
+      vec3.fromValues(dx * vel, dy * vel, dz * vel),
+      { size0: scale * 0.3, size1: scale * (1.1 + rnd() * 1.2), life: 900 + rnd() * 500, alpha: 0.95, turbulence: 0.8 },
+    );
+  }
+  if (opts.debris && opts.launcher) {
+    for (let i = 0; i < opts.debris; i++) {
+      const f = new Fragment(map, opts.launcher, opts.launcher.model, scale * (0.18 + rnd() * 0.22), 700 + rnd() * 500);
+      const l = Math.hypot(f.vel[0], f.vel[1], f.vel[2]) || 1;
+      const v = scale * (6 + rnd() * 8);
+      vec3.scale(f.vel, f.vel, v / l);
+      f.update();
+    }
+  }
+  return ex;
 }
 
 // --------------------------------------------------------------- Billboard

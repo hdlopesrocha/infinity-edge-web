@@ -267,12 +267,13 @@ export const GLOW_VERT = PLUME_VERT;
 export const GLOW_FRAG = `#version 300 es
 precision highp float;
 in vec3 vN; in vec3 vW; in vec2 vUV; in vec2 vVel;
-uniform vec3 uCamPos; uniform vec3 uColor; uniform float uIntensity;
+uniform vec3 uCamPos; uniform vec3 uColor; uniform float uIntensity; uniform float uSoftness;
 layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oVelocity;
 void main() {
   vec3 V = normalize(uCamPos - vW);
-  float a = pow(max(0.0, abs(dot(normalize(vN), V))), 2.2) * uIntensity;
+  // uSoftness: high = tight hot spot (engine glow), low = broad fireball
+  float a = pow(max(0.0, abs(dot(normalize(vN), V))), uSoftness) * uIntensity;
   if (a <= 0.002) discard;
   oColor = vec4(uColor * a, a);
   oVelocity = vec4(vVel, 0.0, 1.0);

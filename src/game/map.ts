@@ -7,6 +7,7 @@ import type { OctItem } from '../engine/octree';
 import type { DrawCtx } from './objects';
 import {
   Abstract3D, Addon, Ark, Asteroid, Base, Billboard, Bullet, Flag, SmokePuff, SpaceObject, SpaceShip, Fragment,
+  spawnExplosion,
 } from './objects';
 import type { AddonKind, SmokeOpts } from './objects';
 import { stringToLife } from './life';
@@ -46,6 +47,8 @@ export class GameMap {
   timedBillboards: { obj: Billboard; elapsed: number; max: number }[] = [];
   /** Real smoke particles (Perlin density, soft-particle depth fade). */
   smokePuffs: SmokePuff[] = [];
+  /** Live fireballs (impacts, collisions, kills). */
+  explosions: import('./objects').Explosion[] = [];
   private smokeSeed = 1;
   outsideObjects: OutsideTimer[] = [];
   fragments: { obj: Fragment; elapsed: number; max: number }[] = [];
@@ -286,6 +289,8 @@ export class GameMap {
               this.spawnSmoke(hp, drift, {
                 size0: 0.5, size1: 3.2, life: 900, alpha: 1, turbulence: 0.75,
               });
+              // Weapon impact: a small fireball right at the hit point.
+              spawnExplosion(this, hp, 1.7, { smoke: 4, life: 520 });
               collide = true;
               break;
             }
@@ -298,6 +303,19 @@ export class GameMap {
         else this.removeObject(bullet);
       }
       this.allBullets = keep;
+    }
+    // EXPLOSIONS (fireballs expand and fade, then leave the octree)
+    {
+      const keep: import('./objects').Explosion[] = [];
+      for (const ex of this.explosions) {
+        if (ex.step(dtMs)) {
+          this.refreshObject(ex);
+          keep.push(ex);
+        } else {
+          this.removeObject(ex);
+        }
+      }
+      this.explosions = keep;
     }
     // SMOKE PARTICLES (Perlin-driven puffs: grow, drift, dissolve)
     {
