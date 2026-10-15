@@ -34,7 +34,17 @@ export function steerToward(
   if (angle > 0.0001) {
     const ortho = vec3.create();
     vec3.cross(ortho, o, t);
-    if (vec3.length(ortho) < 1e-9) vec3.copy(ortho, side);
+    // |cross(o, t)| = sin(angle), so it collapses to float noise when the target
+    // sits dead ahead or dead astern. The original only guarded the exact zero,
+    // which left the ill-conditioned band (a target right behind) rotating about
+    // a random axis: the turn stalls and the ship/missile flies off. Fall back
+    // to a well-conditioned perpendicular axis (the ship's side) instead.
+    if (vec3.length(ortho) < 0.05) {
+      vec3.copy(ortho, side);
+      const along = vec3.dot(ortho, o);
+      vec3.scaleAndAdd(ortho, ortho, o, -along);
+      if (vec3.length(ortho) < 1e-6) vec3.set(ortho, 0, 1, 0);
+    }
     vec3.normalize(ortho, ortho);
     const step = quat.create();
     quat.setAxisAngle(step, ortho, Math.min(angle, maxAngle));

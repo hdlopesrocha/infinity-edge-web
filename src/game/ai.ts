@@ -10,8 +10,16 @@ import type { Control } from './controls';
 
 export type { Command };
 
+/**
+ * Steer toward a world *point* (the original AIPoint did
+ * `Normalize(target.Position - obj.Position)`; passing the absolute position
+ * into the direction normaliser aimed every ship at the direction of the
+ * target's position vector — radially out of the origin — which sent bots out
+ * of the map and made homing missiles unable to converge).
+ */
 export function steerTo(obj: SpaceObject, tx: number, ty: number, tz: number, maxAngular: number): void {
-  steerToward(obj.rot, obj.dir, vec3.fromValues(tx, ty, tz), obj.side, maxAngular);
+  const desired = vec3.fromValues(tx - obj.pos[0], ty - obj.pos[1], tz - obj.pos[2]);
+  steerToward(obj.rot, obj.dir, desired, obj.side, maxAngular);
   obj.update();
 }
 
@@ -246,16 +254,35 @@ export class AIBreak implements Command {
 export class AIHoming implements Command {
   constructor(
     private gi: GameInstance, private obj: SpaceObject, private target: SpaceObject | null,
-  ) {
-    void gi;
-  }
+  ) {}
 
   execute(): void {
+    const o = this.obj;
     if (this.target && this.target.active) {
-      new AIPoint(this.obj, this.target).execute();
+      // Intercept, not pure pursuit: the missile travels at 1024 u/s while the
+      // ships do 64, so aiming at the target's *current* position (what the 2013
+      // AIHoming did) orbits it forever — at Physics.MISSILE.maxAngular
+      // (0.1 rad/frame) the turn radius is ~170 units, wider than the miss
+      // distance, and every shot flies past. Aim at the intercept point (solved
+      // iteratively like a gun lead) and turn hard enough to follow it.
+      const t = this.target;
+      const speed = o.physics.velMax || 1;
+      let lead = 0;
+      for (let i = 0; i < 3; i++) {
+        const px = t.pos[0] + t.vel[0] * lead - o.pos[0];
+        const py = t.pos[1] + t.vel[1] * lead - o.pos[1];
+        const pz = t.pos[2] + t.vel[2] * lead - o.pos[2];
+        lead = Math.hypot(px, py, pz) / speed;
+      }
+      const turn = 0.35 * (this.gi.dtMs / (1000 / 60));
+      steerTo(
+        o,
+        t.pos[0] + t.vel[0] * lead, t.pos[1] + t.vel[1] * lead, t.pos[2] + t.vel[2] * lead,
+        turn,
+      );
     }
-    vec3.scale(this.obj.accel, this.obj.dir, this.obj.physics.accelMax);
-    this.obj.update();
+    vec3.scale(o.accel, o.dir, o.physics.accelMax);
+    o.update();
   }
 }
 
@@ -299,7 +326,7 @@ export class HILocal implements Command {
     vec3.transformQuat(want, want, q);
     vec3.normalize(want, want);
     const stickLen = Math.hypot(c.analogStick.value.x, c.analogStick.value.y);
-    steerTo(o, want[0], want[1], want[2], o.physics.maxAngular * stickLen);
+    steerTo(o, o.pos[0] + want[0] * 100, o.pos[1] + want[1] * 100, o.pos[2] + want[2] * 100, o.physics.maxAngular * stickLen);
     o.update();
     if (!o.insideMap) {
       if (!this.warning) this.gi.setNotification('leavingFieldOfBattle');
