@@ -207,6 +207,15 @@ onMounted(() => {
     (window as unknown as { __ieStore?: typeof store }).__ieStore = store;
     (window as unknown as { __ieRC?: RC }).__ieRC = rc;
     renderer.onRebuilt = () => {
+      // The context was restored: the engine dropped its GPU caches, but the
+      // ResourceCenter still hands out ModelData/TexEntry wrappers around the
+      // *lost* context's objects, and the boot wheel scene holds its own. Drop
+      // both and stop drawing until the async rebuild has re-uploaded
+      // everything (drawing the old instance meanwhile spams GL errors).
+      rc?.clearCaches();
+      engineScene = null;
+      instance = null;
+      (window as unknown as { __ieGame?: GameInstance | null }).__ieGame = null;
       building = '';
       void rebuild();
     };

@@ -253,6 +253,18 @@ export class RC {
     onProgress?.(total, total);
   }
 
+  /**
+   * Drop every cached ModelData/TexEntry. Called when the WebGL context was
+   * restored: the GPU objects those wrappers hold belong to the lost context,
+   * and nothing else clears this map (the engine caches are separate), so a
+   * rebuilt scene would keep drawing with dead VAOs and textures -- a black
+   * frame with the game still running.
+   */
+  clearCaches(): void {
+    this.models.clear();
+    this.texCache.clear();
+  }
+
   model(name: string): ModelData | null {
     return this.models.get(name) ?? null;
   }

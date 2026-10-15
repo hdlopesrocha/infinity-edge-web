@@ -126,6 +126,11 @@ export class Post {
     if (this.velocityTex) gl.deleteTexture(this.velocityTex);
     if (this.depthTex) gl.deleteTexture(this.depthTex);
     if (this.depthRb) gl.deleteTexture(this.depthRb);
+    // The depth-copy FBO references depthTex: keeping it would leave the blit
+    // writing into a deleted attachment (broken soft particles + GL errors),
+    // so drop it and let depthCopyFbo() rebuild it against the new texture.
+    if (this.depthCopyFboCache) gl.deleteFramebuffer(this.depthCopyFboCache);
+    this.depthCopyFboCache = null;
 
     this.colorTex = this.colorTarget(w, h);
     // Velocity: signed RG16F when float targets are available. Without them a
