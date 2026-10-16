@@ -173,6 +173,10 @@ export class RC {
 
   private async loadModel(gl: WebGL2RenderingContext, name: string): Promise<void> {
     if (this.models.has(name)) return;
+    // The existence checks below read the generated manifest; without it the
+    // loader probes optional variants (Wheel_color.json) that do not exist,
+    // which is a 404 on the published build. Wait for the list first.
+    await ensureManifests();
     const cfg = MODELS.find((m) => m.name === name);
     const detail = cfg?.detail ?? 1;
     // Model files are named after the Objects/ folder (ModelConfig.directory);
