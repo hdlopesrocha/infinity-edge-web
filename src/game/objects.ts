@@ -353,7 +353,11 @@ export class SpaceObject extends Object3D {
     const dist = d.camDistance(this.pos);
     const view = d.rc.options.distance;
     const models = Math.max(1, arr.length);
-    const j = clamp(Math.floor((3 * dist) / view + this.model.detail), 0, models - 1);
+    // Model3D.SolidDraw verbatim: 3 * len / distance + options._detail, clamped
+    // to the loaded LODs. The offset is the *player's* 3D-detail setting (0 =
+    // Very High ... 4 = Very Low), not the model's LOD count -- using the count
+    // pushed every draw to the last LOD and made the setting do nothing.
+    const j = clamp(Math.floor((3 * dist) / view + d.rc.options.detail), 0, models - 1);
     const gpu = arr[j] ?? fallback;
     if (!gpu) return null;
     return { gpu, alpha: clamp((view - dist) / 32, 0, 1) };
@@ -615,7 +619,7 @@ export class SpaceShip extends SpaceObject {
       const arr = this.shieldModel.color[0] ? this.shieldModel.color : this.shieldModel.solid;
       const dist = d.camDistance(this.pos);
       const view0 = d.rc.options.distance;
-      const j = clamp(Math.floor((3 * dist) / view0 + this.shieldModel.detail), 0, Math.max(0, arr.length - 1));
+      const j = clamp(Math.floor((3 * dist) / view0 + d.rc.options.detail), 0, Math.max(0, arr.length - 1));
       const gpu = arr[j] ?? arr[0];
       if (gpu) {
         draw.drawModel(gpu, this.shieldModel.tex, m, view, proj, d.camPos, {
