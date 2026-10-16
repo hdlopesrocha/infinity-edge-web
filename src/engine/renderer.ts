@@ -27,11 +27,8 @@ export interface RenderOptions {
   /** Lens-flare strength sampled from the rendered bright pass (0 = off). */
   flare: number;
   flareTex: TexEntry | null;
-  /** Ship-velocity streak at the screen edge, in UV (0 = none). */
-  speedBlur: number;
-  /** Screen point (UV) the ship is flying toward; the streak radiates from it. */
-  focusX: number;
-  focusY: number;
+  /** Blur strength from the camera's velocity (1 = plain exposure). */
+  gain: number;
 }
 
 // Motion-blur exposure: how much world motion one frame integrates. A fixed
@@ -49,7 +46,7 @@ export class Renderer {
   camera = new Camera();
   frustum: FrustumPlanes = createFrustum();
   stats: RenderStats = { fps: 0, draws: 0, culled: 0 };
-  renderOptions: RenderOptions = { motionBlur: false, flare: 0.9, flareTex: null, speedBlur: 0, focusX: 0.5, focusY: 0.5 };
+  renderOptions: RenderOptions = { motionBlur: false, flare: 0.9, flareTex: null, gain: 1 };
   /** Reusable counter for hierarchical culling (no per-frame allocation). */
   readonly cullStats: CullStats = { culled: 0 };
   onFrame: ((dtMs: number) => void) | null = null;
@@ -161,9 +158,7 @@ export class Renderer {
       flareTex: this.renderOptions.flareTex,
       shutter,
       maxBlur: 0.08,
-      speedBlur: this.renderOptions.speedBlur,
-      focusX: this.renderOptions.focusX,
-      focusY: this.renderOptions.focusY,
+      gain: this.renderOptions.gain,
     });
   }
 

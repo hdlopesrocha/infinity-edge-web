@@ -325,6 +325,8 @@ export class GameInstance {
     if (!this.skyGpu) return;
     const r = this.renderer;
     const draw = r.draw;
+    // The dome goes to its own target so the blur stage never touches it.
+    r.post.beginSky();
     draw.setNoDepth();
     draw.setCull('none');
     const m = mat4.create();
@@ -337,6 +339,7 @@ export class GameInstance {
     r.trackDraws(this.skyGpu.meshes.length);
     draw.setCull('none');
     draw.setDepth();
+    r.post.bindScene();
   }
 
   private drawGhost(d: DrawCtx): void {
@@ -383,33 +386,22 @@ export class GameInstance {
   }
 
   /**
-   * Speed-driven motion blur for the post chain: the streak runs along the
-   * ship's velocity (radiating from the screen point it is flying toward) and
-   * its length is the speed -- full throttle is 0.025 UV at the screen edge,
-   * nitro up to 1.6x that. Zero when the ship is not moving.
+   * Motion-blur strength from the camera's velocity: 1 at rest (plain
+   * exposure), up to 4 at full throttle (nitro included). The *direction* is
+   * per object -- the velocity buffer already carries the camera's position
+   * and rotation plus the object's own motion -- so this only scales it.
    */
-  speedBlur(): { amount: number; focusX: number; focusY: number } {
+  blurGain(): number {
     const o = this.selectedObject;
-    if (!o) return { amount: 0, focusX: 0.5, focusY: 0.5 };
-    const speed = vec3.length(o.vel);
-    const cap = o.physics.velMax * Math.max(1, o.multiplier) || 1;
-    const f = Math.min(1.6, speed / cap);
-    if (f <= 0.02) return { amount: 0, focusX: 0.5, focusY: 0.5 };
-    const dir = vec3.fromValues(o.vel[0], o.vel[1], o.vel[2]);
-    vec3.scale(dir, dir, 1 / (speed || 1));
+    if (!o) return 1;
     const cam = this.renderer.camera;
-    // Project a far point along the velocity: that is where the world streams
-    // away from, and it stays crisp while everything around it smears.
-    const p = this.project(
-      cam.position[0] + dir[0] * 1000,
-      cam.position[1] + dir[1] * 1000,
-      cam.position[2] + dir[2] * 1000,
-    );
-    return {
-      amount: f * 0.035,
-      focusX: p.x / Math.max(1, this.canvasW),
-      focusY: p.y / Math.max(1, this.canvasH),
-    };
+    const prev = this.renderer.prevCameraPos;
+    const dt = Math.max(1, this.dtMs) / 1000;
+    const speed = Math.hypot(
+      cam.position[0] - prev[0], cam.position[1] - prev[1], cam.position[2] - prev[2],
+    ) / dt;
+    const cap = o.physics.velMax * Math.max(1, o.multiplier) || 64;
+    return 1 + 2 * Math.min(1.5, speed / cap);
   }
 
   pointers(): PointerMark[] {

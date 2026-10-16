@@ -30,19 +30,19 @@ export interface PresentOptions {
   shutter: number;
   /** Maximum blur length in UV units per frame. */
   maxBlur: number;
-  /** Ship-velocity streak at the screen edge, in UV (0 = none). */
-  speedBlur: number;
-  /** Screen point (UV) the ship is flying toward; the streak radiates from it. */
-  focusX: number;
-  focusY: number;
+  /** Blur strength from the camera's velocity (1 = plain exposure). */
+  gain: number;
 }
 
 export class Post {
   gl: WebGL2RenderingContext;
   w = 0;
   h = 0;
-  /** Scene color (sRGB-ish RGBA8) — also the source of the lens flare. */
+  /** Scene colour: the 3D objects only, alpha = coverage (the sky is separate). */
   colorTex: WebGLTexture | null = null;
+  /** The sky sphere, drawn on its own so it is never blurred. */
+  skyTex: WebGLTexture | null = null;
+  skyFbo: WebGLFramebuffer | null = null;
   /** Screen-space velocity in UV/frame (RG16F when float targets are available). */
   velocityTex: WebGLTexture | null = null;
   /** Copy of the scene depth, sampled by the soft-particle smoke. */
@@ -74,10 +74,10 @@ export class Post {
     this.progBright = linkProgram(gl, FS_VERT, POST_BRIGHT_FRAG);
     this.progBlur = linkProgram(gl, FS_VERT, POST_BLUR_FRAG);
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
-    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uShutter', 'uMaxLen', 'uFocus', 'uAspect', 'uSpeedBlur']);
+    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uShutter', 'uMaxLen', 'uGain']);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
-    this.uComposite = uniforms(gl, this.progComposite, ['uColor', 'uBloom', 'uFlareTex', 'uFlare', 'uExposureKnee']);
+    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uSharp', 'uBlur', 'uBloom', 'uFlareTex', 'uBlurAmount', 'uFlare', 'uExposureKnee']);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -122,6 +122,8 @@ export class Post {
     disposeTarget(this.blurB);
     disposeTarget(this.mbColor);
     if (this.sceneFbo) gl.deleteFramebuffer(this.sceneFbo);
+    if (this.skyFbo) gl.deleteFramebuffer(this.skyFbo);
+    if (this.skyTex) gl.deleteTexture(this.skyTex);
     if (this.colorTex) gl.deleteTexture(this.colorTex);
     if (this.velocityTex) gl.deleteTexture(this.velocityTex);
     if (this.depthTex) gl.deleteTexture(this.depthTex);
@@ -133,6 +135,14 @@ export class Post {
     this.depthCopyFboCache = null;
 
     this.colorTex = this.colorTarget(w, h);
+    // Sky: the dome is drawn here, untouched by the blur stage. It covers the
+    // whole view, so it is cleared once here rather than every frame.
+    this.skyTex = this.colorTarget(w, h);
+    this.skyFbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.skyFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.skyTex, 0);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
     // Velocity: signed RG16F when float targets are available. Without them a
     // RGBA8 target cannot represent negative velocities, so the blur stage is
     // skipped rather than sampling a clamped/garbage buffer.
@@ -191,9 +201,27 @@ export class Post {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     gl.viewport(0, 0, this.w, this.h);
-    gl.clearColor(0, 0, 0, 1);
+    // Colour starts fully transparent: the scene holds the objects and their
+    // coverage, and the composite lays them over the sky and their own trail.
+    gl.clearColor(0, 0, 0, 0);
     gl.depthMask(true);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  }
+
+  /** Bind the sky target (the dome is drawn here, never blurred). */
+  beginSky(): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.skyFbo);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    gl.viewport(0, 0, this.w, this.h);
+  }
+
+  /** Back to the scene target after the sky pass (keeps its contents). */
+  bindScene(): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+    gl.viewport(0, 0, this.w, this.h);
   }
 
   /** Copy the opaque scene depth so soft particles can sample it. */
@@ -250,25 +278,26 @@ export class Post {
   /** Run the post chain into the default framebuffer. */
   present(opts: PresentOptions): void {
     const gl = this.gl;
-    let source = this.colorTex;
-    // 1. per-object motion blur
+    const sharp = this.colorTex;
+    let blurred = sharp;
+    let blurAmount = 0;
+    // 1. per-object motion blur of the objects (the sky is never blurred)
     if (opts.motionBlur && this.mbSupported) {
       this.blitPass(this.progMb, this.mbColor, () => {
         this.bindTex(this.uMb.uColor, 0, this.colorTex);
         this.bindTex(this.uMb.uVelocity, 1, this.velocityTex);
         gl.uniform1f(this.uMb.uShutter, opts.shutter);
         gl.uniform1f(this.uMb.uMaxLen, opts.maxBlur);
-        gl.uniform2f(this.uMb.uFocus, opts.focusX, opts.focusY);
-        gl.uniform1f(this.uMb.uAspect, this.w / Math.max(1, this.h));
-        gl.uniform1f(this.uMb.uSpeedBlur, opts.speedBlur);
+        gl.uniform1f(this.uMb.uGain, opts.gain);
       }, this.mbColor.w, this.mbColor.h);
-      source = this.mbColor.tex;
+      blurred = this.mbColor.tex;
+      blurAmount = 1;
     }
-    // 2. lens flare: bright pass -> small blur chain
+    // 2. lens flare: bright pass -> small blur chain (from the sharp objects)
     const flare = opts.flareTex ? opts.flare : 0;
     if (flare > 0) {
       this.blitPass(this.progBright, this.bright, () => {
-        this.bindTex(this.uBright.uColor, 0, source);
+        this.bindTex(this.uBright.uColor, 0, sharp);
         gl.uniform1f(this.uBright.uThreshold, 0.8);
       }, this.bright.w, this.bright.h);
       const dirs: [number, number][] = [[1, 0], [0, 1]];
@@ -288,12 +317,15 @@ export class Post {
         gl.uniform2f(this.uBlur.uDir, 2.5 / this.blurB.w, 2.5 / this.blurB.h);
       }, this.blurB.w, this.blurB.h);
     }
-    // 3. composite to the canvas
+    // 3. composite to the canvas: sky + blurred objects + sharp objects
     const bloom = flare > 0 ? this.blurB.tex : this.blurA.tex;
     this.blitPass(this.progComposite, null, () => {
-      this.bindTex(this.uComposite.uColor, 0, source);
-      this.bindTex(this.uComposite.uBloom, 1, bloom);
-      this.bindTex(this.uComposite.uFlareTex, 2, opts.flareTex ? opts.flareTex.tex : null);
+      this.bindTex(this.uComposite.uSky, 0, this.skyTex);
+      this.bindTex(this.uComposite.uSharp, 1, sharp);
+      this.bindTex(this.uComposite.uBlur, 2, blurred);
+      this.bindTex(this.uComposite.uBloom, 3, bloom);
+      this.bindTex(this.uComposite.uFlareTex, 4, opts.flareTex ? opts.flareTex.tex : null);
+      gl.uniform1f(this.uComposite.uBlurAmount, blurAmount);
       gl.uniform1f(this.uComposite.uFlare, flare);
       gl.uniform1f(this.uComposite.uExposureKnee, 0.55);
     }, gl.drawingBufferWidth, gl.drawingBufferHeight);

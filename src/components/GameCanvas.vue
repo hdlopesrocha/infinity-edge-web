@@ -244,14 +244,6 @@ onMounted(() => {
       // Options screen changes take effect immediately (and roll back on
       // cancel).
       renderer.renderOptions.motionBlur = rc.options.motionBlur;
-      // Motion blur follows the ship: direction along its velocity, amount by
-      // its speed (see GameInstance.speedBlur).
-      if (instance) {
-        const sb = instance.speedBlur();
-        renderer.renderOptions.speedBlur = sb.amount;
-        renderer.renderOptions.focusX = sb.focusX;
-        renderer.renderOptions.focusY = sb.focusY;
-      }
       renderer.renderOptions.flareTex = rc.tex('flare2');
       // Lens flare belongs to the game/menu scenes; the boot wheel stays crisp.
       renderer.renderOptions.flare = rc.options.billboards && store.sceneKey !== 'engine' ? 0.45 : 0;
@@ -262,6 +254,13 @@ onMounted(() => {
           renderer.endFrame();
           return;
         }
+        // The boot wheel has no sky sphere: clear the sky target so the
+        // composite shows black behind it rather than whatever the last scene
+        // left there, then keep drawing into the scene target.
+        renderer.post.beginSky();
+        renderer.gl.clearColor(0, 0, 0, 1);
+        renderer.gl.clear(renderer.gl.COLOR_BUFFER_BIT);
+        renderer.post.bindScene();
         const s = engineScene;
         s.t += dtMs;
         const total = 3000, trans = 500;
@@ -288,6 +287,9 @@ onMounted(() => {
       instance.canvasW = canvasRef.value?.clientWidth || 1280;
       instance.canvasH = canvasRef.value?.clientHeight || 720;
       instance.update(dtMs);
+      // Blur strength from the camera's velocity, sampled after the update so
+      // it compares this frame's camera against the previous frame's.
+      renderer.renderOptions.gain = instance.blurGain();
       renderer.beginFrame();
       instance.draw();
       renderer.endFrame();

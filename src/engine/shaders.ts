@@ -291,9 +291,7 @@ in vec2 vUV;
 uniform sampler2D uColor; uniform sampler2D uVelocity;
 uniform float uShutter;   // exposure length in frames
 uniform float uMaxLen;    // streak clamp, in UV units
-uniform vec2 uFocus;      // screen point the ship is flying toward (UV)
-uniform float uAspect;    // width / height
-uniform float uSpeedBlur; // ship-speed streak length at the screen edge (UV)
+uniform float uGain;      // strength from the camera's velocity
 out vec4 oColor;
 // Interleaved gradient noise: offsets the tap pattern per pixel so the streak
 // comes out smooth instead of a stack of discrete, faded copies.
@@ -301,24 +299,22 @@ float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00
 void main() {
   vec4 c = texture(uColor, vUV);
   // Per-object screen velocity (UV/frame, signed) written by the scene
-  // shaders from the previous frame's world/view-projection.
-  vec2 px = texture(uVelocity, vUV).xy * uShutter;
-  // Ship velocity: the world streams radially away from the point the ship is
-  // flying toward, and the streak grows with the distance from it -- so the
-  // vanishing point stays crisp while the frame smears along the flight path.
-  vec2 toFocus = (vUV - uFocus) * vec2(uAspect, 1.0);
-  float r = length(toFocus);
-  if (r > 1e-4) px += (toFocus / r) * (uSpeedBlur * r);
+  // shaders: it already carries the camera's position and rotation (every
+  // object moves with the view) plus the object's own motion. The gain scales
+  // the whole streak with how fast the camera itself is travelling.
+  vec2 px = texture(uVelocity, vUV).xy * uShutter * uGain;
   float len = length(px);
   if (len < 0.0015) { oColor = c; return; }
   if (len > uMaxLen) px *= uMaxLen / len;
   float j = ign(gl_FragCoord.xy);
-  vec3 sum = vec3(0.0);
+  vec4 sum = vec4(0.0);
   for (int i = 0; i < 24; i++) {
     float t = (float(i) + j) / 24.0 - 0.5;
-    sum += texture(uColor, vUV + px * t).rgb;
+    sum += texture(uColor, vUV + px * t);
   }
-  oColor = vec4(sum / 24.0, c.a);
+  // Coverage is averaged too: the composite needs it to lay the sharp objects
+  // over their own trail.
+  oColor = sum / 24.0;
 }`;
 
 export const POST_BRIGHT_FRAG = `#version 300 es
@@ -353,11 +349,19 @@ void main() {
 export const POST_COMPOSITE_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUV;
-uniform sampler2D uColor; uniform sampler2D uBloom; uniform sampler2D uFlareTex;
-uniform float uFlare; uniform float uExposureKnee;
+uniform sampler2D uSky; uniform sampler2D uSharp; uniform sampler2D uBlur;
+uniform sampler2D uBloom; uniform sampler2D uFlareTex;
+uniform float uBlurAmount; uniform float uFlare; uniform float uExposureKnee;
 out vec4 oColor;
 void main() {
-  vec3 col = texture(uColor, vUV).rgb;
+  // A + C + B, composited premultiplied: the sky (never blurred), the blurred
+  // objects over it, then the sharp objects over both -- so objects stay crisp
+  // and only their trail smears.
+  vec3 sky = texture(uSky, vUV).rgb;
+  vec4 sharp = texture(uSharp, vUV);
+  vec4 blur = texture(uBlur, vUV) * uBlurAmount;
+  vec3 col = blur.rgb + sky * (1.0 - blur.a);
+  col = sharp.rgb + col * (1.0 - sharp.a);
   vec2 d = vUV - vec2(0.5);
   if (uFlare > 0.0) {
     vec3 flare = texture(uBloom, vUV).rgb * 0.30;
