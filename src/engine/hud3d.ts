@@ -13,6 +13,36 @@ type Hud = typeof store.hud;
 const W = 1024;
 const H = 1024;
 
+// Same base the DOM HUD uses for its icons (GameView `base`).
+const TEX_BASE = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
+const AIM_URL = TEX_BASE + '_aim.png';
+const OVER_URL = TEX_BASE + '_over.png';
+
+/** Async icon cache: 2D-canvas drawImage of the real game art. Until an icon
+ *  has loaded the overlay falls back to the procedural shapes, so a slow
+ *  texture can never blank the HUD. */
+const iconCache = new Map<string, HTMLImageElement>();
+const iconPending = new Set<string>();
+function icon(url: string | null): HTMLImageElement | null {
+  if (!url) return null;
+  let img = iconCache.get(url);
+  if (img) return img.complete && img.naturalWidth > 0 ? img : null;
+  if (iconPending.has(url)) return null;
+  iconPending.add(url);
+  if (iconCache.size > 64) {
+    const first = iconCache.keys().next();
+    if (!first.done) iconCache.delete(first.value);
+  }
+  img = new Image();
+  img.decoding = 'async';
+  (img as HTMLImageElement).crossOrigin = 'anonymous';
+  img.onload = () => iconPending.delete(url);
+  img.onerror = () => iconPending.delete(url);
+  img.src = url;
+  iconCache.set(url, img);
+  return null;
+}
+
 function lifeColor(v: number, max: number): string {
   const p = max === 0 ? 0 : Math.max(0, v / max);
   const r = (((1 * (1 - p) + 0.2 * p) / 2) * 0.7 * 255) | 0;
@@ -153,46 +183,67 @@ export class HudOverlay {
       c.fillStyle = h.outside ? '#ff7a52' : '#7fe8d8';
       c.fillRect(bx + 12 * s, by + bh - 16 * sy, (bw - 24 * s) * pct, 5);
     }
-    // Aim reticle where the DOM crosshair sits (ellipse in canvas space so it
-    // is a true circle on screen whatever the viewport aspect is).
+    // Aim: the real _aim.png crosshair (32x32), exactly like the DOM HUD.
+    // Falls back to the drawn reticle until the icon loads.
     {
       const ax = h.aimX * sx, ay = h.aimY * sy;
       const rx = 22 * sx, ry = 22 * sy;
       const r = Math.max(rx, ry);
-      c.strokeStyle = 'rgba(255,255,255,0.9)';
-      c.lineWidth = Math.max(2, 2.5 * s);
+      const aimImg = icon(AIM_URL);
       shadow(4);
-      c.beginPath();
-      c.ellipse(ax, ay, rx, ry, 0, 0, Math.PI * 2);
-      c.stroke();
-      c.beginPath();
-      c.moveTo(ax - r - 8 * s, ay); c.lineTo(ax - r + 6 * s, ay);
-      c.moveTo(ax + r - 6 * s, ay); c.lineTo(ax + r + 8 * s, ay);
-      c.moveTo(ax, ay - r - 8 * s); c.lineTo(ax, ay - r + 6 * s);
-      c.moveTo(ax, ay + r - 6 * s); c.lineTo(ax, ay + r + 8 * s);
-      c.stroke();
+      if (aimImg) {
+        const iw = 32 * sx, ih = 32 * sy;
+        c.drawImage(aimImg, ax - iw / 2, ay - ih / 2, iw, ih);
+      } else {
+        c.strokeStyle = 'rgba(255,255,255,0.9)';
+        c.lineWidth = Math.max(2, 2.5 * s);
+        c.beginPath();
+        c.ellipse(ax, ay, rx, ry, 0, 0, Math.PI * 2);
+        c.stroke();
+        c.beginPath();
+        c.moveTo(ax - r - 8 * s, ay); c.lineTo(ax - r + 6 * s, ay);
+        c.moveTo(ax + r - 6 * s, ay); c.lineTo(ax + r + 8 * s, ay);
+        c.moveTo(ax, ay - r - 8 * s); c.lineTo(ax, ay - r + 6 * s);
+        c.moveTo(ax, ay + r - 6 * s); c.lineTo(ax, ay + r + 8 * s);
+        c.stroke();
+      }
     }
-    // Target markers: diamond in the team colour + label (ship %).
+    // Target markers: the same icons as the DOM HUD - _over.png (48x48) for
+    // locked targets, the object's own icon otherwise - plus the label.
+    // Procedural shapes cover icons that have not loaded yet.
     for (const m of h.pointers) {
       const mx = m.x * sx, my = m.y * sy;
       const rx = 16 * sx, ry = 16 * sy;
       const r = Math.max(rx, ry);
       const col = `rgb(${(m.color[0] * 255) | 0},${(m.color[1] * 255) | 0},${(m.color[2] * 255) | 0})`;
-      c.strokeStyle = col;
-      c.lineWidth = Math.max(2, 3 * s);
-      shadow(5);
-      c.beginPath();
-      if (m.over) {
-        c.ellipse(mx, my, rx, ry, 0, 0, Math.PI * 2);
+      const iwCss = m.over ? 48 : m.w;
+      const ihCss = m.over ? 48 : m.h;
+      const sprite = icon(m.over ? OVER_URL : m.iconUrl);
+      // Team-coloured glow, like the DOM drop-shadow on the marker.
+      c.shadowColor = col;
+      c.shadowBlur = 5;
+      if (sprite) {
+        const iw = iwCss * sx, ih = ihCss * sy;
+        c.drawImage(sprite, mx - iw / 2, my - ih / 2, iw, ih);
       } else {
-        c.moveTo(mx, my - r); c.lineTo(mx + r, my); c.lineTo(mx, my + r); c.lineTo(mx - r, my);
-        c.closePath();
+        c.strokeStyle = col;
+        c.lineWidth = Math.max(2, 3 * s);
+        c.shadowColor = 'rgba(0,0,0,0.9)';
+        c.beginPath();
+        if (m.over) {
+          c.ellipse(mx, my, rx, ry, 0, 0, Math.PI * 2);
+        } else {
+          c.moveTo(mx, my - r); c.lineTo(mx + r, my); c.lineTo(mx, my + r); c.lineTo(mx - r, my);
+          c.closePath();
+        }
+        c.stroke();
       }
-      c.stroke();
       if (m.label) {
         c.fillStyle = '#fff';
+        c.shadowColor = 'rgba(0,0,0,0.9)';
+        c.shadowBlur = 4;
         c.font = `${Math.round(17 * s)}px system-ui, sans-serif`;
-        c.fillText(m.label, mx, my + r + 4 * sy);
+        c.fillText(m.label, mx, my + Math.max(ihCss * sy / 2, r) + 4 * sy);
       }
     }
     // Life bars, bottom centre.
