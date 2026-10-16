@@ -18,7 +18,6 @@ export interface Options {
   distance: number;
   musicVolume: number;
   billboards: boolean;
-  motionBlur: boolean;
   cheats: boolean;
   axisX: boolean;
   axisY: boolean;
@@ -30,7 +29,7 @@ export function defaultOptions(): Options {
     // C# default is false; the shipped screenshots (SS1–SS8) and the MonoGame
     // port run show the special effects (star/cloud billboards + engine
     // flares), so the web build defaults to on.
-    musicVolume: 0.5, billboards: true, motionBlur: true, cheats: false,
+    musicVolume: 0.5, billboards: true, cheats: false,
     axisX: false, axisY: false,
   };
 }
@@ -40,11 +39,7 @@ export function defaultOptions(): Options {
 const WALL_TEXTURES = new Set(['hexagon', '_hexagon']);
 
 const OPTIONS_KEY = 'options.ie3d';
-
-// Bumped when the web defaults change in a way saved options would mask:
-// 1.0.0.4 turns Motion Blur on by default, so an old save holding "false"
-// is discarded once instead of silently keeping the effect off.
-const OPTIONS_VERSION = '1.0.0.4';
+const OPTIONS_VERSION = '1.0.0.5';
 
 export function loadOptions(): Options {
   const d = defaultOptions();
@@ -71,7 +66,6 @@ export function loadOptions(): Options {
       distance: parseInt(g('_distance', '192'), 10),
       musicVolume: parseFloat(g('_musicVolume', '0.5')),
       billboards: b('_billboards', d.billboards),
-      motionBlur: b('_motionBlur', d.motionBlur),
       axisX: b('_axisX', d.axisX),
       axisY: b('_axisY', d.axisY),
       cheats: d.cheats,
@@ -88,7 +82,7 @@ export function saveOptions(o: Options): void {
       `<Options _version="${OPTIONS_VERSION}" _userName="${o.username.replace(/"/g, '')}" ` +
         `_wireframe="${o.wireframe}" _detail="${o.detail}" _distance="${o.distance}" ` +
         `_musicVolume="${o.musicVolume}" _billboards="${o.billboards}" ` +
-        `_motionBlur="${o.motionBlur}" _axisY="${o.axisY}" _axisX="${o.axisX}" />`,
+        `_axisY="${o.axisY}" _axisX="${o.axisX}" />`,
     );
   } catch { /* ignore */ }
 }

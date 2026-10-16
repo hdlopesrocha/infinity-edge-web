@@ -113,12 +113,6 @@ function volumePct(): string {
       <div class="opt-list opt-list-right">
         <div class="opt-row">
           <label class="opt-check-label">
-            <span>Motion Blur: </span>
-            <input v-model="o.motionBlur" type="checkbox" class="opt-check" />
-          </label>
-        </div>
-        <div class="opt-row">
-          <label class="opt-check-label">
             <span>Invert X axis: </span>
             <input v-model="o.axisX" type="checkbox" class="opt-check" />
           </label>

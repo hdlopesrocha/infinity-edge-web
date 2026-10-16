@@ -360,8 +360,6 @@ export class GameInstance {
   }
 
   snapCamera(): void {
-    // A camera cut must not read as motion: start a fresh history.
-    this.renderer.resetVelocityHistory();
     if (this.gameType === 'BACK' || !this.selectedObject) {
       this.renderer.camera.lookAtPositionAuto(this.cameraTarget, 100000);
       return;
@@ -385,25 +383,6 @@ export class GameInstance {
       x: ((cx / cw) * 0.5 + 0.5) * this.canvasW,
       y: (1 - ((cy / cw) * 0.5 + 0.5)) * this.canvasH,
     };
-  }
-
-  /**
-   * Motion-blur strength from the camera's velocity: 1 at rest (plain
-   * exposure), up to 4 at full throttle (nitro included). The *direction* is
-   * per object -- the velocity buffer already carries the camera's position
-   * and rotation plus the object's own motion -- so this only scales it.
-   */
-  blurGain(): number {
-    const o = this.selectedObject;
-    if (!o) return 1;
-    const cam = this.renderer.camera;
-    const prev = this.renderer.prevCameraPos;
-    const dt = Math.max(1, this.dtMs) / 1000;
-    const speed = Math.hypot(
-      cam.position[0] - prev[0], cam.position[1] - prev[1], cam.position[2] - prev[2],
-    ) / dt;
-    const cap = o.physics.velMax * Math.max(1, o.multiplier) || 64;
-    return 1 + Math.min(1, speed / cap);
   }
 
   pointers(): PointerMark[] {

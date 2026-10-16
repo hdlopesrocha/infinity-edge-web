@@ -1,43 +1,26 @@
 // BasicEffect-exact GLSL: ambient 0.001, LightBlue spec 1024, per-pixel.
 
-// Motion-vector convention, shared by every pass that writes one. Mirrors
-// src/engine/motion.ts (single source of truth): independent perspective
-// divides, NDC -> UV with +Y up in both, velocity = currentUV - previousUV in
-// UV per rendered frame. Never subtract matrices, never scale by delta time.
-export const MB_VELOCITY_GLSL = `
-vec2 mbClipToUV(vec4 clip) {
-  return clip.xy / max(clip.w, 1e-4) * 0.5 + 0.5;
-}
-vec2 mbVelocity(vec4 curClip, vec4 prevClip) {
-  return mbClipToUV(curClip) - mbClipToUV(prevClip);
-}`;
-
 export const LIT_VERT = `#version 300 es
-${MB_VELOCITY_GLSL}
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 uniform mat4 uWorld; uniform mat4 uView; uniform mat4 uProj; uniform mat4 uWorldInvT;
-uniform mat4 uPrevWorld; uniform mat4 uViewProjPrev;
-out vec3 vN; out vec3 vW; out vec2 vUV; out vec2 vVel;
+out vec3 vN; out vec3 vW; out vec2 vUV;
 void main() {
   vec4 w = uWorld * vec4(aPos, 1.0);
   vW = w.xyz; vN = mat3(uWorldInvT) * aNormal; vUV = aUV;
   vec4 cur = uProj * uView * w;
-  vec4 prev = uViewProjPrev * (uPrevWorld * vec4(aPos, 1.0));
-  vVel = mbVelocity(cur, prev);
   gl_Position = cur;
 }`;
 
 export const LIT_FRAG = `#version 300 es
 precision highp float;
-in vec3 vN; in vec3 vW; in vec2 vUV; in vec2 vVel;
+in vec3 vN; in vec3 vW; in vec2 vUV;
 uniform sampler2D uTex; uniform bool uHasTex;
 uniform vec3 uDiffuse; uniform vec3 uEmissive; uniform vec3 uAmbient;
 uniform vec3 uLightDir; uniform vec3 uLightDiffuse; uniform vec3 uLightSpec;
 uniform float uShininess; uniform vec3 uCamPos; uniform float uAlpha;
 layout(location = 0) out vec4 oColor;
-layout(location = 1) out vec4 oVelocity;
 void main() {
   vec3 base = uDiffuse;
   vec4 sampled = uHasTex ? texture(uTex, vUV) : vec4(1.0);
@@ -50,35 +33,27 @@ void main() {
   float spec = pow(max(dot(N, H), 0.0), uShininess) * step(0.001, nd);
   vec3 col = base * (uAmbient + uLightDiffuse * nd) + uLightSpec * spec + uEmissive;
   oColor = vec4(col, uAlpha * sampled.a);
-  oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
 export const UNLIT_VERT = `#version 300 es
-${MB_VELOCITY_GLSL}
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 uniform mat4 uWorld; uniform mat4 uView; uniform mat4 uProj;
-uniform mat4 uPrevWorld; uniform mat4 uViewProjPrev;
-out vec2 vUV; out vec2 vVel;
 void main() {
   vUV = aUV;
   vec4 cur = uProj * uView * uWorld * vec4(aPos, 1.0);
-  vec4 prev = uViewProjPrev * (uPrevWorld * vec4(aPos, 1.0));
-  vVel = mbVelocity(cur, prev);
   gl_Position = cur;
 }`;
 
 export const UNLIT_FRAG = `#version 300 es
 precision highp float;
-in vec2 vUV; in vec2 vVel;
+in vec2 vUV;
 uniform sampler2D uTex; uniform bool uHasTex; uniform vec3 uColor; uniform float uAlpha;
 layout(location = 0) out vec4 oColor;
-layout(location = 1) out vec4 oVelocity;
 void main() {
   vec4 t = uHasTex ? texture(uTex, vUV) : vec4(1.0);
   oColor = vec4(uColor * t.rgb, uAlpha * t.a);
-  oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
 export const BB_VERT = `#version 300 es
@@ -107,28 +82,24 @@ void main() {
 // texture). aPrevPos carries the previous frame's world position so the pass
 // can write real per-object velocity for the motion-blur stage.
 export const BBQ_VERT = `#version 300 es
-${MB_VELOCITY_GLSL}
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aPrevPos;
 layout(location=2) in vec2 aUV;
 layout(location=3) in vec3 aColor;
 layout(location=4) in float aAlpha;
 uniform mat4 uView; uniform mat4 uProj; uniform mat4 uViewProjPrev;
-out vec2 vUV; out vec3 vColor; out float vAlpha; out vec2 vVel;
+out vec2 vUV; out vec3 vColor; out float vAlpha;
 void main() {
   vUV = aUV; vColor = aColor; vAlpha = aAlpha;
   vec4 cur = uProj * uView * vec4(aPos, 1.0);
-  vec4 prev = uViewProjPrev * vec4(aPrevPos, 1.0);
-  vVel = mbVelocity(cur, prev);
   gl_Position = cur;
 }`;
 
 export const BBQ_FRAG = `#version 300 es
 precision highp float;
-in vec2 vUV; in vec3 vColor; in float vAlpha; in vec2 vVel;
+in vec2 vUV; in vec3 vColor; in float vAlpha;
 uniform sampler2D uTex;
 layout(location = 0) out vec4 oColor;
-layout(location = 1) out vec4 oVelocity;
 void main() {
   vec4 t = texture(uTex, vUV);
   // Premultiplied colour, zero coverage: batched billboards (starfield,
@@ -136,7 +107,6 @@ void main() {
   // made the composite draw them sharp on top of the blurred layer and hide
   // the motion blur completely.
   oColor = vec4(vColor * t.rgb * vAlpha * t.a, 0.0);
-  oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
 // ---------------------------------------------------------------- smoke
@@ -146,18 +116,15 @@ void main() {
 // against the scene depth copy so puffs dissolve into geometry instead of
 // intersecting it hard.
 export const SMOKE_VERT = `#version 300 es
-${MB_VELOCITY_GLSL}
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aPrevPos;
 layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aData;   // x seed, y age01, z alpha, w turbulence
 uniform mat4 uView; uniform mat4 uProj; uniform mat4 uViewProjPrev;
-out vec2 vUV; out vec4 vData; out vec3 vWorld; out vec4 vClip; out vec2 vVel;
+out vec2 vUV; out vec4 vData; out vec3 vWorld; out vec4 vClip;
 void main() {
   vUV = aUV; vData = aData; vWorld = aPos;
   vec4 cur = uProj * uView * vec4(aPos, 1.0);
-  vec4 prev = uViewProjPrev * vec4(aPrevPos, 1.0);
-  vVel = mbVelocity(cur, prev);
   vClip = cur;
   gl_Position = cur;
 }`;
@@ -165,13 +132,12 @@ void main() {
 export const SMOKE_FRAG = `#version 300 es
 precision highp float;
 precision highp sampler3D;
-in vec2 vUV; in vec4 vData; in vec3 vWorld; in vec4 vClip; in vec2 vVel;
+in vec2 vUV; in vec4 vData; in vec3 vWorld; in vec4 vClip;
 uniform sampler3D uNoise;
 uniform sampler2D uDepth;
 uniform float uTime; uniform float uNear; uniform float uFar;
 uniform vec3 uTint; uniform float uFreq; uniform float uSoftness; uniform float uDensity;
 layout(location = 0) out vec4 oColor;
-layout(location = 1) out vec4 oVelocity;
 
 float linearDepth(float ndc) {
   float z = ndc * 2.0 - 1.0;
@@ -211,7 +177,6 @@ void main() {
   if (a <= 0.002) discard;
 
   oColor = vec4(uTint, a);
-  oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
 // ---------------------------------------------------------------- flare mesh
@@ -219,29 +184,25 @@ void main() {
 // ship's frame (parallax when the camera moves) with a volumetric thickness
 // term and noise-driven flicker instead of a camera-facing sprite.
 export const PLUME_VERT = `#version 300 es
-${MB_VELOCITY_GLSL}
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 uniform mat4 uWorld; uniform mat4 uPrevWorld; uniform mat4 uView; uniform mat4 uProj; uniform mat4 uViewProjPrev;
-out vec3 vN; out vec3 vW; out vec2 vUV; out vec2 vVel;
+out vec3 vN; out vec3 vW; out vec2 vUV;
 void main() {
   vec4 w = uWorld * vec4(aPos, 1.0);
   vW = w.xyz; vN = mat3(uWorld) * aNormal; vUV = aUV;
   vec4 cur = uProj * uView * w;
-  vec4 prev = uViewProjPrev * (uPrevWorld * vec4(aPos, 1.0));
-  vVel = mbVelocity(cur, prev);
   gl_Position = cur;
 }`;
 
 export const PLUME_FRAG = `#version 300 es
 precision highp float;
 precision highp sampler3D;
-in vec3 vN; in vec3 vW; in vec2 vUV; in vec2 vVel;
+in vec3 vN; in vec3 vW; in vec2 vUV;
 uniform sampler3D uNoise;
 uniform vec3 uCamPos; uniform vec3 uColor; uniform float uTime; uniform float uIntensity;
 layout(location = 0) out vec4 oColor;
-layout(location = 1) out vec4 oVelocity;
 
 // Turbine / afterburner fire: a blue-white core right at the nozzle that turns
 // orange further down the plume, turbulent tongues eating into the envelope,
@@ -277,7 +238,6 @@ void main() {
   float a = clamp(thick * burn * uIntensity, 0.0, 1.0);
   if (a <= 0.002) discard;
   oColor = vec4(col * a, a);
-  oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
 // ---------------------------------------------------------------- glow shell
@@ -287,17 +247,15 @@ export const GLOW_VERT = PLUME_VERT;
 
 export const GLOW_FRAG = `#version 300 es
 precision highp float;
-in vec3 vN; in vec3 vW; in vec2 vUV; in vec2 vVel;
+in vec3 vN; in vec3 vW; in vec2 vUV;
 uniform vec3 uCamPos; uniform vec3 uColor; uniform float uIntensity; uniform float uSoftness;
 layout(location = 0) out vec4 oColor;
-layout(location = 1) out vec4 oVelocity;
 void main() {
   vec3 V = normalize(uCamPos - vW);
   // uSoftness: high = tight hot spot (engine glow), low = broad fireball
   float a = pow(max(0.0, abs(dot(normalize(vN), V))), uSoftness) * uIntensity;
   if (a <= 0.002) discard;
   oColor = vec4(uColor * a, a);
-  oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
 // ---------------------------------------------------------------- post chain
@@ -305,79 +263,6 @@ export const FS_VERT = `#version 300 es
 layout(location=0) in vec2 aCorner;
 out vec2 vUV;
 void main() { vUV = aCorner * 0.5 + 0.5; gl_Position = vec4(aCorner, 0.0, 1.0); }`;
-
-export const POST_MB_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUV;
-uniform sampler2D uColor;    // sharp 3D objects (premultiplied, alpha = coverage)
-uniform sampler2D uVelocity; // per-pixel screen velocity, UV/frame
-uniform sampler2D uDepth;    // opaque scene depth (window space copy)
-uniform float uShutter;      // exposure / rendered frame interval (1 = one frame)
-uniform float uMaxLen;       // streak cap in UV
-uniform float uNear; uniform float uFar;
-uniform float uDepthTol;     // relative view-depth tolerance
-uniform int uSamples;        // integration samples, <= MB_MAX_SAMPLES
-out vec4 oColor;
-const int MB_MAX_SAMPLES = 32;
-// Interleaved gradient noise: offsets the tap pattern per pixel so the streak
-// is smooth instead of a stack of discrete, faded copies.
-float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
-float viewDepth(vec2 uv) {
-  float ndc = texture(uDepth, uv).r * 2.0 - 1.0;
-  return (2.0 * uNear * uFar) / (uFar + uNear - ndc * (uFar - uNear));
-}
-void main() {
-  vec4 c = texture(uColor, vUV);
-  // uVelocity holds the screen motion of the surface under this pixel
-  // *relative to the camera*: the scene shaders project each vertex with the
-  // current and the previous view-projection (currentUV - previousUV), so
-  // camera translation/rotation and the object's own movement are both in it,
-  // with perspective baked in (near surfaces move far, distant ones barely).
-  vec2 flow = texture(uVelocity, vUV).xy * uShutter;
-  float len = length(flow);
-  if (len < 0.0015) { oColor = c; return; }   // negligible motion: stay sharp
-  if (len > uMaxLen) flow *= uMaxLen / len;    // extreme motion: clamp
-  float d0 = viewDepth(vUV);
-  float j = ign(gl_FragCoord.xy);
-  int n = clamp(uSamples, 2, MB_MAX_SAMPLES);
-  vec4 sum = vec4(0.0);
-  float wsum = 0.0;
-  for (int i = 0; i < MB_MAX_SAMPLES; i++) {
-    if (i >= n) break;
-    // Trailing exposure: t = 0 is this frame, t = -1 the start of the
-    // exposure, so the streak always trails behind the motion, never ahead.
-    float t = -1.0 + (float(i) + j) / float(n);
-    vec2 suv = clamp(vUV + flow * t, vec2(0.0), vec2(1.0));
-    // Weight by depth similarity instead of hard rejection: samples that land
-    // on a much nearer/further surface fade out, so a streak does not smear
-    // one surface across another, while a surface's own trail survives.
-    float d = viewDepth(suv);
-    float rel = abs(d - d0) / max(uDepthTol * max(d, d0), 1e-4);
-    float w = 1.0 / (1.0 + rel * rel);
-    sum += texture(uColor, suv) * w;
-    wsum += w;
-  }
-  // Coverage is averaged too: the composite lays the sharp objects over this.
-  oColor = wsum > 0.0 ? sum / wsum : c;
-}`;
-
-// Debug view for the motion-blur stage: renders the per-pixel velocity buffer
-// straight to the canvas. Red = signed +x, green = signed +y (both scaled and
-// biased around mid grey), blue = magnitude. Enable with
-//   #/game/<level>?debug=velocity
-// (optionally &scale=<n>, default 10).
-export const POST_VELOCITY_DEBUG_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUV;
-uniform sampler2D uVelocity;  // UV per frame, signed
-uniform float uScale;
-out vec4 oColor;
-void main() {
-  vec2 v = texture(uVelocity, vUV).xy * uScale;
-  oColor = vec4(clamp(v.x, -1.0, 1.0) * 0.5 + 0.5,
-                clamp(v.y, -1.0, 1.0) * 0.5 + 0.5,
-                clamp(length(v), 0.0, 1.0), 1.0);
-}`;
 
 export const POST_BRIGHT_FRAG = `#version 300 es
 precision highp float;
@@ -411,19 +296,15 @@ void main() {
 export const POST_COMPOSITE_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUV;
-uniform sampler2D uSky; uniform sampler2D uSharp; uniform sampler2D uBlur;
+uniform sampler2D uSky; uniform sampler2D uSharp;
 uniform sampler2D uBloom; uniform sampler2D uFlareTex;
-uniform float uBlurAmount; uniform float uFlare; uniform float uExposureKnee;
+uniform float uFlare; uniform float uExposureKnee;
 out vec4 oColor;
 void main() {
-  // A + C + B, composited premultiplied: the sky (never blurred), the blurred
-  // objects over it, then the sharp objects over both -- so objects stay crisp
-  // and only their trail smears.
+  // Sky layer behind the 3D objects (premultiplied compositing).
   vec3 sky = texture(uSky, vUV).rgb;
   vec4 sharp = texture(uSharp, vUV);
-  vec4 blur = texture(uBlur, vUV) * uBlurAmount;
-  vec3 col = blur.rgb + sky * (1.0 - blur.a);
-  col = sharp.rgb + col * (1.0 - sharp.a);
+  vec3 col = sharp.rgb + sky * (1.0 - sharp.a);
   vec2 d = vUV - vec2(0.5);
   if (uFlare > 0.0) {
     vec3 flare = texture(uBloom, vUV).rgb * 0.30;
