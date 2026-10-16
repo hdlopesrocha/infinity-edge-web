@@ -15,6 +15,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/tt/:diff', name: 'tracks', component: () => import('../views/TracksView.vue') },
   { path: '/briefing/:level', name: 'briefing', component: () => import('../views/BriefingView.vue') },
   { path: '/game/:level', name: 'game', component: () => import('../views/GameView.vue') },
+  { path: '/hangar', name: 'hangar', component: () => import('../views/HangarView.vue') },
   { path: '/options', name: 'options', component: () => import('../views/OptionsView.vue') },
   { path: '/settings', redirect: '/options' },
   { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },

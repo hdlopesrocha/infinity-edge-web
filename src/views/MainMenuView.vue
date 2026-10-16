@@ -1,4 +1,4 @@
-<!-- MainMenu.xml: SINGLE PLAYER / OPTIONS / ABOUT. -->
+<!-- MainMenu.xml: SINGLE PLAYER / OPTIONS / ABOUT, plus the web-only HANGAR. -->
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
@@ -21,6 +21,10 @@ function go(path: string): void {
         <button class="icon-btn" @click="go('/single-player')">
           <img :src="base + '_singlePlayer.png'" alt="" />
           <span class="cap">SINGLE PLAYER</span>
+        </button>
+        <button class="icon-btn" @click="go('/hangar')">
+          <img :src="base + 'Fighter3_icon.png'" alt="" />
+          <span class="cap">HANGAR</span>
         </button>
         <button class="icon-btn" @click="go('/options')">
           <img :src="base + '_optionsIcon.png'" alt="" />
