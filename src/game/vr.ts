@@ -80,6 +80,8 @@ export const vrState = reactive({
   lastError: '' as string,
   /** What the platform said about motion access, for the status line. */
   permission: 'unknown' as string,
+  /** 'webxr' inside an immersive session, otherwise the sensor fallback. */
+  mode: 'none' as 'none' | 'webxr' | 'sensor',
   /** True once the player has looked around by dragging (sensor fallback). */
   dragLook: false,
 });
@@ -90,7 +92,21 @@ interface PermissionCapable {
   requestPermission?: () => Promise<'granted' | 'denied'>;
 }
 
-export async function enableVr(): Promise<VrStatus> {
+export async function enableVr(
+  xr?: { renderer: import('../engine/renderer').Renderer; getInstance: () => import('./instance').GameInstance | null; onEnd: () => void },
+): Promise<VrStatus> {
+  // Real VR first: an immersive session, not a gyroscope imitation.
+  if (xr) {
+    try {
+      const { enterXr } = await import('./xr');
+      if (await enterXr(xr.renderer as never, xr.getInstance, xr.onEnd)) {
+        vrState.status = 'on';
+        vrState.mode = 'webxr';
+        store.vr = true;
+        return 'on';
+      }
+    } catch { /* fall through to the sensor path */ }
+  }
   const ev = (typeof window !== 'undefined'
     ? (window as unknown as { DeviceOrientationEvent?: PermissionCapable }).DeviceOrientationEvent
     : undefined);

@@ -53,6 +53,8 @@ export class Renderer {
   /** Reusable counter for hierarchical culling (no per-frame allocation). */
   readonly cullStats: CullStats = { culled: 0 };
   onFrame: ((dtMs: number) => void) | null = null;
+  /** True while a WebXR session drives the rendering (see game/xr.ts). */
+  xrActive = false;
   onStats: ((s: RenderStats) => void) | null = null;
   onRebuilt: (() => void) | null = null;
   private raf = 0;

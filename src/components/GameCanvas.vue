@@ -346,6 +346,12 @@ onMounted(() => {
       if (!instance || !renderer) return;
       instance.canvasW = canvasRef.value?.clientWidth || 1280;
       instance.canvasH = canvasRef.value?.clientHeight || 720;
+      if (renderer.xrActive) {
+        // WebXR owns the drawing; this loop only advances the simulation so
+        // the ship keeps flying in the headset.
+        if (!store.paused) instance.update(dtMs);
+        return;
+      }
       if (store.paused) {
         // Paused: the world stands still but the frame keeps drawing, so the
         // pause panel can show live option changes behind it.

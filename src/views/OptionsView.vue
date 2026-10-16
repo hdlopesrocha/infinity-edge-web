@@ -18,6 +18,7 @@ const router = useRouter();
 const o = store.options;
 const vrOn = () => store.vr;
 const vrStatusTextRaw = () => {
+  if (vrState.mode === 'webxr') return 'Immersive WebXR session running';
   if (vrState.status === 'unsupported') return 'no motion sensor in this browser';
   if (!store.vr) return 'needs a phone or tablet with a gyroscope (over https)';
   if (vrState.tracking && vrState.dragLook) return 'active - drag the scene to look';
@@ -29,8 +30,17 @@ const vrStatusText = (): string =>
 async function toggleVr(): Promise<void> {
   audio.unlock();
   void audio.sfx('button');
-  if (store.vr) setVr(false);
-  else await enableVr();
+  if (store.vr) {
+    const { leaveXr } = await import('../game/xr');
+    leaveXr();
+    setVr(false);
+    return;
+  }
+  await enableVr({
+    renderer: (window as unknown as { __ieRenderer: import('../engine/renderer').Renderer }).__ieRenderer,
+    getInstance: () => (window as unknown as { __ieGame?: import('../game/instance').GameInstance }).__ieGame ?? null,
+    onEnd: () => undefined,
+  });
 }
 const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
 const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
