@@ -118,6 +118,11 @@ export class Draw {
   uUnlit: Record<string, WebGLUniformLocation | null>;
   quadVao: WebGLVertexArrayObject | null = null;
   private invT = mat4.create();
+  /** Notifies the post chain whether the opaque pass (velocity) is active. */
+  onVelocityWrite: ((on: boolean) => void) | null = null;
+  /** 1 / scene target size, used to turn gl_FragCoord into UV. */
+  invSize: [number, number] = [1 / 1280, 1 / 720];
+
   /** Previous frame's view-projection, for per-object velocity. */
   prevViewProj: mat4 = mat4.create();
   /** Set each frame by the Post owner: copies the opaque depth for soft smoke. */
@@ -157,8 +162,8 @@ export class Draw {
     this.gl = gl;
     this.lit = linkProgram(gl, LIT_VERT, LIT_FRAG);
     this.unlit = linkProgram(gl, UNLIT_VERT, UNLIT_FRAG);
-    this.uLit = uniforms(gl, this.lit, ['uWorld', 'uView', 'uProj', 'uWorldInvT', 'uPrevWorld', 'uViewProjPrev', 'uTex', 'uHasTex', 'uDiffuse', 'uEmissive', 'uAmbient', 'uLightDir', 'uLightDiffuse', 'uLightSpec', 'uShininess', 'uCamPos', 'uAlpha']);
-    this.uUnlit = uniforms(gl, this.unlit, ['uWorld', 'uPrevWorld', 'uViewProjPrev', 'uView', 'uProj', 'uTex', 'uHasTex', 'uColor', 'uAlpha']);
+    this.uLit = uniforms(gl, this.lit, ['uWorld', 'uView', 'uProj', 'uWorldInvT', 'uPrevWorld', 'uViewProjPrev', 'uTex', 'uHasTex', 'uDiffuse', 'uEmissive', 'uAmbient', 'uLightDir', 'uLightDiffuse', 'uLightSpec', 'uShininess', 'uCamPos', 'uAlpha', 'uInvSize']);
+    this.uUnlit = uniforms(gl, this.unlit, ['uWorld', 'uPrevWorld', 'uViewProjPrev', 'uView', 'uProj', 'uTex', 'uHasTex', 'uColor', 'uAlpha', 'uInvSize']);
     this.bbq = linkProgram(gl, BBQ_VERT, BBQ_FRAG);
     this.uBbq = uniforms(gl, this.bbq, ['uView', 'uProj', 'uViewProjPrev', 'uTex']);
     {
@@ -243,6 +248,7 @@ export class Draw {
     const gl = this.gl;
     this.flushBillboards();
     this.flushSmoke();
+    this.onVelocityWrite?.(true);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
     gl.enable(gl.CULL_FACE);
@@ -253,6 +259,7 @@ export class Draw {
     const gl = this.gl;
     this.flushBillboards();
     this.flushSmoke();
+    this.onVelocityWrite?.(false);
     // First transparent pass of the frame: the opaque depth is now complete,
     // copy it so the soft-particle smoke can fade against real geometry.
     if (this.onBlitDepth) {
@@ -270,6 +277,7 @@ export class Draw {
     const gl = this.gl;
     this.flushBillboards();
     this.flushSmoke();
+    this.onVelocityWrite?.(false);
     gl.depthMask(false);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
@@ -350,6 +358,7 @@ export class Draw {
       gl.uniform3f(U.uEmissive, opts.emissive[0], opts.emissive[1], opts.emissive[2]);
       gl.uniform1f(U.uShininess, 1024);
       gl.uniform1f(U.uAlpha, opts.alpha * (mat?.alpha ?? 1));
+    gl.uniform2f(U.uInvSize, this.invSize[0], this.invSize[1]);
       gl.bindVertexArray(m.vao);
       gl.drawElements(gl.TRIANGLES, m.indexCount, m.indexType, 0);
     }
@@ -379,6 +388,7 @@ export class Draw {
     gl.uniform1i(U.uHasTex, tex ? 1 : 0);
     gl.uniform3f(U.uColor, color[0], color[1], color[2]);
     gl.uniform1f(U.uAlpha, alpha);
+    gl.uniform2f(U.uInvSize, this.invSize[0], this.invSize[1]);
     for (const m of model.meshes) {
       gl.bindVertexArray(m.vao);
       gl.drawElements(gl.TRIANGLES, m.indexCount, m.indexType, 0);
@@ -652,6 +662,7 @@ export class Draw {
     gl.uniform1i(U.uHasTex, tex ? 1 : 0);
     gl.uniform3f(U.uColor, color[0], color[1], color[2]);
     gl.uniform1f(U.uAlpha, alpha);
+    gl.uniform2f(U.uInvSize, this.invSize[0], this.invSize[1]);
     gl.bindVertexArray(q.vao);
     // Draws.TextureSquare also switches to RasterizerState.CullNone.
     const cull = gl.isEnabled(gl.CULL_FACE);

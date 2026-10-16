@@ -262,6 +262,9 @@ export class GameMap {
             ypr(obj.rot, getH(d), getV(d), 0);
           }
           obj.update();
+          // Fresh history: the ship was teleported from where it died, so the
+          // old pose would read as a huge one-frame motion and streak.
+          obj.markPrev();
           this.insertObject(obj);
         } else {
           keep.push(timer);

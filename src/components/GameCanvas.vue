@@ -64,6 +64,7 @@ async function rebuild(): Promise<void> {
     gi.canvasW = canvasRef.value?.clientWidth || 1280;
     gi.canvasH = canvasRef.value?.clientHeight || 720;
     instance = gi;
+    renderer.resetHistory();
     (window as unknown as { __ieGame?: GameInstance }).__ieGame = gi;
   } catch (e) {
     glError.value = 'Scene failed: ' + (e as Error).message;

@@ -570,6 +570,7 @@ export class SpaceShip extends SpaceObject {
         this.prevPos[0] + r * vrPrev[0], this.prevPos[1] + r * vrPrev[1], this.prevPos[2] + r * vrPrev[2],
       ));
       mat4.multiply(localPrev, localPrev, shipRotPrev);
+      if (this.isPlayer) mat4.copy(localPrev, local);
       mat4.multiply(localPrev, localPrev, rotX);
       mat4.multiply(localPrev, localPrev, scale);
       draw.drawPlume(local, localPrev, view, proj, d.camPos, [1, 0.62, 0.2], 0.8 * thrust + 0.1 * level);
@@ -584,6 +585,7 @@ export class SpaceShip extends SpaceObject {
       mat4.fromScaling(glowScale, vec3.fromValues(core, core, core));
       mat4.multiply(glow, glow, glowScale);
       mat4.multiply(glowPrev, glowPrev, glowScale);
+      if (this.isPlayer) mat4.copy(glowPrev, glow);
       draw.drawGlow(glow, glowPrev, view, proj, d.camPos, [0.75, 0.88, 1.0], 0.3 + 0.3 * thrust);
       const halo = core * 2.2;
       mat4.fromScaling(glowScale, vec3.fromValues(halo, halo, halo));
@@ -627,7 +629,7 @@ export class SpaceShip extends SpaceObject {
       if (gpu) {
         draw.drawModel(gpu, this.shieldModel.tex, m, view, proj, d.camPos, {
           alpha: (this.shield / 10) * clamp((view0 - dist) / 32, 0, 1), emissive: this.team.color, light: true,
-          prevWorld: this.prevMatrix(),
+          prevWorld: this.isPlayer ? m : this.prevMatrix(),
         });
         d.rc.renderer.trackDraws(gpu.meshes.length);
       }
@@ -1164,6 +1166,8 @@ export class Ark extends SpaceObject {
     if (this.alpha !== 1) return;
     const L = this.lod(d, 'solid');
     if (!L) return;
+    // The player's ship is held still on screen by the chase camera: prev ==
+    // current with the locked view-projection is exactly zero velocity.
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
       alpha: this.alpha * L.alpha, emissive: this.color, light: true, prevWorld: this.prevMatrix(),
     });

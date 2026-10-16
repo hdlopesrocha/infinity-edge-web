@@ -94,6 +94,7 @@ export class Renderer {
       }
     });
     this.resizeObs.observe(canvas);
+    this.draw.onVelocityWrite = (on: boolean): void => this.post.setVelocityWrite(on);
     this.camera.setAspect(canvas.clientWidth / Math.max(1, canvas.clientHeight));
     this.camera.updateMatrices();
   }
@@ -102,7 +103,20 @@ export class Renderer {
   private syncTargets(): void {
     this.post.resize(this.canvas.width, this.canvas.height);
     this.draw.bindSceneDepth(this.post.depthTex);
+    this.draw.invSize = [1 / Math.max(1, this.post.w), 1 / Math.max(1, this.post.h)];
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  /**
+   * Drop the frame history so the next frame reports zero motion. Called on
+   * scene changes and after a context restore: without it the first frame of
+   * the new scene would be compared against the old scene's camera and the
+   * whole screen would streak.
+   */
+  resetHistory(): void {
+    this.hasPrevViewProj = false;
+    this.draw.prevViewProj = this.camera.viewProj;
+    vec3.copy(this.prevCameraPos, this.camera.position);
   }
 
   private handleLost(): void {
@@ -119,6 +133,7 @@ export class Renderer {
     this.noise = createNoiseTexture(this.gl);
     this.draw.bindNoise(this.noise.tex);
     this.syncTargets();
+    this.resetHistory();
     clearTextureCache();
     clearModelCache();
     this.onRebuilt?.();
@@ -127,6 +142,7 @@ export class Renderer {
 
   beginFrame(): void {
     const gl = this.gl;
+    this.draw.onVelocityWrite = (on: boolean): void => this.post.setVelocityWrite(on);
     if (resizeGL(this.canvas, gl)) {
       this.camera.setAspect(this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
       this.syncTargets();
