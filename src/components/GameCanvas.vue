@@ -344,6 +344,8 @@ onMounted(() => {
       renderer.beginFrame();
       instance.draw();
       renderer.endFrame();
+      // After zoom blur: the ships are drawn sharp on top of the blurred view.
+      if (renderer.renderOptions.zoom > 0) instance.drawShipsSharp();
       // After all movements of the frame: publish the HUD snapshot the DOM
       // overlay renders from.
       syncHud(instance);

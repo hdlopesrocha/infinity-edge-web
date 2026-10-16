@@ -321,6 +321,43 @@ export class GameInstance {
     void d;
   }
 
+  /**
+   * Re-draw every live ship sharp over the canvas, after the post chain has
+   * composited the (zoom-blurred) frame: the blur smears the world, the ships
+   * stay readable on top. The canvas depth is cleared first so ships sort
+   * against each other; there is no world depth there, which is the point --
+   * they are highlighted, not re-occluded.
+   */
+  drawShipsSharp(): void {
+    const r = this.renderer;
+    const gl = r.gl;
+    const d: DrawCtx = {
+      draw: r.draw,
+      view: r.camera.view,
+      proj: r.camera.proj,
+      camPos: r.camera.position,
+      camDistance: (pos: vec3) => {
+        const c = r.camera.position;
+        return Math.hypot(pos[0] - c[0], pos[1] - c[1], pos[2] - c[2]);
+      },
+      rc: this.rc,
+    };
+    const ships = this.map.visible.filter(
+      (o): o is SpaceShip => o instanceof SpaceShip && o.active,
+    );
+    if (ships.length === 0) return;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    gl.clearDepth(1 as unknown as number);
+    gl.depthMask(true);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    r.draw.setOpaque();
+    for (const o of ships) o.solidDraw(d);
+    r.draw.setTransparent();
+    for (const o of ships) o.alphaDraw(d);
+    r.draw.setOpaque();
+  }
+
   private drawSky(): void {
     if (!this.skyGpu) return;
     const r = this.renderer;
