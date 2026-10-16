@@ -84,7 +84,7 @@ export class Post {
     this.progBright = linkProgram(gl, FS_VERT, POST_BRIGHT_FRAG);
     this.progBlur = linkProgram(gl, FS_VERT, POST_BLUR_FRAG);
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
-    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uDepth', 'uInvViewProj', 'uViewProjPrev', 'uShutter', 'uMaxLen', 'uNear', 'uFar', 'uDepthTol', 'uSamples']);
+    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uDepth', 'uShutter', 'uMaxLen', 'uNear', 'uFar', 'uDepthTol', 'uSamples']);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
     this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uSharp', 'uBlur', 'uBloom', 'uFlareTex', 'uBlurAmount', 'uFlare', 'uExposureKnee']);
@@ -295,9 +295,8 @@ export class Post {
     if (opts.motionBlur && this.mbSupported) {
       this.blitPass(this.progMb, this.mbColor, () => {
         this.bindTex(this.uMb.uColor, 0, this.colorTex);
-        this.bindTex(this.uMb.uDepth, 1, this.depthTex);
-        gl.uniformMatrix4fv(this.uMb.uInvViewProj, false, opts.invViewProj as Float32Array);
-        gl.uniformMatrix4fv(this.uMb.uViewProjPrev, false, opts.viewProjPrev as Float32Array);
+        this.bindTex(this.uMb.uVelocity, 1, this.velocityTex);
+        this.bindTex(this.uMb.uDepth, 2, this.depthTex);
         gl.uniform1f(this.uMb.uShutter, opts.shutter);
         gl.uniform1f(this.uMb.uMaxLen, opts.maxBlur);
         gl.uniform1f(this.uMb.uNear, opts.near);

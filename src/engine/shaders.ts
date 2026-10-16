@@ -306,9 +306,8 @@ export const POST_MB_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D uColor;    // sharp 3D objects (premultiplied, alpha = coverage)
+uniform sampler2D uVelocity; // per-pixel screen velocity, UV/frame
 uniform sampler2D uDepth;    // opaque scene depth (window space copy)
-uniform mat4 uInvViewProj;   // inverse of this frame's view-projection
-uniform mat4 uViewProjPrev;  // previous frame's view-projection
 uniform float uShutter;      // exposure / rendered frame interval (1 = one frame)
 uniform float uMaxLen;       // streak cap in UV
 uniform float uNear; uniform float uFar;
@@ -316,48 +315,45 @@ uniform float uDepthTol;     // relative view-depth tolerance
 uniform int uSamples;        // integration samples, <= MB_MAX_SAMPLES
 out vec4 oColor;
 const int MB_MAX_SAMPLES = 32;
+// Interleaved gradient noise: offsets the tap pattern per pixel so the streak
+// is smooth instead of a stack of discrete, faded copies.
+float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 float viewDepth(vec2 uv) {
   float ndc = texture(uDepth, uv).r * 2.0 - 1.0;
   return (2.0 * uNear * uFar) / (uFar + uNear - ndc * (uFar - uNear));
 }
-// Per-pixel 3D motion: reconstruct the world position this pixel shows from
-// the depth buffer, then project it through the *previous* frame's
-// view-projection. That is the exact screen motion of the surface under the
-// camera's own translation and rotation -- with perspective, so near surfaces
-// streak and distant ones barely move, and a forward flight smears radially
-// out of the direction of travel. No per-object velocity buffer involved.
-vec2 cameraFlow(vec2 uv, float depth) {
-  if (depth >= 0.999999) return vec2(0.0);          // no geometry: no flow
-  vec4 world = uInvViewProj * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
-  if (abs(world.w) < 1e-6) return vec2(0.0);
-  world /= world.w;
-  vec4 prev = uViewProjPrev * world;
-  if (prev.w <= 1e-5) return vec2(0.0);             // behind the previous camera
-  vec2 prevUV = prev.xy / prev.w * 0.5 + 0.5;
-  return clamp(uv - prevUV, vec2(-1.0), vec2(1.0));
-}
 void main() {
   vec4 c = texture(uColor, vUV);
-  float d0 = viewDepth(vUV);
-  vec2 flow = cameraFlow(vUV, texture(uDepth, vUV).r) * uShutter;
+  // uVelocity holds the screen motion of the surface under this pixel
+  // *relative to the camera*: the scene shaders project each vertex with the
+  // current and the previous view-projection (currentUV - previousUV), so
+  // camera translation/rotation and the object's own movement are both in it,
+  // with perspective baked in (near surfaces move far, distant ones barely).
+  vec2 flow = texture(uVelocity, vUV).xy * uShutter;
   float len = length(flow);
   if (len < 0.0015) { oColor = c; return; }   // negligible motion: stay sharp
   if (len > uMaxLen) flow *= uMaxLen / len;    // extreme motion: clamp
+  float d0 = viewDepth(vUV);
+  float j = ign(gl_FragCoord.xy);
   int n = clamp(uSamples, 2, MB_MAX_SAMPLES);
   vec4 sum = vec4(0.0);
   float wsum = 0.0;
   for (int i = 0; i < MB_MAX_SAMPLES; i++) {
     if (i >= n) break;
     // Trailing exposure: t = 0 is this frame, t = -1 the start of the
-    // exposure, so the streak always trails behind the motion.
-    float t = -1.0 + (float(i) + 0.5) / float(n);
+    // exposure, so the streak always trails behind the motion, never ahead.
+    float t = -1.0 + (float(i) + j) / float(n);
     vec2 suv = clamp(vUV + flow * t, vec2(0.0), vec2(1.0));
-    // Reject taps on a different surface: a streak must not cross a silhouette.
+    // Weight by depth similarity instead of hard rejection: samples that land
+    // on a much nearer/further surface fade out, so a streak does not smear
+    // one surface across another, while a surface's own trail survives.
     float d = viewDepth(suv);
-    float w = (abs(d - d0) <= uDepthTol * max(d, d0) + 1e-4) ? 1.0 : 0.0;
+    float rel = abs(d - d0) / max(uDepthTol * max(d, d0), 1e-4);
+    float w = 1.0 / (1.0 + rel * rel);
     sum += texture(uColor, suv) * w;
     wsum += w;
   }
+  // Coverage is averaged too: the composite lays the sharp objects over this.
   oColor = wsum > 0.0 ? sum / wsum : c;
 }`;
 
