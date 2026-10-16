@@ -29,7 +29,10 @@ function goCrumb(index: number): void {
   if (delta <= 0) return;
   audio.unlock();
   void audio.sfx('button');
-  router.go(-delta);
+  // Entries synthesised after a reload are not in the browser history, so
+  // popping would leave the app: push instead (the trail truncates itself).
+  if (trail.items[index].synth) void router.push(trail.items[index].path);
+  else router.go(-delta);
 }
 
 function goPrimary(): void {
