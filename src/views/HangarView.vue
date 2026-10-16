@@ -51,7 +51,7 @@ const padControls = [
 const vrNotes = [
   ['Look around', 'Move / rotate the device'],
   ['Re-centre', 'Tap the scene'],
-  ['All input', 'Gamepad only (touch disabled)'],
+  ['Input', 'Gamepad, keyboard or touch'],
 ];
 </script>
 

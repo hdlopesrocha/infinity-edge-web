@@ -227,15 +227,16 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
           <span class="pause-value">{{ Math.round(o.musicVolume * 100) }}%</span>
         </label>
         <div class="pause-row">
-          <span>VR mode <span class="c-white50">(gyroscope + gamepad)</span></span>
+          <span>VR mode <span class="c-white50">(gyroscope)</span></span>
           <span class="pause-value">
-            <button class="pause-btn" style="padding: 4px 10px;" :disabled="!pad"
-                    :title="pad ? 'Move the device to look; tap the scene to re-centre' : 'Connect a gamepad first'"
+            <button class="pause-btn" style="padding: 4px 10px;"
+                    title="Move the device to look; tap the scene to re-centre"
                     @click="toggleVr">{{ vr ? 'ON' : 'OFF' }}</button>
           </span>
         </div>
         <div v-if="vr" class="pause-row">
-          <span class="c-white50">Move the device to look, tap the scene to re-centre, Start pauses</span>
+          <span class="c-white50">Look: move the device &middot; Re-centre: tap the scene
+            {{ pad ? '&middot; Gamepad: stick + RT' : '&middot; No gamepad: keyboard or touch still works' }}</span>
         </div>
         <label class="pause-row">
           <span>Invert X / Y</span>

@@ -1,8 +1,8 @@
 // VR mode: head-tracked view from the device's gyroscope.
 //
-// Entered from the in-game settings, and only when a gamepad is connected --
-// in VR the pad is the only input (the touch layer is disabled), so without a
-// pad you would be stuck looking around with no way to fly.
+// Entered from the in-game settings. A gamepad is recommended (the gaze
+// cursor handles the menus, the stick flies), but it is not required: without
+// one you keep the keyboard and touch controls and still look around.
 //
 // The camera keeps its chase position; the *view* gets an extra yaw/pitch
 // taken from DeviceOrientationEvent. Tapping the screen calibrates: whatever
@@ -49,7 +49,6 @@ export function vrAvailable(): boolean {
 }
 
 export function setVr(on: boolean): void {
-  if (on && !gamepadConnected()) return;   // pad required
   store.vr = on;
   if (on) bind();
 }
