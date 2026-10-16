@@ -317,6 +317,14 @@ export class GameInstance {
     // billboard target, depth-tested against the models' depth.
     const gl = r.gl;
     r.draw.deferred = true;
+    // Deferred depth test: the opaque geometry runs twice - first a depth-only
+    // pass (no colour writes) that completes the depth buffer, then the colour
+    // pass, whose depth test resolves against it with LEQUAL, so occlusion no
+    // longer depends on draw order at all. See-through queues built by the
+    // prepass are dropped; the colour pass queues them again.
+    this.map.depthPass(d);
+    r.draw.clearBatches();
+    gl.depthFunc(gl.LEQUAL);
     this.map.draw(d);
     if (this.gameType !== 'BACK') this.drawGhost(d);
     r.draw.deferred = false;

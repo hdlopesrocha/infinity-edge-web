@@ -137,11 +137,11 @@ export class Draw {
   private uBbq: Record<string, WebGLUniformLocation | null>;
   private bbqVao: WebGLVertexArrayObject | null = null;
   private bbqVbo: WebGLBuffer | null = null;
-  /** Billboard batches, one vertex list per texture: the models pass defers
-   *  every flush (see `deferred`), so batches can no longer be cut by an
-   *  immediate flush on texture change - they accumulate per texture and all
-   *  land in the billboard framebuffer afterwards. */
-  private bbqBatches: { tex: TexEntry | null; verts: number[] }[] = [];
+  /** Billboard batches, one per texture: the models pass defers every flush
+   *  (see `deferred`), so batches accumulate per texture and land in the
+   *  billboard framebuffer afterwards. Each quad keeps its view-space depth so
+   *  a batch is emitted far-to-near (correct for alpha-blended sprites). */
+  private bbqBatches: { tex: TexEntry | null; quads: { vz: number; verts: number[] }[] }[] = [];
   /** While true (the models pass), flushBillboards/flushSmoke hold their
    *  queues instead of drawing: the billboard framebuffer is rendered after
    *  the models, depth-tested against the models' depth. */
@@ -151,7 +151,8 @@ export class Draw {
   private uSmoke: Record<string, WebGLUniformLocation | null>;
   private smokeVao: WebGLVertexArrayObject | null = null;
   private smokeVbo: WebGLBuffer | null = null;
-  private smokeVerts: number[] = [];
+  /** Smoke particles with their view-space depth (sorted far-to-near). */
+  private smokeQuads: { vz: number; verts: number[] }[] = [];
   // Flare geometry.
   private plumeProg: WebGLProgram;
   private uPlume: Record<string, WebGLUniformLocation | null>;
@@ -401,7 +402,7 @@ export class Draw {
     if (alpha <= 0.001 || size <= 0) return;
     let batch = this.bbqBatches.length > 0 ? this.bbqBatches[this.bbqBatches.length - 1] : null;
     if (!batch || batch.tex !== tex) {
-      batch = { tex, verts: [] };
+      batch = { tex, quads: [] };
       this.bbqBatches.push(batch);
     }
     this.bbqView = view;
@@ -420,7 +421,7 @@ export class Draw {
     ];
     const uv: [number, number][] = [[1, 0], [1, 1], [0, 0], [0, 1]];
     const idx = [0, 1, 2, 1, 3, 2];
-    const verts = batch!.verts;
+    const verts: number[] = [];
     for (const i of idx) {
       verts.push(
         c[i][0], c[i][1], c[i][2],
@@ -428,6 +429,10 @@ export class Draw {
         uv[i][0], uv[i][1], color[0], color[1], color[2], alpha,
       );
     }
+    // View-space depth of the centre: far is more negative, so ascending vz
+    // is far-to-near.
+    const vf = view as unknown as Float32Array;
+    batch!.quads.push({ vz: vf[2] * cx + vf[6] * cy + vf[10] * cz + vf[14], verts });
   }
 
   /** Previous-frame centre for the *next* billboard (velocity). */
@@ -459,12 +464,16 @@ export class Draw {
     const cull = gl.isEnabled(gl.CULL_FACE);
     if (cull) gl.disable(gl.CULL_FACE);
     for (const batch of this.bbqBatches) {
-      if (batch.verts.length === 0) continue;
+      if (batch.quads.length === 0) continue;
+      // Far to near, so alpha-blended sprites layer correctly.
+      batch.quads.sort((a, b) => a.vz - b.vz);
+      const flat: number[] = [];
+      for (const q of batch.quads) for (const n of q.verts) flat.push(n);
       const t = batch.tex ?? getFallback(gl);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, t.tex);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(batch.verts), gl.DYNAMIC_DRAW);
-      gl.drawArrays(gl.TRIANGLES, 0, batch.verts.length / 12);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(flat), gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, flat.length / 12);
     }
     if (cull) gl.enable(gl.CULL_FACE);
     gl.bindVertexArray(null);
@@ -499,12 +508,14 @@ export class Draw {
     ];
     const uv: [number, number][] = [[0, 0], [0, 1], [1, 0], [1, 1]];
     const idx = [0, 1, 2, 1, 3, 2];
+    const verts: number[] = [];
     for (const i of idx) {
-      this.smokeVerts.push(
+      verts.push(
         c[i][0], c[i][1], c[i][2], prevX, prevY, prevZ,
         uv[i][0], uv[i][1], seed, age01, alpha, turbulence,
       );
     }
+    this.smokeQuads.push({ vz: v[2] * cx + v[6] * cy + v[10] * cz + v[14], verts });
   }
 
   private smokeView: mat4 | null = null;
@@ -512,8 +523,8 @@ export class Draw {
 
   flushSmoke(): void {
     if (this.deferred) return;
-    if (!this.smokeVerts.length || !this.smokeView || !this.smokeProj) {
-      this.smokeVerts.length = 0;
+    if (this.smokeQuads.length === 0 || !this.smokeView || !this.smokeProj) {
+      this.smokeQuads.length = 0;
       return;
     }
     const gl = this.gl;
@@ -538,13 +549,24 @@ export class Draw {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindVertexArray(this.smokeVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.smokeVbo);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.smokeVerts), gl.DYNAMIC_DRAW);
+    // Far to near: the puffs are alpha blended, so front puffs must land last.
+    this.smokeQuads.sort((a, b) => a.vz - b.vz);
+    const flat: number[] = [];
+    for (const q of this.smokeQuads) for (const n of q.verts) flat.push(n);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(flat), gl.DYNAMIC_DRAW);
     const cull = gl.isEnabled(gl.CULL_FACE);
     if (cull) gl.disable(gl.CULL_FACE);
-    gl.drawArrays(gl.TRIANGLES, 0, this.smokeVerts.length / 12);
+    gl.drawArrays(gl.TRIANGLES, 0, flat.length / 12);
     if (cull) gl.enable(gl.CULL_FACE);
     gl.bindVertexArray(null);
-    this.smokeVerts.length = 0;
+    this.smokeQuads.length = 0;
+  }
+
+  /** Drop everything queued so far (the depth-only prepass queues see-through
+   *  geometry that the colour pass will queue again). */
+  clearBatches(): void {
+    this.bbqBatches.length = 0;
+    this.smokeQuads.length = 0;
   }
 
   /** Camera planes + smoke look; set by the renderer once per frame. */

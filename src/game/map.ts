@@ -405,6 +405,22 @@ export class GameMap {
     }
   }
 
+  /** Deferred depth test: write the opaque depth buffer once, colour masked
+   *  off, so the colour pass resolves its depth test against a complete depth
+   *  buffer instead of building one as it draws. */
+  depthPass(d: DrawCtx): void {
+    const gl = d.rc.renderer.gl;
+    const items: OctItem[] = [];
+    this.octree.frustumSelect(d.rc.renderer.frustum, items, d.rc.renderer.cullStats);
+    const list = (items as Abstract3D[]).filter(
+      (o) => o.physics.objectType !== ObKind.Uncollidable || o.active,
+    );
+    d.draw.setOpaque();
+    gl.colorMask(false, false, false, false);
+    for (const o of list) o.solidDraw(d);
+    gl.colorMask(true, true, true, true);
+  }
+
   draw(d: DrawCtx): void {
     const draw = d.draw;
     const r = d.rc.renderer;
