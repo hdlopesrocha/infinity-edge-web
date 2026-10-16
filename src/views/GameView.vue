@@ -111,7 +111,7 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
 </script>
 
 <template>
-  <div class="hud">
+  <div class="hud" @contextmenu.prevent>
     <div class="hud-score">{{ hud.score }}</div>
     <div v-if="hud.matchLeft !== null" class="hud-match" :class="{ low: matchLow }">{{ matchClock }}</div>
     <div v-if="hud.notify" class="hud-notify">{{ hud.notify }}</div>
@@ -129,8 +129,8 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
     </div>
     <div ref="layerRef" class="touch-layer" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp">
       <template v-if="hud.stickOn">
-        <img class="stick-back" :src="base + '_backAnalog.png'" alt="" draggable="false" :style="`left:${hud.backX}px;top:${hud.backY}px;`" />
-        <img class="stick-knob" :src="base + '_stickAnalog.png'" alt="" draggable="false" :style="`left:${hud.knobX}px;top:${hud.knobY}px;`" />
+        <img class="stick-back" draggable="false" :src="base + '_backAnalog.png'" alt="" :style="`left:${hud.backX}px;top:${hud.backY}px;`" />
+        <img class="stick-knob" draggable="false" :src="base + '_stickAnalog.png'" alt="" :style="`left:${hud.knobX}px;top:${hud.knobY}px;`" />
       </template>
       <div class="accel-bar" :style="`left:${hud.canvasW - 96 + 40}px;top:${hud.canvasH - 400 + 48}px;height:${400 - 96}px;`"></div>
       <img
