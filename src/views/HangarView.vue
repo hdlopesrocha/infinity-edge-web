@@ -36,6 +36,16 @@ const controls = [
   ['Nitro', 'Shift or N'],
   ['Back', 'Esc or Backspace'],
 ];
+
+/** Game controller (Xbox layout / any standard-mapped pad). */
+const padControls = [
+  ['Steer', 'Left stick'],
+  ['Thrust', 'RT (or A)'],
+  ['Fire cannon', 'A'],
+  ['Homing missile', 'B'],
+  ['Nitro', 'X'],
+  ['Pause', 'Start'],
+];
 </script>
 
 <template>
@@ -55,6 +65,11 @@ const controls = [
         </div>
         <div class="f-middle c-white" style="margin-top: 14px;">CONTROLS</div>
         <div v-for="[k, v] in controls" :key="k" class="hangar-row">
+          <span class="c-white70">{{ k }}</span>
+          <span>{{ v }}</span>
+        </div>
+        <div class="f-middle c-white" style="margin-top: 14px;">GAMEPAD</div>
+        <div v-for="[k, v] in padControls" :key="k" class="hangar-row">
           <span class="c-white70">{{ k }}</span>
           <span>{{ v }}</span>
         </div>

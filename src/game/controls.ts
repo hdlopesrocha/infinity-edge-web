@@ -67,6 +67,8 @@ export class AnalogAcel {
   old = 0;
   /** Last value set by a touch drag: the throttle stays where it was left. */
   touchValue = 0;
+  /** True while the pad was the last thing providing thrust. */
+  padWasThrust = false;
   /** True while the throttle is being commanded by the keyboard. */
   keyThrust = false;
   // Area/Back rectangles: Area (W-96, H-400, 96x400); Back (Area.X+48, Area.Y+48, 16x304)
@@ -123,9 +125,37 @@ export class TouchButton {
   }
 }
 
+/**
+ * Gamepad support (Xbox layout, any standard-mapped pad).
+ *
+ *   left stick  steer / pitch      RT or A  thrust (analog trigger)
+ *   A           fire cannon        B        homing missile
+ *   X           nitro              Start    pause
+ *
+ * Polled every frame; a pad only appears in navigator.getGamepads() after its
+ * first button press, which is exactly when we start reading it. Values feed
+ * the same Control fields as the keyboard and touch, so the ship behaves
+ * identically whatever the input.
+ */
+const PAD_DEADZONE = 0.15;
+const PAD_FIRE = 0;
+const PAD_HOMING = 1;
+const PAD_NITRO = 2;
+const PAD_PAUSE = 9;
+
+function padAxis(v: number): number {
+  const a = Math.abs(v) < PAD_DEADZONE ? 0 : (Math.abs(v) - PAD_DEADZONE) / (1 - PAD_DEADZONE);
+  return v < 0 ? -a : a;
+}
+
 export class Control {
   analogStick = new AnalogStick();
   analogAcel = new AnalogAcel();
+  /** Set for one frame when the pad asks to pause (Start). */
+  pauseRequested = false;
+  /** True while a standard-mapped pad is being used. */
+  padActive = false;
+  private padPauseHeld = false;
   fireButton = new TouchButton(1);
   homingButton = new TouchButton(2);
   nitroButton = new TouchButton(3);
@@ -173,9 +203,43 @@ export class Control {
     }
     if (has('KeyM')) this.homingButton.value = true;
     if (has('ShiftLeft', 'ShiftRight', 'KeyN', 'KeyB')) this.nitroButton.value = true;
+    this.readGamepad();
     this.analogStick.finish();
     this.analogAcel.finish();
     void this.w;
     void this.h;
+  }
+
+  private readGamepad(): void {
+    if (typeof navigator === 'undefined' || !navigator.getGamepads) return;
+    const pads = navigator.getGamepads();
+    let pad: Gamepad | null = null;
+    for (const p of pads) {
+      if (p && p.connected) { pad = p; break; }
+    }
+    if (!pad) { this.padActive = false; return; }
+    this.padActive = true;
+    // Left stick: steer/pitch, same path as the keyboard stick.
+    const x = padAxis(pad.axes[0] ?? 0);
+    const y = padAxis(pad.axes[1] ?? 0);
+    if (x !== 0) this.analogStick.value.x = x;
+    if (y !== 0) this.analogStick.value.y = y;
+    // Throttle: right trigger (analog), or A held down as a fallback.
+    const rt = pad.buttons[7]?.value ?? 0;
+    const a = pad.buttons[PAD_FIRE]?.pressed ? 1 : 0;
+    const thrust = Math.max(rt, a * 0.999);
+    if (thrust > 0.05) {
+      this.analogAcel.value = Math.max(this.analogAcel.value, thrust);
+      this.analogAcel.keyThrust = true;
+    } else if (this.analogAcel.keyThrust && !this.analogAcel.padWasThrust) {
+      this.analogAcel.keyThrust = false;
+      this.analogAcel.value = this.analogAcel.touchValue;
+    }
+    this.analogAcel.padWasThrust = thrust > 0.05;
+    if (pad.buttons[PAD_FIRE]?.pressed) this.fireButton.value = true;
+    if (pad.buttons[PAD_HOMING]?.pressed) this.homingButton.value = true;
+    if (pad.buttons[PAD_NITRO]?.pressed) this.nitroButton.value = true;
+    if (pad.buttons[PAD_PAUSE]?.pressed && !this.padPauseHeld) this.pauseRequested = true;
+    this.padPauseHeld = !!pad.buttons[PAD_PAUSE]?.pressed;
   }
 }

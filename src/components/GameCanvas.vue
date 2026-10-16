@@ -326,6 +326,10 @@ onMounted(() => {
         syncHud(instance);
         return;
       }
+      if (instance.control.pauseRequested) {
+        instance.control.pauseRequested = false;
+        store.paused = !store.paused;
+      }
       instance.update(dtMs);
       renderer.beginFrame();
       instance.draw();
