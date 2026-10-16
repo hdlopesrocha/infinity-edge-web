@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 import type { RouteRecordRaw } from 'vue-router';
 import { syncSceneState } from '../game/store';
+import { trailLabel, visitTrail } from '../game/trail';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'boot', component: () => import('../views/BootView.vue') },
@@ -33,4 +34,7 @@ router.afterEach((to) => {
   const name = String(to.name ?? 'notfound');
   const param = typeof to.params.level === 'string' ? to.params.level : undefined;
   syncSceneState(name, param);
+  // The boot screens are transient: they should not appear in the breadcrumb.
+  if (name === 'boot' || name === 'engine' || name === 'start') return;
+  visitTrail(to.path, trailLabel(name, typeof to.params.diff === 'string' ? to.params.diff : param));
 });
