@@ -33,6 +33,8 @@ import { mat4 } from '../engine/math';
 import type { GameInstance } from './instance';
 import { store } from './store';
 import { calibrateVr } from './vr';
+import { syncHud } from './hud';
+import { HudOverlay } from '../engine/hud3d';
 
 type XrSystem = {
   isSessionSupported(mode: string): Promise<boolean>;
@@ -114,6 +116,7 @@ export async function enterXr(
   const head = mat4.create();
   const chase = mat4.create();
   let last = 0;
+  let hudOverlay: HudOverlay | null = null;
 
   const loop = (time: number, frame: XRFrame): void => {
     if (!session) return;
@@ -127,6 +130,7 @@ export async function enterXr(
     instance.canvasW = gl.drawingBufferWidth;
     instance.canvasH = gl.drawingBufferHeight;
     if (!store.paused) instance.update(dt);
+    syncHud(instance);
     mat4.copy(chase, renderer.camera.view);
     const cam = renderer.camera;
     // Each eye goes through the whole normal pipeline (scene target, scene
@@ -146,6 +150,13 @@ export async function enterXr(
       renderer.beginFrame();   // scene target + frustum for this eye
       instance.draw();         // scene into the scene target
       renderer.endFrame();     // composite straight into the XR framebuffer
+      // The DOM is hidden inside the session, so the HUD (score, clock, aim,
+      // life, markers, notifications) is composited here in GL, per eye.
+      try {
+        if (!hudOverlay) hudOverlay = new HudOverlay(gl);
+        hudOverlay.update(store.hud);
+        hudOverlay.draw(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
+      } catch { /* a failed overlay must never kill the frame */ }
     }
     renderer.viewport = null;
     renderer.presentFbo = null;
