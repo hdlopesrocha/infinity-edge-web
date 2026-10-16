@@ -33,6 +33,8 @@ export const store = reactive({
   /** True while the in-game pause overlay is open: the world stops, the
    *  scene keeps rendering so option changes are visible behind it. */
   paused: false,
+  /** VR mode: head-tracked view, gamepad-only input (see game/vr.ts). */
+  vr: false,
   username: '' as string,
   levelText: '' as string,
   result: null as { won: boolean; reward: string; message: string | null; level: string } | null,

@@ -10,6 +10,7 @@ import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
 import { store, syncOptionsFromRC } from '../game/store';
+import { calibrateVr, vrLook } from '../game/vr';
 import { Life3 } from '../game/life';
 import { audio } from '../game/audio';
 
@@ -145,6 +146,11 @@ function syncHud(g: GameInstance): void {
   hud.canvasW = g.canvasW;
   hud.canvasH = g.canvasH;
   hud.frame++;
+}
+
+/** In VR a tap on the scene re-centres the view on the current heading. */
+function onVrTap(): void {
+  if (store.vr) calibrateVr();
 }
 
 function onKeyDown(e: KeyboardEvent): void {
@@ -330,6 +336,10 @@ onMounted(() => {
         instance.control.pauseRequested = false;
         store.paused = !store.paused;
       }
+      // VR: gyroscope drives the view, gamepad drives the ship.
+      const look = store.vr ? vrLook() : { yaw: 0, pitch: 0, tracking: false };
+      renderer.camera.vrYaw = look.tracking ? look.yaw : 0;
+      renderer.camera.vrPitch = look.tracking ? look.pitch : 0;
       instance.update(dtMs);
       renderer.beginFrame();
       instance.draw();
@@ -356,6 +366,7 @@ onMounted(() => {
       }
     }, 300);
     window.addEventListener('keydown', onKeyDown);
+    canvasRef.value?.addEventListener('pointerdown', onVrTap);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onWindowBlur);
     document.addEventListener('visibilitychange', onVisibilityChange);

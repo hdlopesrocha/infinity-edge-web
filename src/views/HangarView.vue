@@ -46,6 +46,13 @@ const padControls = [
   ['Nitro', 'X'],
   ['Pause', 'Start'],
 ];
+
+/** VR mode (needs a connected gamepad). */
+const vrNotes = [
+  ['Look around', 'Move / rotate the device'],
+  ['Re-centre', 'Tap the scene'],
+  ['All input', 'Gamepad only (touch disabled)'],
+];
 </script>
 
 <template>
@@ -70,6 +77,11 @@ const padControls = [
         </div>
         <div class="f-middle c-white" style="margin-top: 14px;">GAMEPAD</div>
         <div v-for="[k, v] in padControls" :key="k" class="hangar-row">
+          <span class="c-white70">{{ k }}</span>
+          <span>{{ v }}</span>
+        </div>
+        <div class="f-middle c-white" style="margin-top: 14px;">VR MODE</div>
+        <div v-for="[k, v] in vrNotes" :key="k" class="hangar-row">
           <span class="c-white70">{{ k }}</span>
           <span>{{ v }}</span>
         </div>

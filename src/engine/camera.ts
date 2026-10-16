@@ -22,6 +22,9 @@ export class Camera {
   viewProj = mat4.create();
   world = mat4.create();
   orbitAngle = 0;
+  /** VR head offset in degrees, applied on top of the chase view. */
+  vrYaw = 0;
+  vrPitch = 0;
 
   setAspect(aspect: number): void {
     this.aspect = aspect;
@@ -30,6 +33,16 @@ export class Camera {
 
   updateMatrices(): void {
     mat4.lookAt(this.view, this.position, this.lookAt, this.up);
+    // VR: rotate the view around the camera (position untouched) by the head
+    // offset from the gyroscope. Applies after lookAt, before the projection.
+    if (this.vrYaw !== 0 || this.vrPitch !== 0) {
+      const rad = Math.PI / 180;
+      if (this.vrYaw !== 0) mat4.rotate(this.view, this.view, this.vrYaw * rad, this.up);
+      if (this.vrPitch !== 0) {
+        const right = vec3.fromValues(this.view[0], this.view[4], this.view[8]);
+        mat4.rotate(this.view, this.view, this.vrPitch * rad, right);
+      }
+    }
     mat4.perspective(this.proj, this.fov, this.aspect, this.near, this.far);
     mat4.multiply(this.viewProj, this.proj, this.view);
     vec3.subtract(this.direction, this.lookAt, this.position);

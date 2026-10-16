@@ -9,6 +9,7 @@ import type { GameInstance } from '../game/instance';
 import { saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
+import { gamepadConnected, setVr } from '../game/vr';
 
 const route = useRoute();
 const router = useRouter();
@@ -93,6 +94,15 @@ const paused = computed(() => store.paused);
 const showSettings = ref(false);
 const o = store.options;
 const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
+const pad = ref(gamepadConnected());
+const vr = computed(() => store.vr);
+const padPoll = window.setInterval(() => { const now = gamepadConnected(); if (now !== pad.value) pad.value = now; }, 1000);
+onBeforeUnmount(() => window.clearInterval(padPoll));
+function toggleVr(): void {
+  audio.unlock();
+  void audio.sfx('button');
+  setVr(!store.vr);
+}
 
 /** In-game pause: the back button (or Escape) pauses instead of leaving. */
 function goBriefing(): void {
@@ -214,6 +224,17 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
           <input v-model.number="o.musicVolume" type="range" min="0" max="1" step="0.05" @input="applyLive" />
           <span class="pause-value">{{ Math.round(o.musicVolume * 100) }}%</span>
         </label>
+        <div class="pause-row">
+          <span>VR mode <span class="c-white50">(gyroscope + gamepad)</span></span>
+          <span class="pause-value">
+            <button class="pause-btn" style="padding: 4px 10px;" :disabled="!pad"
+                    :title="pad ? 'Move the device to look; tap the scene to re-centre' : 'Connect a gamepad first'"
+                    @click="toggleVr">{{ vr ? 'ON' : 'OFF' }}</button>
+          </span>
+        </div>
+        <div v-if="vr" class="pause-row">
+          <span class="c-white50">Move the device to look, tap the scene to re-centre, Start pauses</span>
+        </div>
         <label class="pause-row">
           <span>Invert X / Y</span>
           <span class="pause-value">
