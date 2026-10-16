@@ -6,6 +6,8 @@ interface XRViewerPose { views: XRView[] }
 interface XRFrame { getViewerPose(space: unknown): XRViewerPose | null }
 interface XRWebGLLayer {
   framebuffer: WebGLFramebuffer | null;
+  framebufferWidth: number;
+  framebufferHeight: number;
   getViewport(view: XRView): XRViewport | null;
 }
 declare const XRWebGLLayer: { new (session: unknown, gl: WebGL2RenderingContext): XRWebGLLayer };
@@ -87,6 +89,7 @@ export async function enterXr(
     xrActive: boolean;
     viewport: { x: number; y: number; w: number; h: number } | null;
     presentFbo: WebGLFramebuffer | null;
+    presentBounds: { w: number; h: number } | null;
     beginFrame: () => void;
     endFrame: (hud?: typeof store.hud | null) => void;
     renderOptions: { zoom: number };
@@ -116,6 +119,10 @@ export async function enterXr(
   // with the runtime's own far plane, not the player's.
   const far = Math.max(64, store.options.distance || 0) || 192;
   s.updateRenderState({ baseLayer: layer, depthNear: 0.1, depthFar: far });
+  // The eye viewports are in the layer's framebuffer pixels, not the canvas's:
+  // the UI rect math needs that space to put the HUD in the same spot in both
+  // eyes instead of doubling it.
+  renderer.presentBounds = { w: layer.framebufferWidth, h: layer.framebufferHeight };
   const refSpace = await s.requestReferenceSpace('local');
   const head = mat4.create();
   const chase = mat4.create();
@@ -180,6 +187,7 @@ export async function enterXr(
   s.addEventListener('end', () => {
     session = null;
     renderer.xrActive = false;
+    renderer.presentBounds = null;
     if (!keepVrOnEnd) store.vr = false;
     keepVrOnEnd = false;
     onEnd();

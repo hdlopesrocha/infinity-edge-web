@@ -58,6 +58,9 @@ export class Renderer {
   viewport: { x: number; y: number; w: number; h: number } | null = null;
   /** Composite framebuffer: null = the canvas; WebXR sets its base layer here. */
   presentFbo: WebGLFramebuffer | null = null;
+  /** Pixel size of the presentation target. null = the canvas; WebXR sets its
+   *  layer size (the eye rects live in that space, not the canvas's). */
+  presentBounds: { w: number; h: number } | null = null;
   /** Reusable counter for hierarchical culling (no per-frame allocation). */
   readonly cullStats: CullStats = { culled: 0 };
   onFrame: ((dtMs: number) => void) | null = null;
@@ -158,14 +161,17 @@ export class Renderer {
     this.draw.onBlitDepth = () => this.post.blitDepth();
   }
 
-  /** The UI rect for this view: the eye's own rect in stereo/XR (same
-   *  relative position per eye, undistorted), the whole target otherwise. */
-  private uiRect(): { x: number; y: number; w: number; h: number } {
-    return this.viewport ?? { x: 0, y: 0, w: this.post.w, h: this.post.h };
+  /** The UI rect for this view in UV, normalized by the *presentation* target
+   *  (canvas or XR layer), so painting and sampling agree in every mode. */
+  private uiRectUV(): { x: number; y: number; w: number; h: number } {
+    const b = this.presentBounds ?? { w: this.post.w, h: this.post.h };
+    const bw = Math.max(1, b.w), bh = Math.max(1, b.h);
+    const r = this.viewport ?? { x: 0, y: 0, w: bw, h: bh };
+    return { x: r.x / bw, y: r.y / bh, w: r.w / bw, h: r.h / bh };
   }
 
   /** Stage 5: paint the GL HUD into this view's UI rect (null = skip). */
-  drawUI(hud: HudSnapshot | null): void {
+  drawUI(hud: HudSnapshot | null, uv: { x: number; y: number; w: number; h: number }): void {
     if (!hud) return;
     try {
       if (!this.hudOverlay) this.hudOverlay = new HudOverlay(this.gl);
@@ -173,7 +179,13 @@ export class Renderer {
       const gl = this.gl;
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.post.uiFbo);
       gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
-      this.hudOverlay.draw(this.post.uiFbo, this.uiRect());
+      // The UI target is always canvas-sized: map the view's UV rect into it.
+      this.hudOverlay.draw(this.post.uiFbo, {
+        x: uv.x * this.post.w,
+        y: uv.y * this.post.h,
+        w: uv.w * this.post.w,
+        h: uv.h * this.post.h,
+      });
     } catch { /* a failed overlay must never kill the frame */ }
   }
 
@@ -182,13 +194,12 @@ export class Renderer {
     mat4.copy(this.lastViewProj, this.camera.viewProj);
     vec3.copy(this.prevCameraPos, this.camera.position);
     this.hasPrevViewProj = true;
-    this.drawUI(hud ?? null);
-    // Normalized UI sub-rect: the eye's own rect, so each eye samples exactly
-    // what was painted for it (framebuffer y runs bottom-up like texture v).
-    const r = this.uiRect();
-    const W = Math.max(1, this.post.w), H = Math.max(1, this.post.h);
+    // Paint and sample the same UV rect (the eye's own rect in XR/stereo), so
+    // both eyes show the UI in the same relative position and nothing doubles.
+    const uv = this.uiRectUV();
+    this.drawUI(hud ?? null, uv);
     this.post.present({
-      uiRect: { x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H },
+      uiRect: uv,
       viewport: this.viewport,
       fbo: this.presentFbo,
       flare: this.renderOptions.flare,
