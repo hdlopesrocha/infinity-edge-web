@@ -370,6 +370,7 @@ precision highp float;
 in vec2 vUV;
 uniform sampler2D uSky; uniform sampler2D uModels;
 uniform sampler2D uBloom; uniform sampler2D uBillboards; uniform sampler2D uUI;
+uniform vec4 uUIRect;  // normalized UI sub-rect sampled for this view (one eye)
 uniform sampler2D uFlareTex;
 uniform float uFlare; uniform float uExposureKnee;
 uniform vec2 uZoomCenter;  // screen point the ship is flying toward (UV)
@@ -410,8 +411,9 @@ void main() {
     }
     col += flare * uFlare;
   }
-  // 5: the UI on top, unblurred.
-  vec4 ui = texture(uUI, vUV);
+  // 5: the UI on top, unblurred - sampled from this view's own sub-rect so
+  // each eye gets its undistorted copy at the same relative position.
+  vec4 ui = texture(uUI, uUIRect.xy + vUV * uUIRect.zw);
   col = mix(col, ui.rgb, ui.a);
   // gentle knee above 1.0 so additive highlights roll off instead of clipping
   vec3 over = max(vec3(0.0), col - 1.0);

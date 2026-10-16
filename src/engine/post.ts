@@ -29,6 +29,9 @@ export interface PresentOptions {
   flareTex: TexEntry | null;
   /** Target rectangle for the composite; null = the whole canvas. */
   viewport: { x: number; y: number; w: number; h: number } | null;
+  /** Normalized (0..1) UI sub-rect sampled for this view: the eye's own rect
+   *  in stereo/XR so each eye gets its undistorted copy; full by default. */
+  uiRect?: { x: number; y: number; w: number; h: number } | null;
   /** Framebuffer the composite writes to; absent/null = the canvas. WebXR passes its base layer. */
   fbo?: WebGLFramebuffer | null;
   /** Zoom-blur radius at the screen edge, in UV (0 = off). */
@@ -87,7 +90,7 @@ export class Post {
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
-    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uModels', 'uBloom', 'uBillboards', 'uUI', 'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples']);
+    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uModels', 'uBloom', 'uBillboards', 'uUI', 'uUIRect', 'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples']);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -357,6 +360,8 @@ export class Post {
       this.bindTex(this.uComposite.uBloom, 2, bloom);
       this.bindTex(this.uComposite.uBillboards, 3, this.bbTex);
       this.bindTex(this.uComposite.uUI, 4, this.uiTex);
+      const ur = opts.uiRect ?? { x: 0, y: 0, w: 1, h: 1 };
+      gl.uniform4f(this.uComposite.uUIRect, ur.x, ur.y, ur.w, ur.h);
       this.bindTex(this.uComposite.uFlareTex, 5, opts.flareTex ? opts.flareTex.tex : null);
       gl.uniform1f(this.uComposite.uFlare, flare);
       gl.uniform1f(this.uComposite.uExposureKnee, 0.55);

@@ -158,7 +158,13 @@ export class Renderer {
     this.draw.onBlitDepth = () => this.post.blitDepth();
   }
 
-  /** Stage 5: paint the GL HUD into the UI target (null = no UI this frame). */
+  /** The UI rect for this view: the eye's own rect in stereo/XR (same
+   *  relative position per eye, undistorted), the whole target otherwise. */
+  private uiRect(): { x: number; y: number; w: number; h: number } {
+    return this.viewport ?? { x: 0, y: 0, w: this.post.w, h: this.post.h };
+  }
+
+  /** Stage 5: paint the GL HUD into this view's UI rect (null = skip). */
   drawUI(hud: HudSnapshot | null): void {
     if (!hud) return;
     try {
@@ -167,7 +173,7 @@ export class Renderer {
       const gl = this.gl;
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.post.uiFbo);
       gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
-      this.hudOverlay.draw(this.post.uiFbo, { x: 0, y: 0, w: this.post.w, h: this.post.h });
+      this.hudOverlay.draw(this.post.uiFbo, this.uiRect());
     } catch { /* a failed overlay must never kill the frame */ }
   }
 
@@ -177,7 +183,12 @@ export class Renderer {
     vec3.copy(this.prevCameraPos, this.camera.position);
     this.hasPrevViewProj = true;
     this.drawUI(hud ?? null);
+    // Normalized UI sub-rect: the eye's own rect, so each eye samples exactly
+    // what was painted for it (framebuffer y runs bottom-up like texture v).
+    const r = this.uiRect();
+    const W = Math.max(1, this.post.w), H = Math.max(1, this.post.h);
     this.post.present({
+      uiRect: { x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H },
       viewport: this.viewport,
       fbo: this.presentFbo,
       flare: this.renderOptions.flare,

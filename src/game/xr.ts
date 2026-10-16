@@ -126,8 +126,10 @@ export async function enterXr(
     const pose = frame.getViewerPose(refSpace);
     if (!instance || !pose) return;
     // Simulate normally: this also positions the chase camera behind the ship.
-    instance.canvasW = gl.drawingBufferWidth;
-    instance.canvasH = gl.drawingBufferHeight;
+    const fullW = gl.drawingBufferWidth;
+    const fullH = gl.drawingBufferHeight;
+    instance.canvasW = fullW;
+    instance.canvasH = fullH;
     if (!store.paused) instance.update(dt);
     syncHud(instance);
     mat4.copy(chase, renderer.camera.view);
@@ -148,6 +150,10 @@ export async function enterXr(
       renderer.presentFbo = layer.framebuffer;
       renderer.beginFrame();   // scene target + frustum for this eye
       instance.draw();         // stages 1-3 into their targets
+      // Per-eye HUD in the eye's own rect (same relative position both eyes).
+      instance.canvasW = Math.max(1, vp.width);
+      instance.canvasH = Math.max(1, vp.height);
+      syncHud(instance);
       // Stage 5 rides the final pass now, so the per-eye overlay hook is
       // gone; the HUD stays sharp while the world zoom-blurs behind it.
       renderer.endFrame(store.hud);
@@ -157,6 +163,8 @@ export async function enterXr(
     }
     renderer.viewport = null;
     renderer.presentFbo = null;
+    instance.canvasW = fullW;
+    instance.canvasH = fullH;
   };
   s.requestAnimationFrame(loop);
   // A tap on the screen inside the session re-centres the view (there is no

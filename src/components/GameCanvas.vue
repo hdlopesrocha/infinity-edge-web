@@ -333,6 +333,9 @@ onMounted(() => {
         const w = gl.drawingBufferWidth;
         const h = gl.drawingBufferHeight;
         const half = Math.floor(w / 2);
+        const fullW = canvasRef.value?.clientWidth || 1280;
+        const fullH = canvasRef.value?.clientHeight || 720;
+        const eyeCssW = fullW / 2;
         const ipd = 0.25;                       // world units between the eyes
         const cam = renderer.camera;
         const base: [number, number, number] = [cam.position[0], cam.position[1], cam.position[2]];
@@ -352,6 +355,12 @@ onMounted(() => {
           gl.clear(gl.COLOR_BUFFER_BIT);
           renderer.beginFrame();
           instance.draw();
+          // Per-eye HUD: markers/aim projected with this eye's camera into
+          // the eye's own rect, so both eyes show the UI at the same relative
+          // position instead of a squeezed full-screen copy each.
+          instance.canvasW = eyeCssW;
+          instance.canvasH = fullH;
+          syncHud(instance);
           renderer.endFrame(uiHud());
           if (renderer.renderOptions.zoom > 0) {
             instance.drawShipsSharp(null, { x: eye * half, y: 0, w: half, h });
@@ -363,6 +372,8 @@ onMounted(() => {
         cam.position[1] = base[1];
         cam.position[2] = base[2];
         cam.updateMatrices();
+        instance.canvasW = fullW;
+        instance.canvasH = fullH;
         syncHud(instance);
         return;
       }
