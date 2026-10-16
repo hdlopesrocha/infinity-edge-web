@@ -25,6 +25,17 @@ const rows = computed(() => [
   ['Shield', 'absorbs 10 hits'],
   ['Repair', 'restores the full hull'],
 ]);
+
+/** Keyboard controls (plain keys only: no Ctrl/Alt, so the browser keeps its
+ *  own shortcuts -- Ctrl+W closes the tab and can never be intercepted). */
+const controls = [
+  ['Thrust', 'C'],
+  ['Turn / pitch', 'W A S D or arrows'],
+  ['Fire cannon', 'Space'],
+  ['Homing missile', 'M'],
+  ['Nitro', 'Shift or N'],
+  ['Back', 'Esc or Backspace'],
+];
 </script>
 
 <template>
@@ -39,6 +50,11 @@ const rows = computed(() => [
     <template #right>
       <div class="f-small c-white" style="text-align: left; width: 100%;">
         <div v-for="[k, v] in rows" :key="k" class="hangar-row">
+          <span class="c-white70">{{ k }}</span>
+          <span>{{ v }}</span>
+        </div>
+        <div class="f-middle c-white" style="margin-top: 14px;">CONTROLS</div>
+        <div v-for="[k, v] in controls" :key="k" class="hangar-row">
           <span class="c-white70">{{ k }}</span>
           <span>{{ v }}</span>
         </div>

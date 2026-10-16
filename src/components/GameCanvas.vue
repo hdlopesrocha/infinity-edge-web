@@ -154,7 +154,11 @@ function onKeyDown(e: KeyboardEvent): void {
     return;
   }
   instance?.control.keys.add(e.code);
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (store.interactive) {
+    const gameKeys = ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+      'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'KeyM', 'KeyN', 'KeyB'];
+    if (gameKeys.includes(e.code)) e.preventDefault();
+  }
 }
 
 function onKeyUp(e: KeyboardEvent): void {

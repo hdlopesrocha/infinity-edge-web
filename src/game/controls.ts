@@ -161,7 +161,9 @@ export class Control {
     if (has('ArrowDown', 'KeyS')) this.analogStick.value.y = 1;
     // Keyboard throttle is hold-to-thrust: releasing it falls back to the
     // cruise value set with the touch slider (which persists).
-    const keyThrust = has('ControlLeft', 'KeyC');
+    // Plain keys only: Ctrl/Alt as modifiers make the browser fire its own
+    // shortcuts (Ctrl+W closes the tab, Alt focuses the menu bar).
+    const keyThrust = has('KeyC');
     if (keyThrust) {
       this.analogAcel.value = 1;
       this.analogAcel.keyThrust = true;
@@ -169,8 +171,8 @@ export class Control {
       this.analogAcel.keyThrust = false;
       this.analogAcel.value = this.analogAcel.touchValue;
     }
-    if (has('AltLeft', 'KeyM')) this.homingButton.value = true;
-    if (has('ShiftLeft', 'ShiftRight', 'KeyN')) this.nitroButton.value = true;
+    if (has('KeyM')) this.homingButton.value = true;
+    if (has('ShiftLeft', 'ShiftRight', 'KeyN', 'KeyB')) this.nitroButton.value = true;
     this.analogStick.finish();
     this.analogAcel.finish();
     void this.w;
