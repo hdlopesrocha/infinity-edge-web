@@ -128,17 +128,28 @@ function volumePct(): string {
   return Math.round(o.musicVolume * 100) + '%';
 }
 
-function toggleVr(): void {
+async function toggleVr(): Promise<void> {
   audio.unlock();
   void audio.sfx('button');
-  if (store.vr) setVr(false);
-  else void enableVr();
+  if (store.vr) {
+    setVr(false);
+    return;
+  }
+  await enableVr();
+  // Leave the pause so the view is live: otherwise enabling VR looks like a
+  // no-op because the frozen scene sits behind the panel.
+  if (store.vr) {
+    store.paused = false;
+    showSettings.value = false;
+    snapshot.value = null;
+  }
 }
 const vrStatusText = (): string => {
   if (vrState.status === 'denied') return 'Motion permission denied - allow it in the browser settings';
-  if (vrState.status === 'unsupported') return 'No gyroscope available on this device';
-  if (store.vr && vrState.tracking) return 'Active - move the device to look, tap the scene to re-centre';
-  return 'Waiting for motion data - move the device';
+  if (vrState.status === 'unsupported') return 'No motion sensor in this browser';
+  if (!store.vr) return 'Needs a phone or tablet with a gyroscope (over https)';
+  if (vrState.tracking) return 'Active - move the device to look, tap the scene to re-centre';
+  return 'Switched on, no motion data yet - move/tilt the device, or open on a phone';
 };
 
 /** In-game pause: the back button (or Escape) pauses instead of leaving. */

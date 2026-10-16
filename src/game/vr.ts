@@ -7,6 +7,7 @@
 // The camera keeps its chase position; the *view* gets an extra yaw/pitch
 // taken from DeviceOrientationEvent. Tapping the screen calibrates: whatever
 // the gyroscope reads at that moment becomes the new centre of the view.
+import { reactive } from 'vue';
 import { store } from './store';
 
 /** Degrees, relative to the last calibration. */
@@ -15,11 +16,15 @@ let pitch = 0;
 let zeroYaw = 0;
 let zeroPitch = 0;
 let haveOrientation = false;
+let eventCount = 0;
 let bound = false;
 
 function onOrientation(e: DeviceOrientationEvent): void {
   if (e.alpha == null && e.beta == null && e.gamma == null) return;
   haveOrientation = true;
+  eventCount++;
+  vrState.tracking = true;
+  vrState.events = eventCount;
   const a = e.alpha ?? 0;          // compass-ish yaw
   const b = e.beta ?? 0;           // front-back tilt
   // Screen orientation can rotate the axes; keep it simple and use the raw
@@ -52,7 +57,12 @@ export function vrAvailable(): boolean {
 
 /** Last enable attempt's outcome, for the UI. */
 export type VrStatus = 'off' | 'on' | 'denied' | 'unsupported';
-export const vrState = { status: 'off' as VrStatus, get tracking(): boolean { return haveOrientation; } };
+/** Reactive so the UI can say "active" the moment motion data arrives. */
+export const vrState = reactive({
+  status: 'off' as VrStatus,
+  tracking: false,
+  events: 0,
+});
 
 /** iOS 13+ asks for motion access from a user gesture; other platforms have
  *  no permission step at all (deviceorientation just starts firing). */
