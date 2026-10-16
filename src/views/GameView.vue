@@ -10,6 +10,7 @@ import { saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
 import { gamepadConnected, setVr } from '../game/vr';
+import GazeCursor from '../components/GazeCursor.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -196,6 +197,7 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
       </div>
     </div>
   </div>
+  <GazeCursor />
   <div v-if="paused" class="pause-backdrop">
     <div class="pause-panel">
       <div class="pause-title">PAUSED</div>

@@ -7,6 +7,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
 import { trail } from '../game/trail';
+import GazeCursor from './GazeCursor.vue';
 
 const props = withDefaults(
   defineProps<{ primary?: string; primaryTo?: string; onPrimary?: (() => void) | null; wide?: boolean }>(),
@@ -51,6 +52,7 @@ function goPrimary(): void {
     <div class="menu-left" :class="{ wide: wide }"><slot name="left" /></div>
     <div v-if="!wide" class="menu-right"><slot name="right" /></div>
   </div>
+  <GazeCursor />
   <nav v-if="trail.items.length > 1" class="crumbs" aria-label="breadcrumb">
     <template v-for="(c, i) in trail.items" :key="c.path">
       <button
