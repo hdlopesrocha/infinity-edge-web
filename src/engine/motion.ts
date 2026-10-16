@@ -136,12 +136,12 @@ export interface MotionBlurConfig {
 }
 
 export const MOTION_BLUR: MotionBlurConfig = {
-  // Long exposure: the streak is this many seconds of screen motion, so at
-  // 60 fps it is ~300 frames of movement -- everything moving on screen
-  // smears to the radius cap below.
-  exposureSeconds: 5.0,
-  // Cap: a third of the screen. This is what the streaks actually reach.
-  maxRadiusUV: 0.35,
+  // Exposure: the streak is this many seconds of screen motion. 0.2 s is ~12
+  // rendered frames at 60 fps -- strongly visible without turning the frame
+  // into mush.
+  exposureSeconds: 0.2,
+  // Cap: 30% of the screen, so a fast pass cannot smear the whole view.
+  maxRadiusUV: 0.3,
   samples: 32,
   gainAtRest: 1,
   gainPerSpeed: 1,

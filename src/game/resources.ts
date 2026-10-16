@@ -30,7 +30,7 @@ export function defaultOptions(): Options {
     // C# default is false; the shipped screenshots (SS1–SS8) and the MonoGame
     // port run show the special effects (star/cloud billboards + engine
     // flares), so the web build defaults to on.
-    musicVolume: 0.5, billboards: true, motionBlur: false, cheats: false,
+    musicVolume: 0.5, billboards: true, motionBlur: true, cheats: false,
     axisX: false, axisY: false,
   };
 }
@@ -41,7 +41,10 @@ const WALL_TEXTURES = new Set(['hexagon', '_hexagon']);
 
 const OPTIONS_KEY = 'options.ie3d';
 
-const OPTIONS_VERSION = '1.0.0.3';
+// Bumped when the web defaults change in a way saved options would mask:
+// 1.0.0.4 turns Motion Blur on by default, so an old save holding "false"
+// is discarded once instead of silently keeping the effect off.
+const OPTIONS_VERSION = '1.0.0.4';
 
 export function loadOptions(): Options {
   const d = defaultOptions();
