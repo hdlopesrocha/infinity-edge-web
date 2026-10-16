@@ -377,26 +377,23 @@ uniform float uZoom;       // zoom-blur radius at the screen edge (UV)
 uniform int uZoomSamples;  // taps along the zoom ray
 out vec4 oColor;
 void main() {
-  // Zoom blur: every pixel is smeared along the ray that runs from the point
-  // the ship is flying toward through itself, so the view stretches outward
-  // with speed (the classic warp read). uZoom = 0 collapses to one tap, i.e.
-  // the plain image.
+  // Stages 1, 2, 3 and 5 are single sharp taps. Only the blur (stage 4)
+  // rides the zoom taps, so at speed the smeared copy stretches behind the
+  // world while the models sit sharp on top of it, in spec order 1+4+2+3+5.
   int zn = (uZoom < 0.0005) ? 1 : clamp(uZoomSamples, 2, 16);
   vec2 zd = vUV - uZoomCenter;
-  vec4 models = vec4(0.0);
-  // The sky is never blurred: a single sharp tap, whatever the speed.
   vec3 sky = texture(uSky, vUV).rgb;
-  vec3 bb = vec3(0.0);
+  vec3 blur = vec3(0.0);
   for (int i = 0; i < 16; i++) {
     if (i >= zn) break;
     vec2 uv = clamp(vUV - zd * (uZoom * (float(i) / float(zn))), vec2(0.0), vec2(1.0));
-    models += texture(uModels, uv);
-    bb += texture(uBillboards, uv).rgb;
+    blur += texture(uBloom, uv).rgb;
   }
-  models /= float(zn);
-  bb /= float(zn);
+  blur /= float(zn);
+  vec4 models = texture(uModels, vUV);
+  vec3 bb = texture(uBillboards, vUV).rgb;
   // 1 + 4 + 2 + 3: sky, blurred models, sharp models, billboards.
-  vec3 col = sky + texture(uBloom, vUV).rgb * 0.30;
+  vec3 col = sky + blur * 0.30;
   col = mix(col, models.rgb, models.a);
   col += bb;
   vec2 d = vUV - vec2(0.5);
