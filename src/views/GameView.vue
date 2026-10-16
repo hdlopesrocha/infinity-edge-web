@@ -137,7 +137,8 @@ function toggleVr(): void {
 const vrStatusText = (): string => {
   if (vrState.status === 'denied') return 'Motion permission denied - allow it in the browser settings';
   if (vrState.status === 'unsupported') return 'No gyroscope available on this device';
-  return store.vr ? 'Active - move the device to look, tap the scene to re-centre' : 'Needs a device with a gyroscope';
+  if (store.vr && vrState.tracking) return 'Active - move the device to look, tap the scene to re-centre';
+  return 'Waiting for motion data - move the device';
 };
 
 /** In-game pause: the back button (or Escape) pauses instead of leaving. */

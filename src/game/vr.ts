@@ -31,10 +31,12 @@ function onOrientation(e: DeviceOrientationEvent): void {
   pitch = Math.max(-80, Math.min(80, pitch));
 }
 
-function bind(): void {
+async function bind(): Promise<void> {
   if (bound || typeof window === 'undefined') return;
   bound = true;
   window.addEventListener('deviceorientation', onOrientation, true);
+  // Some platforms only start delivering events after a short delay; nothing
+  // to await here, but keep the async shape for future permission paths.
 }
 
 /** True when a standard-mapped gamepad is actually connected. */
@@ -50,7 +52,7 @@ export function vrAvailable(): boolean {
 
 /** Last enable attempt's outcome, for the UI. */
 export type VrStatus = 'off' | 'on' | 'denied' | 'unsupported';
-export const vrState = { status: 'off' as VrStatus };
+export const vrState = { status: 'off' as VrStatus, get tracking(): boolean { return haveOrientation; } };
 
 /** iOS 13+ asks for motion access from a user gesture; other platforms have
  *  no permission step at all (deviceorientation just starts firing). */
@@ -64,23 +66,27 @@ export async function enableVr(): Promise<VrStatus> {
     : undefined);
   if (!ev) {
     vrState.status = 'unsupported';
+    store.vr = false;
     return 'unsupported';
   }
+  // iOS 13+ gates motion behind a prompt that must come from a user gesture.
+  // Everywhere else either the function does not exist or calling it throws
+  // (NotSupportedError on some Chrome builds) -- an exception is NOT a denial,
+  // it just means there is no prompt on this platform, so carry on and let
+  // the events decide.
   if (typeof ev.requestPermission === 'function') {
     try {
       const res = await ev.requestPermission();
-      if (res !== 'granted') {
+      if (res === 'denied') {
         vrState.status = 'denied';
         store.vr = false;
         return 'denied';
       }
     } catch {
-      vrState.status = 'denied';
-      store.vr = false;
-      return 'denied';
+      // No prompt available here: keep going.
     }
   }
-  bind();
+  await bind();
   store.vr = true;
   vrState.status = 'on';
   return 'on';
@@ -105,6 +111,6 @@ export function calibrateVr(): void {
 
 /** Current head offset in degrees (0/0 until the first orientation event). */
 export function vrLook(): { yaw: number; pitch: number; tracking: boolean } {
-  bind();
+  void bind();
   return { yaw, pitch, tracking: haveOrientation };
 }

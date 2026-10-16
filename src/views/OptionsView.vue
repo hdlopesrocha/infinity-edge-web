@@ -20,7 +20,8 @@ const vrOn = () => store.vr;
 const vrStatusText = () => {
   if (vrState.status === 'denied') return 'permission denied';
   if (vrState.status === 'unsupported') return 'not supported on this device';
-  if (store.vr) return 'gyroscope active - move the device to look';
+  if (store.vr && vrState.tracking) return 'active - move the device to look';
+  if (store.vr) return 'waiting for motion data - move the device';
   return 'gyroscope';
 };
 async function toggleVr(): Promise<void> {
