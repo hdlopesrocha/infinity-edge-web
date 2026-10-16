@@ -25,7 +25,20 @@ export interface PresentOptions {
   /** 0 disables the lens flare; ~0.6 is the tuned default. */
   flare: number;
   flareTex: TexEntry | null;
+  /** Zoom-blur radius at the screen edge, in UV (0 = off). */
+  zoom: number;
+  /** Screen point (UV) the ship is flying toward. */
+  zoomCenterX: number;
+  zoomCenterY: number;
 }
+
+/** Zoom-blur tunables. */
+export const ZOOM_BLUR = {
+  /** Radius at the screen edge, in UV, at full throttle. */
+  maxRadiusUV: 0.12,
+  /** Taps along the zoom ray. */
+  samples: 10,
+};
 
 export class Post {
   gl: WebGL2RenderingContext;
@@ -62,7 +75,7 @@ export class Post {
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
-    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uSharp', 'uBloom', 'uFlareTex', 'uFlare', 'uExposureKnee']);
+    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uSharp', 'uBloom', 'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples']);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -283,6 +296,9 @@ export class Post {
       this.bindTex(this.uComposite.uFlareTex, 3, opts.flareTex ? opts.flareTex.tex : null);
       gl.uniform1f(this.uComposite.uFlare, flare);
       gl.uniform1f(this.uComposite.uExposureKnee, 0.55);
+      gl.uniform2f(this.uComposite.uZoomCenter, opts.zoomCenterX, opts.zoomCenterY);
+      gl.uniform1f(this.uComposite.uZoom, opts.zoom);
+      gl.uniform1i(this.uComposite.uZoomSamples, ZOOM_BLUR.samples);
     }, gl.drawingBufferWidth, gl.drawingBufferHeight);
   }
 }

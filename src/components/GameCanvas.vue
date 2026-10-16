@@ -3,6 +3,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { Renderer } from '../engine/renderer';
+import { ZOOM_BLUR } from '../engine/post';
 import { mat4, vec3 } from '../engine/math';
 import { GameInstance } from '../game/instance';
 import { RC } from '../game/resources';
@@ -243,6 +244,31 @@ onMounted(() => {
       // Live render options: the post chain reads them every frame, so the
       // Options screen changes take effect immediately (and roll back on
       // cancel).
+      // Zoom blur from the ship's velocity: radius = speed fraction, centre =
+      // the screen point its velocity vector projects to (the vanishing point
+      // of the flight path). Falls back to the screen centre.
+      renderer.renderOptions.zoom = 0;
+      renderer.renderOptions.zoomCenterX = 0.5;
+      renderer.renderOptions.zoomCenterY = 0.5;
+      if (instance) {
+        const sel = instance.selectedObject;
+        if (sel) {
+          const speed = Math.hypot(sel.vel[0], sel.vel[1], sel.vel[2]);
+          const cap = Math.max(1e-3, sel.physics.velMax * Math.max(1, sel.multiplier));
+          const f = Math.min(1.2, speed / cap);
+          if (f > 0.02 && speed > 1e-3) {
+            renderer.renderOptions.zoom = f * ZOOM_BLUR.maxRadiusUV;
+            const cam = renderer.camera;
+            const p = instance.project(
+              cam.position[0] + (sel.vel[0] / speed) * 1000,
+              cam.position[1] + (sel.vel[1] / speed) * 1000,
+              cam.position[2] + (sel.vel[2] / speed) * 1000,
+            );
+            renderer.renderOptions.zoomCenterX = p.x / Math.max(1, instance.canvasW);
+            renderer.renderOptions.zoomCenterY = p.y / Math.max(1, instance.canvasH);
+          }
+        }
+      }
       renderer.renderOptions.flareTex = rc.tex('flare2');
       // Lens flare belongs to the game/menu scenes; the boot wheel stays crisp.
       renderer.renderOptions.flare = rc.options.billboards && store.sceneKey !== 'engine' ? 0.45 : 0;

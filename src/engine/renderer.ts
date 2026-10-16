@@ -25,6 +25,11 @@ export interface RenderOptions {
   /** Lens-flare strength sampled from the rendered bright pass (0 = off). */
   flare: number;
   flareTex: TexEntry | null;
+  /** Zoom-blur radius at the screen edge (UV), from the ship's speed. */
+  zoom: number;
+  /** Screen point (UV) the ship is flying toward. */
+  zoomCenterX: number;
+  zoomCenterY: number;
 }
 
 // Motion-blur tunables live in engine/motion.ts (exposure seconds, streak
@@ -44,7 +49,7 @@ export class Renderer {
   camera = new Camera();
   frustum: FrustumPlanes = createFrustum();
   stats: RenderStats = { fps: 0, draws: 0, culled: 0 };
-  renderOptions: RenderOptions = { flare: 0.9, flareTex: null };
+  renderOptions: RenderOptions = { flare: 0.9, flareTex: null, zoom: 0, zoomCenterX: 0.5, zoomCenterY: 0.5 };
   /** Reusable counter for hierarchical culling (no per-frame allocation). */
   readonly cullStats: CullStats = { culled: 0 };
   onFrame: ((dtMs: number) => void) | null = null;
@@ -148,6 +153,9 @@ export class Renderer {
     this.post.present({
       flare: this.renderOptions.flare,
       flareTex: this.renderOptions.flareTex,
+      zoom: this.renderOptions.zoom,
+      zoomCenterX: this.renderOptions.zoomCenterX,
+      zoomCenterY: this.renderOptions.zoomCenterY,
     });
   }
 
