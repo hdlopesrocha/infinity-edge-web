@@ -28,8 +28,6 @@ export interface RenderOptions {
   /** Lens-flare strength sampled from the rendered bright pass (0 = off). */
   flare: number;
   flareTex: TexEntry | null;
-  /** Blur strength from the camera's velocity (1 = plain exposure). */
-  gain: number;
 }
 
 // Motion-blur tunables live in engine/motion.ts (exposure seconds, streak
@@ -49,7 +47,7 @@ export class Renderer {
   camera = new Camera();
   frustum: FrustumPlanes = createFrustum();
   stats: RenderStats = { fps: 0, draws: 0, culled: 0 };
-  renderOptions: RenderOptions = { motionBlur: false, flare: 0.9, flareTex: null, gain: 1 };
+  renderOptions: RenderOptions = { motionBlur: false, flare: 0.9, flareTex: null };
   /** Reusable counter for hierarchical culling (no per-frame allocation). */
   readonly cullStats: CullStats = { culled: 0 };
   onFrame: ((dtMs: number) => void) | null = null;
@@ -63,6 +61,8 @@ export class Renderer {
   private unwatch: (() => void) | null = null;
   private resizeObs: ResizeObserver | null = null;
   private lastViewProj = mat4.create();
+  /** Inverse of the current view-projection, for the depth->world step. */
+  private invViewProj = mat4.create();
   private hasPrevViewProj = false;
   private startTime = performance.now();
   /** Last frame's delta, used to keep the motion-blur exposure time-constant. */
@@ -156,6 +156,7 @@ export class Renderer {
 
   /** Composite the scene target onto the canvas (call after the scene draw). */
   endFrame(): void {
+    mat4.invert(this.invViewProj, this.camera.viewProj);
     mat4.copy(this.lastViewProj, this.camera.viewProj);
     vec3.copy(this.prevCameraPos, this.camera.position);
     this.hasPrevViewProj = true;
@@ -169,7 +170,8 @@ export class Renderer {
       flareTex: this.renderOptions.flareTex,
       shutter,
       maxBlur: MOTION_BLUR.maxRadiusUV,
-      gain: this.renderOptions.gain,
+      invViewProj: this.invViewProj,
+      viewProjPrev: this.hasPrevViewProj ? this.lastViewProj : this.camera.viewProj,
       samples: MOTION_BLUR.samples,
       depthTolerance: MOTION_BLUR.depthTolerance,
       near: this.camera.near,

@@ -64,7 +64,6 @@ async function rebuild(): Promise<void> {
     gi.canvasW = canvasRef.value?.clientWidth || 1280;
     gi.canvasH = canvasRef.value?.clientHeight || 720;
     instance = gi;
-    renderer.resetHistory();
     (window as unknown as { __ieGame?: GameInstance }).__ieGame = gi;
   } catch (e) {
     glError.value = 'Scene failed: ' + (e as Error).message;
@@ -288,9 +287,6 @@ onMounted(() => {
       instance.canvasW = canvasRef.value?.clientWidth || 1280;
       instance.canvasH = canvasRef.value?.clientHeight || 720;
       instance.update(dtMs);
-      // Blur strength from the camera's velocity, sampled after the update so
-      // it compares this frame's camera against the previous frame's.
-      renderer.renderOptions.gain = instance.blurGain();
       renderer.beginFrame();
       instance.draw();
       renderer.endFrame();

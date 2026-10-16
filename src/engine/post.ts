@@ -11,6 +11,7 @@
 // the scene shaders from the previous frame's world/view-projection) so the
 // blur is per object, not a screen-space fake.
 
+import { mat4 } from './math';
 import { FS_VERT, POST_BLUR_FRAG, POST_BRIGHT_FRAG, POST_COMPOSITE_FRAG, POST_MB_FRAG, linkProgram, uniforms } from './shaders';
 import type { TexEntry } from './texture';
 
@@ -30,8 +31,10 @@ export interface PresentOptions {
   shutter: number;
   /** Maximum blur length in UV units per frame. */
   maxBlur: number;
-  /** Blur strength from the camera's velocity (1 = plain exposure). */
-  gain: number;
+  /** Inverse of this frame's view-projection (depth -> world). */
+  invViewProj: mat4;
+  /** Previous frame's view-projection (world -> previous screen). */
+  viewProjPrev: mat4;
   /** Integration samples along the exposure segment. */
   samples: number;
   /** Relative view-depth tolerance for accepting a tap. */
@@ -81,7 +84,7 @@ export class Post {
     this.progBright = linkProgram(gl, FS_VERT, POST_BRIGHT_FRAG);
     this.progBlur = linkProgram(gl, FS_VERT, POST_BLUR_FRAG);
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
-    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uDepth', 'uShutter', 'uMaxLen', 'uGain', 'uNear', 'uFar', 'uDepthTol', 'uSamples']);
+    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uDepth', 'uInvViewProj', 'uViewProjPrev', 'uShutter', 'uMaxLen', 'uNear', 'uFar', 'uDepthTol', 'uSamples']);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
     this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uSharp', 'uBlur', 'uBloom', 'uFlareTex', 'uBlurAmount', 'uFlare', 'uExposureKnee']);
@@ -292,11 +295,11 @@ export class Post {
     if (opts.motionBlur && this.mbSupported) {
       this.blitPass(this.progMb, this.mbColor, () => {
         this.bindTex(this.uMb.uColor, 0, this.colorTex);
-        this.bindTex(this.uMb.uVelocity, 1, this.velocityTex);
-        this.bindTex(this.uMb.uDepth, 2, this.depthTex);
+        this.bindTex(this.uMb.uDepth, 1, this.depthTex);
+        gl.uniformMatrix4fv(this.uMb.uInvViewProj, false, opts.invViewProj as Float32Array);
+        gl.uniformMatrix4fv(this.uMb.uViewProjPrev, false, opts.viewProjPrev as Float32Array);
         gl.uniform1f(this.uMb.uShutter, opts.shutter);
         gl.uniform1f(this.uMb.uMaxLen, opts.maxBlur);
-        gl.uniform1f(this.uMb.uGain, opts.gain);
         gl.uniform1f(this.uMb.uNear, opts.near);
         gl.uniform1f(this.uMb.uFar, opts.far);
         gl.uniform1f(this.uMb.uDepthTol, opts.depthTolerance);
