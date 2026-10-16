@@ -6,6 +6,7 @@
   "description": "IE3D_37_T (XNA) migrated to the browser: Vue 3 + TypeScript + raw WebGL2 + gl-matrix",
   "scripts": {
     "dev": "vite --port 5173 --strictPort",
+    "dev:https": "node tools/dev-cert.mjs && vite --port 5173 --strictPort",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
