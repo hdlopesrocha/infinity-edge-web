@@ -401,7 +401,7 @@ export class GameInstance {
       cam.position[0] - prev[0], cam.position[1] - prev[1], cam.position[2] - prev[2],
     ) / dt;
     const cap = o.physics.velMax * Math.max(1, o.multiplier) || 64;
-    return 1 + 2 * Math.min(1.5, speed / cap);
+    return 1 + Math.min(1, speed / cap);
   }
 
   pointers(): PointerMark[] {

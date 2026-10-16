@@ -518,63 +518,101 @@ export class SpaceShip extends SpaceObject {
     const facing = camDir[0] * this.dir[0] + camDir[1] * this.dir[1] + camDir[2] * this.dir[2];
     const world = this.getMatrix();
     const prev = this.prevMatrix();
+    // The player's ship is held still on screen by the chase camera: lock its
+    // motion-blur velocity (hull and engine effects) to zero so it never
+    // smears -- what little it moves while the camera catches up is ignored.
+    // Bots move relative to the camera and keep their real velocity.
+    const lockVP = this.isPlayer;
+    const savedVP = draw.prevViewProj;
+    if (lockVP) {
+      const vp = mat4.create();
+      mat4.multiply(vp, proj, view);
+      draw.prevViewProj = vp;
+    }
     // Engine flare: a real additive cone plume in the ship's frame (parallax,
     // animated with the 3D noise field) instead of a camera-facing billboard.
     const thrust = clamp(facing * accelFrac, 0, 1);
     const level = this.thrustLevel();
     const vr = vec3.create();
+    const vrPrev = vec3.create();
     const rotX = mat4.create();
     mat4.fromRotation(rotX, -Math.PI / 2, vec3.fromValues(1, 0, 0));
     // The plume mesh runs along +Y, so the ship's own orientation has to be in
     // the matrix: T(nozzle) · R_ship · R_x(-90°) · S maps +Y onto the ship's
-    // -Z (straight out of the tail), instead of the world -Z.
+    // -Z (straight out of the tail), instead of the world -Z. The *previous*
+    // pose builds the same matrix one frame back: the plume rides the ship, so
+    // its velocity must be the ship's, not the camera's.
     const shipRot = mat4.create();
     mat4.fromQuat(shipRot, this.rot);
+    const shipRotPrev = mat4.create();
+    mat4.fromQuat(shipRotPrev, this.prevRot);
     const scale = mat4.create();
     const local = mat4.create();
+    const localPrev = mat4.create();
     const glow = mat4.create();
+    const glowPrev = mat4.create();
     const glowScale = mat4.create();
     for (const v of f.engine) {
       vec3.transformQuat(vr, v as unknown as vec3, this.rot);
-      mat4.fromTranslation(this.plumeMat, vec3.fromValues(
-        this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
-      ));
+      vec3.transformQuat(vrPrev, v as unknown as vec3, this.prevRot);
       // Turbine fire: a tapered afterburner plume a little longer than the
       // engine, blue-white at the nozzle and orange towards the tail.
       const length = 0.7 + 1.5 * (0.3 + 0.7 * level);
       const radius = 0.16;
       mat4.fromScaling(scale, vec3.fromValues(radius, length, radius));
-      mat4.multiply(local, this.plumeMat, shipRot);
+      mat4.fromTranslation(local, vec3.fromValues(
+        this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
+      ));
+      mat4.multiply(local, local, shipRot);
       mat4.multiply(local, local, rotX);
       mat4.multiply(local, local, scale);
-      draw.drawPlume(local, local, view, proj, d.camPos, [1, 0.62, 0.2], 0.8 * thrust + 0.1 * level);
+      mat4.fromTranslation(localPrev, vec3.fromValues(
+        this.prevPos[0] + r * vrPrev[0], this.prevPos[1] + r * vrPrev[1], this.prevPos[2] + r * vrPrev[2],
+      ));
+      mat4.multiply(localPrev, localPrev, shipRotPrev);
+      mat4.multiply(localPrev, localPrev, rotX);
+      mat4.multiply(localPrev, localPrev, scale);
+      draw.drawPlume(local, localPrev, view, proj, d.camPos, [1, 0.62, 0.2], 0.8 * thrust + 0.1 * level);
       // Hot core + team-coloured halo right at the nozzle (additive shells).
       const core = 0.09 + 0.04 * level;
       mat4.fromTranslation(glow, vec3.fromValues(
         this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2],
       ));
+      mat4.fromTranslation(glowPrev, vec3.fromValues(
+        this.prevPos[0] + r * vrPrev[0], this.prevPos[1] + r * vrPrev[1], this.prevPos[2] + r * vrPrev[2],
+      ));
       mat4.fromScaling(glowScale, vec3.fromValues(core, core, core));
       mat4.multiply(glow, glow, glowScale);
-      draw.drawGlow(glow, glow, view, proj, d.camPos, [0.75, 0.88, 1.0], 0.3 + 0.3 * thrust);
+      mat4.multiply(glowPrev, glowPrev, glowScale);
+      draw.drawGlow(glow, glowPrev, view, proj, d.camPos, [0.75, 0.88, 1.0], 0.3 + 0.3 * thrust);
       const halo = core * 2.2;
       mat4.fromScaling(glowScale, vec3.fromValues(halo, halo, halo));
       const haloM = mat4.create();
       mat4.multiply(haloM, glow, glowScale);
-      draw.drawGlow(haloM, haloM, view, proj, d.camPos, this.team.color, 0.15 + 0.25 * thrust);
+      const haloPrev = mat4.create();
+      mat4.multiply(haloPrev, glowPrev, glowScale);
+      draw.drawGlow(haloM, haloPrev, view, proj, d.camPos, this.team.color, 0.15 + 0.25 * thrust);
       d.rc.renderer.trackDraws(3);
     }
     // Team-colour core: small additive glow shells at the same flare offsets.
     const pulse = (1 + Math.sin(this.lol)) / 2;
     for (const v of f.color) {
       vec3.transformQuat(vr, v as unknown as vec3, this.rot);
+      vec3.transformQuat(vrPrev, v as unknown as vec3, this.prevRot);
       const gl = mat4.create();
       mat4.fromTranslation(gl, vec3.fromValues(this.pos[0] + r * vr[0], this.pos[1] + r * vr[1], this.pos[2] + r * vr[2]));
+      const glPrev = mat4.create();
+      mat4.fromTranslation(glPrev, vec3.fromValues(
+        this.prevPos[0] + r * vrPrev[0], this.prevPos[1] + r * vrPrev[1], this.prevPos[2] + r * vrPrev[2],
+      ));
       const sc = mat4.create();
       const s = 0.28 + 0.1 * pulse;
       mat4.fromScaling(sc, vec3.fromValues(s, s, s));
       const m = mat4.create();
       mat4.multiply(m, gl, sc);
-      draw.drawGlow(m, m, view, proj, d.camPos, this.team.color, 0.65 + 0.35 * pulse);
+      const mPrev = mat4.create();
+      mat4.multiply(mPrev, glPrev, sc);
+      draw.drawGlow(m, mPrev, view, proj, d.camPos, this.team.color, 0.65 + 0.35 * pulse);
       d.rc.renderer.trackDraws(1);
     }
     this.lol += Math.PI / 10;
@@ -589,6 +627,7 @@ export class SpaceShip extends SpaceObject {
       if (gpu) {
         draw.drawModel(gpu, this.shieldModel.tex, m, view, proj, d.camPos, {
           alpha: (this.shield / 10) * clamp((view0 - dist) / 32, 0, 1), emissive: this.team.color, light: true,
+          prevWorld: this.prevMatrix(),
         });
         d.rc.renderer.trackDraws(gpu.meshes.length);
       }
@@ -605,10 +644,14 @@ export class SpaceShip extends SpaceObject {
       const sc = mat4.create();
       mat4.fromTranslation(sc, this.pos);
       mat4.scale(sc, sc, vec3.fromValues(s, s, s));
-      draw.drawGlow(sc, sc, view, proj, d.camPos, this.glowColor, perc);
+      const scPrev = mat4.create();
+      mat4.fromTranslation(scPrev, this.prevPos);
+      mat4.scale(scPrev, scPrev, vec3.fromValues(s, s, s));
+      draw.drawGlow(sc, scPrev, view, proj, d.camPos, this.glowColor, perc);
       d.rc.renderer.trackDraws(1);
       this.glow -= 0.03;
     }
+    if (lockVP) draw.prevViewProj = savedVP;
     void world;
     void prev;
   }
@@ -1003,10 +1046,13 @@ export class Bullet extends SpaceObject {
     const s = 0.55;
     const m = mat4.create();
     mat4.fromTranslation(m, this.pos);
+    const mPrev = mat4.create();
+    mat4.fromTranslation(mPrev, this.prevPos);
     const sc = mat4.create();
     mat4.fromScaling(sc, vec3.fromValues(s, s, s));
     mat4.multiply(m, m, sc);
-    d.draw.drawGlow(m, m, d.view, d.proj, d.camPos, [1, 1, 0.35], 0.85);
+    mat4.multiply(mPrev, mPrev, sc);
+    d.draw.drawGlow(m, mPrev, d.view, d.proj, d.camPos, [1, 1, 0.35], 0.85);
     d.rc.renderer.trackDraws();
   }
 }
@@ -1057,10 +1103,15 @@ export class HomingMissile extends Bullet {
     mat4.fromTranslation(m, vec3.fromValues(
       this.pos[0] - this.dir[0] * r, this.pos[1] - this.dir[1] * r, this.pos[2] - this.dir[2] * r,
     ));
+    const mPrev = mat4.create();
+    mat4.fromTranslation(mPrev, vec3.fromValues(
+      this.prevPos[0] - this.dir[0] * r, this.prevPos[1] - this.dir[1] * r, this.prevPos[2] - this.dir[2] * r,
+    ));
     const sc = mat4.create();
     mat4.fromScaling(sc, vec3.fromValues(s, s, s));
     mat4.multiply(m, m, sc);
-    d.draw.drawGlow(m, m, d.view, d.proj, d.camPos, [1, 0.62, 0.2], 0.9);
+    mat4.multiply(mPrev, mPrev, sc);
+    d.draw.drawGlow(m, mPrev, d.view, d.proj, d.camPos, [1, 0.62, 0.2], 0.9);
     d.rc.renderer.trackDraws();
   }
 }

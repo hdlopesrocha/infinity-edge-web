@@ -292,6 +292,7 @@ uniform sampler2D uColor; uniform sampler2D uVelocity;
 uniform float uShutter;   // exposure length in frames
 uniform float uMaxLen;    // streak clamp, in UV units
 uniform float uGain;      // strength from the camera's velocity
+uniform vec2 uTexel;      // 1 / target size
 out vec4 oColor;
 // Interleaved gradient noise: offsets the tap pattern per pixel so the streak
 // comes out smooth instead of a stack of discrete, faded copies.
@@ -302,14 +303,29 @@ void main() {
   // shaders: it already carries the camera's position and rotation (every
   // object moves with the view) plus the object's own motion. The gain scales
   // the whole streak with how fast the camera itself is travelling.
-  vec2 px = texture(uVelocity, vUV).xy * uShutter * uGain;
+  //
+  // Dilate it first: a moving object hands its velocity to the pixels around
+  // it, which is what lets the pixels *behind* it gather forward and pick the
+  // object up. Without that a gather can only fade an object, never leave a
+  // trail behind it.
+  vec2 v = texture(uVelocity, vUV).xy;
+  float best = dot(v, v);
+  for (int k = 0; k < 8; k++) {
+    vec2 o = vec2(float((k & 1) * 2 - 1), float(((k >> 1) & 1) * 2 - 1)) * 3.0 * uTexel;
+    vec2 sm = texture(uVelocity, vUV + o).xy;
+    float l = dot(sm, sm);
+    if (l > best) { best = l; v = sm; }
+  }
+  vec2 px = v * uShutter * uGain;
   float len = length(px);
   if (len < 0.0015) { oColor = c; return; }
   if (len > uMaxLen) px *= uMaxLen / len;
   float j = ign(gl_FragCoord.xy);
   vec4 sum = vec4(0.0);
+  // One-sided, forward: every tap lies between the pixel and where its content
+  // is *now*, so a streak only ever trails behind an object, never ahead of it.
   for (int i = 0; i < 24; i++) {
-    float t = (float(i) + j) / 24.0 - 0.5;
+    float t = (float(i) + j) / 24.0;
     sum += texture(uColor, vUV + px * t);
   }
   // Coverage is averaged too: the composite needs it to lay the sharp objects
