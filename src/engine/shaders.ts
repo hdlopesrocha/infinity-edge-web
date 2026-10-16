@@ -118,8 +118,9 @@ out vec2 vUV; out vec3 vColor; out float vAlpha; out vec2 vVel;
 void main() {
   vUV = aUV; vColor = aColor; vAlpha = aAlpha;
   vec4 cur = uProj * uView * vec4(aPos, 1.0);
-  vec4 prev = uViewProjPrev * vec4(aPrevPos, 1.0);
-  vVel = mbVelocity(cur, prev);
+  // Billboards (starfield, nebula clouds) are backdrop sprites: they never
+  // write a motion vector, so they are never smeared by the blur.
+  vVel = vec2(0.0);
   gl_Position = cur;
 }`;
 
@@ -152,8 +153,8 @@ out vec2 vUV; out vec4 vData; out vec3 vWorld; out vec4 vClip; out vec2 vVel;
 void main() {
   vUV = aUV; vData = aData; vWorld = aPos;
   vec4 cur = uProj * uView * vec4(aPos, 1.0);
-  vec4 prev = uViewProjPrev * vec4(aPrevPos, 1.0);
-  vVel = mbVelocity(cur, prev);
+  // Smoke particles are soft billboards: never motion-blurred.
+  vVel = vec2(0.0);
   vClip = cur;
   gl_Position = cur;
 }`;
