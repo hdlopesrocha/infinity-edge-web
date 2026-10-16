@@ -384,17 +384,16 @@ void main() {
   int zn = (uZoom < 0.0005) ? 1 : clamp(uZoomSamples, 2, 16);
   vec2 zd = vUV - uZoomCenter;
   vec4 models = vec4(0.0);
-  vec3 sky = vec3(0.0);
+  // The sky is never blurred: a single sharp tap, whatever the speed.
+  vec3 sky = texture(uSky, vUV).rgb;
   vec3 bb = vec3(0.0);
   for (int i = 0; i < 16; i++) {
     if (i >= zn) break;
     vec2 uv = clamp(vUV - zd * (uZoom * (float(i) / float(zn))), vec2(0.0), vec2(1.0));
     models += texture(uModels, uv);
-    sky += texture(uSky, uv).rgb;
     bb += texture(uBillboards, uv).rgb;
   }
   models /= float(zn);
-  sky /= float(zn);
   bb /= float(zn);
   // 1 + 4 + 2 + 3: sky, blurred models, sharp models, billboards.
   vec3 col = sky + texture(uBloom, vUV).rgb * 0.30;
