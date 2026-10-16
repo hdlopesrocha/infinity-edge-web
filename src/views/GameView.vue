@@ -301,7 +301,12 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
                       @click="toggleVr">{{ vr ? 'ON' : 'OFF' }}</button>
             </div>
             <div v-if="vr" class="opt-row">
-              <span class="c-white50">{{ vrStatusText() }}</span>
+              <span class="c-white50">{{ vrStatusText() }}
+            <div v-if="store.vr" class="opt-row">
+              <span class="c-white50" style="font-size: 12px;">
+                sensor: {{ vrState.events }} events &middot; yaw {{ vrState.yaw }}&deg; &middot; pitch {{ vrState.pitch }}&deg; &middot; {{ vrState.dragLook ? 'drag look on' : 'drag look off' }}
+              </span>
+            </div></span>
             </div>
             <button class="track-btn menubtn-wide opt-clear" :style="`background-image:url(${base}_menubtn.png);`" @click="clearAll">
               Clear All

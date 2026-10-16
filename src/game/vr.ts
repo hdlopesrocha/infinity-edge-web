@@ -64,6 +64,9 @@ export const vrState = reactive({
   status: 'off' as VrStatus,
   tracking: false,
   events: 0,
+  /** Live look values, updated every frame while VR is on. */
+  yaw: 0,
+  pitch: 0,
   /** What the platform said about motion access, for the status line. */
   permission: 'unknown' as string,
   /** True once the player has looked around by dragging (sensor fallback). */
@@ -145,8 +148,16 @@ export function calibrateVr(): void {
 /** Current head offset in degrees (0/0 until the first orientation event). */
 export function vrLook(): { yaw: number; pitch: number; tracking: boolean } {
   void bind();
-  // The sensor wins when it delivers; the drag offset is the fallback.
-  if (haveOrientation) return { yaw, pitch, tracking: true };
-  if (vrState.dragLook) return { yaw: dragYaw, pitch: dragPitch, tracking: true };
-  return { yaw: 0, pitch: 0, tracking: false };
+  // The sensor wins when it delivers; the drag offset is the fallback. The
+  // values are mirrored into vrState so the settings screen can show them --
+  // that readout is how the user sees the mode actually doing something.
+  const out = haveOrientation
+    ? { yaw, pitch, tracking: true }
+    : vrState.dragLook
+      ? { yaw: dragYaw, pitch: dragPitch, tracking: true }
+      : { yaw: 0, pitch: 0, tracking: false };
+  vrState.yaw = Math.round(out.yaw);
+  vrState.pitch = Math.round(out.pitch);
+  vrState.tracking = out.tracking;
+  return out;
 }
