@@ -144,13 +144,15 @@ async function toggleVr(): Promise<void> {
     snapshot.value = null;
   }
 }
-const vrStatusText = (): string => {
+const vrStatusTextRaw = (): string => {
   if (vrState.status === 'unsupported') return 'No motion sensor in this browser';
   if (!store.vr) return 'Needs a phone or tablet with a gyroscope (over https)';
   if (vrState.tracking && vrState.dragLook) return 'Active - drag the scene to look, tap to re-centre';
   if (vrState.tracking) return 'Active - move the device to look, tap the scene to re-centre';
   return 'Switched on: move the device, or drag the scene to look (sensor blocked?)';
 };
+const vrStatusText = (): string =>
+  vrState.lastError ? 'error: ' + vrState.lastError : vrStatusTextRaw();
 
 /** In-game pause: the back button (or Escape) pauses instead of leaving. */
 function goBriefing(): void {

@@ -60,6 +60,15 @@ export function vrAvailable(): boolean {
 /** Last enable attempt's outcome, for the UI. */
 export type VrStatus = 'off' | 'on' | 'denied' | 'unsupported';
 /** Reactive so the UI can say "active" the moment motion data arrives. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (e) => {
+    vrState.lastError = String((e as ErrorEvent).message ?? e).slice(0, 120);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    vrState.lastError = String((e as PromiseRejectionEvent).reason ?? e).slice(0, 120);
+  });
+}
+
 export const vrState = reactive({
   status: 'off' as VrStatus,
   tracking: false,
@@ -67,6 +76,8 @@ export const vrState = reactive({
   /** Live look values, updated every frame while VR is on. */
   yaw: 0,
   pitch: 0,
+  /** Last runtime error, shown on the settings screen. */
+  lastError: '' as string,
   /** What the platform said about motion access, for the status line. */
   permission: 'unknown' as string,
   /** True once the player has looked around by dragging (sensor fallback). */

@@ -17,13 +17,15 @@ import type { Options } from '../game/resources';
 const router = useRouter();
 const o = store.options;
 const vrOn = () => store.vr;
-const vrStatusText = () => {
+const vrStatusTextRaw = () => {
   if (vrState.status === 'unsupported') return 'no motion sensor in this browser';
   if (!store.vr) return 'needs a phone or tablet with a gyroscope (over https)';
   if (vrState.tracking && vrState.dragLook) return 'active - drag the scene to look';
   if (vrState.tracking) return 'active - move the device to look';
   return 'switched on: move the device, or drag the scene to look';
 };
+const vrStatusText = (): string =>
+  vrState.lastError ? 'error: ' + vrState.lastError : vrStatusTextRaw();
 async function toggleVr(): Promise<void> {
   audio.unlock();
   void audio.sfx('button');
