@@ -204,17 +204,17 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
 
 <template>
   <div class="hud" @contextmenu.prevent>
-    <div class="hud-score">{{ hud.score }}</div>
-    <div v-if="hud.matchLeft !== null" class="hud-match" :class="{ low: matchLow }">{{ matchClock }}</div>
-    <div v-if="hud.notify" class="hud-notify">{{ hud.notify }}</div>
-    <div v-if="timer" class="hud-timer" :class="{ warn: !!hud.outside }">
+    <div v-if="!store.glUi" class="hud-score">{{ hud.score }}</div>
+    <div v-if="!store.glUi && hud.matchLeft !== null" class="hud-match" :class="{ low: matchLow }">{{ matchClock }}</div>
+    <div v-if="!store.glUi && hud.notify" class="hud-notify">{{ hud.notify }}</div>
+    <div v-if="!store.glUi && timer" class="hud-timer" :class="{ warn: !!hud.outside }">
       <div class="hud-timer-label">{{ timerLabel }}</div>
       <div class="hud-timer-value">{{ timerSecs }}<span>s</span></div>
       <div class="hud-timer-bar"><i :style="`width:${timerPct}%`"></i></div>
     </div>
-    <img class="hud-aim" :src="base + '_aim.png'" alt="" draggable="false" :style="`left:${hud.aimX}px;top:${hud.aimY}px;`" />
-    <div class="hud-life" v-html="lifeHtml"></div>
-    <div v-for="(m, i) in hud.pointers" :key="i" class="hud-marker" :style="markerStyle(m)">
+    <img v-if="!store.glUi" class="hud-aim" :src="base + '_aim.png'" alt="" draggable="false" :style="`left:${hud.aimX}px;top:${hud.aimY}px;`" />
+    <div v-if="!store.glUi" class="hud-life" v-html="lifeHtml"></div>
+    <div v-if="!store.glUi" v-for="(m, i) in hud.pointers" :key="i" class="hud-marker" :style="markerStyle(m)">
       <img v-if="m.over" :src="base + '_over.png'" width="48" height="48" alt="" draggable="false" />
       <img v-else-if="m.iconUrl" :src="m.iconUrl" :width="m.w" :height="m.h" alt="" draggable="false" />
       <span v-if="m.label">{{ m.label }}</span>

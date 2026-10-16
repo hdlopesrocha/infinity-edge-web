@@ -137,8 +137,15 @@ export class Draw {
   private uBbq: Record<string, WebGLUniformLocation | null>;
   private bbqVao: WebGLVertexArrayObject | null = null;
   private bbqVbo: WebGLBuffer | null = null;
-  private bbqVerts: number[] = [];
-  private bbqTex: TexEntry | null = null;
+  /** Billboard batches, one vertex list per texture: the models pass defers
+   *  every flush (see `deferred`), so batches can no longer be cut by an
+   *  immediate flush on texture change - they accumulate per texture and all
+   *  land in the billboard framebuffer afterwards. */
+  private bbqBatches: { tex: TexEntry | null; verts: number[] }[] = [];
+  /** While true (the models pass), flushBillboards/flushSmoke hold their
+   *  queues instead of drawing: the billboard framebuffer is rendered after
+   *  the models, depth-tested against the models' depth. */
+  deferred = false;
   // Smoke batch (Perlin density + soft depth + velocity).
   private smokeProg: WebGLProgram;
   private uSmoke: Record<string, WebGLUniformLocation | null>;
@@ -392,8 +399,11 @@ export class Draw {
     view: mat4, proj: mat4,
   ): void {
     if (alpha <= 0.001 || size <= 0) return;
-    if (this.bbqTex !== tex) this.flushBillboards();
-    this.bbqTex = tex;
+    let batch = this.bbqBatches.length > 0 ? this.bbqBatches[this.bbqBatches.length - 1] : null;
+    if (!batch || batch.tex !== tex) {
+      batch = { tex, verts: [] };
+      this.bbqBatches.push(batch);
+    }
     this.bbqView = view;
     this.bbqProj = proj;
     // Draws.DrawBillBoard corners: center + size * (-up - side), (up - side),
@@ -410,8 +420,9 @@ export class Draw {
     ];
     const uv: [number, number][] = [[1, 0], [1, 1], [0, 0], [0, 1]];
     const idx = [0, 1, 2, 1, 3, 2];
+    const verts = batch!.verts;
     for (const i of idx) {
-      this.bbqVerts.push(
+      verts.push(
         c[i][0], c[i][1], c[i][2],
         this.bbqPrev ? this.bbqPrev[0] : c[i][0], this.bbqPrev ? this.bbqPrev[1] : c[i][1], this.bbqPrev ? this.bbqPrev[2] : c[i][2],
         uv[i][0], uv[i][1], color[0], color[1], color[2], alpha,
@@ -429,9 +440,9 @@ export class Draw {
   }
 
   flushBillboards(): void {
-    if (!this.bbqVerts.length || !this.bbqView || !this.bbqProj) {
-      this.bbqVerts.length = 0;
-      this.bbqTex = null;
+    if (this.deferred) return;
+    if (this.bbqBatches.length === 0 || !this.bbqView || !this.bbqProj) {
+      this.bbqBatches.length = 0;
       return;
     }
     const gl = this.gl;
@@ -439,23 +450,25 @@ export class Draw {
     gl.uniformMatrix4fv(this.uBbq.uView, false, this.bbqView as unknown as Float32Array);
     gl.uniformMatrix4fv(this.uBbq.uProj, false, this.bbqProj as unknown as Float32Array);
     gl.uniformMatrix4fv(this.uBbq.uViewProjPrev, false, this.prevViewProj as Float32Array);
-    const t = this.bbqTex ?? getFallback(gl);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, t.tex);
     gl.uniform1i(this.uBbq.uTex, 0);
     gl.bindVertexArray(this.bbqVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.bbqVbo);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.bbqVerts), gl.DYNAMIC_DRAW);
     // Draws.DrawBillBoard temporarily sets RasterizerState.CullNone (the camera
     // basis builds the quad clockwise on screen, so back-face culling hides
     // every star/smoke/cloud/flare); restore the caller's state afterwards.
     const cull = gl.isEnabled(gl.CULL_FACE);
     if (cull) gl.disable(gl.CULL_FACE);
-    gl.drawArrays(gl.TRIANGLES, 0, this.bbqVerts.length / 12);
+    for (const batch of this.bbqBatches) {
+      if (batch.verts.length === 0) continue;
+      const t = batch.tex ?? getFallback(gl);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, t.tex);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(batch.verts), gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.TRIANGLES, 0, batch.verts.length / 12);
+    }
     if (cull) gl.enable(gl.CULL_FACE);
     gl.bindVertexArray(null);
-    this.bbqVerts.length = 0;
-    this.bbqTex = null;
+    this.bbqBatches.length = 0;
   }
 
   // ------------------------------------------------------------------ smoke
@@ -498,6 +511,7 @@ export class Draw {
   private smokeProj: mat4 | null = null;
 
   flushSmoke(): void {
+    if (this.deferred) return;
     if (!this.smokeVerts.length || !this.smokeView || !this.smokeProj) {
       this.smokeVerts.length = 0;
       return;

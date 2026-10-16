@@ -94,6 +94,11 @@ function onVisibilityChange(): void {
 }
 
 /** In VR a tap on the scene re-centres the view on the current heading. */
+/** Stage 5 gets the live HUD in matches; menus keep the DOM UI instead. */
+function uiHud(): typeof store.hud | null {
+  return instance && instance.gameType !== 'BACK' ? store.hud : null;
+}
+
 function onVrTap(): void {
   if (store.vr) calibrateVr();
 }
@@ -347,7 +352,10 @@ onMounted(() => {
           gl.clear(gl.COLOR_BUFFER_BIT);
           renderer.beginFrame();
           instance.draw();
-          renderer.endFrame();
+          renderer.endFrame(uiHud());
+          if (renderer.renderOptions.zoom > 0) {
+            instance.drawShipsSharp(null, { x: eye * half, y: 0, w: half, h });
+          }
           gl.disable(gl.SCISSOR_TEST);
         }
         renderer.viewport = null;
@@ -372,7 +380,7 @@ onMounted(() => {
         instance.canvasH = canvasRef.value?.clientHeight || 720;
         renderer.beginFrame();
         instance.draw();
-        renderer.endFrame();
+        renderer.endFrame(uiHud());
         syncHud(instance);
         return;
       }
@@ -387,7 +395,7 @@ onMounted(() => {
       instance.update(dtMs);
       renderer.beginFrame();
       instance.draw();
-      renderer.endFrame();
+      renderer.endFrame(uiHud());
       // After zoom blur: the ships are drawn sharp on top of the blurred view.
       if (renderer.renderOptions.zoom > 0) instance.drawShipsSharp();
       // After all movements of the frame: publish the HUD snapshot the DOM

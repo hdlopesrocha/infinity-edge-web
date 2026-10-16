@@ -361,15 +361,16 @@ void main() {
   oColor = vec4(sum, 1.0);
 }`;
 
-// Lens flare: broad halo + ghost chain of the bright pass, mirrored and scaled
-// through the screen centre and shaped by the flare2 sprite (the original's
-// flare texture). Because the bright pass is taken from the *rendered* scene,
-// occluded sources never produce a flare.
+// Final pass (stage 6): 1 + 4 + 2 + 3 + 5, in that order. The zoom blur taps
+// the world layers (sky, models, billboards) but never the UI, which stays
+// readable at any speed. Billboards carry premultiplied colour with zero
+// coverage (additive backdrops), so they are added, not mixed.
 export const POST_COMPOSITE_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUV;
-uniform sampler2D uSky; uniform sampler2D uSharp;
-uniform sampler2D uBloom; uniform sampler2D uFlareTex;
+uniform sampler2D uSky; uniform sampler2D uModels;
+uniform sampler2D uBloom; uniform sampler2D uBillboards; uniform sampler2D uUI;
+uniform sampler2D uFlareTex;
 uniform float uFlare; uniform float uExposureKnee;
 uniform vec2 uZoomCenter;  // screen point the ship is flying toward (UV)
 uniform float uZoom;       // zoom-blur radius at the screen edge (UV)
@@ -382,20 +383,26 @@ void main() {
   // the plain image.
   int zn = (uZoom < 0.0005) ? 1 : clamp(uZoomSamples, 2, 16);
   vec2 zd = vUV - uZoomCenter;
-  vec4 sharp = vec4(0.0);
+  vec4 models = vec4(0.0);
   vec3 sky = vec3(0.0);
+  vec3 bb = vec3(0.0);
   for (int i = 0; i < 16; i++) {
     if (i >= zn) break;
     vec2 uv = clamp(vUV - zd * (uZoom * (float(i) / float(zn))), vec2(0.0), vec2(1.0));
-    sharp += texture(uSharp, uv);
+    models += texture(uModels, uv);
     sky += texture(uSky, uv).rgb;
+    bb += texture(uBillboards, uv).rgb;
   }
-  sharp /= float(zn);
+  models /= float(zn);
   sky /= float(zn);
-  vec3 col = sharp.rgb + sky * (1.0 - sharp.a);
+  bb /= float(zn);
+  // 1 + 4 + 2 + 3: sky, blurred models, sharp models, billboards.
+  vec3 col = sky + texture(uBloom, vUV).rgb * 0.30;
+  col = mix(col, models.rgb, models.a);
+  col += bb;
   vec2 d = vUV - vec2(0.5);
   if (uFlare > 0.0) {
-    vec3 flare = texture(uBloom, vUV).rgb * 0.30;
+    vec3 flare = vec3(0.0);
     for (int i = 0; i < 5; i++) {
       float k = -0.35 + float(i) * 0.55;
       vec2 g = vec2(0.5) + d * (1.0 + k) * -1.0 + d * k;
@@ -407,6 +414,9 @@ void main() {
     }
     col += flare * uFlare;
   }
+  // 5: the UI on top, unblurred.
+  vec4 ui = texture(uUI, vUV);
+  col = mix(col, ui.rgb, ui.a);
   // gentle knee above 1.0 so additive highlights roll off instead of clipping
   vec3 over = max(vec3(0.0), col - 1.0);
   col = col - over * uExposureKnee;

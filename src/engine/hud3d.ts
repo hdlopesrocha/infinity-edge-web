@@ -153,15 +153,17 @@ export class HudOverlay {
       c.fillStyle = h.outside ? '#ff7a52' : '#7fe8d8';
       c.fillRect(bx + 12 * s, by + bh - 16 * sy, (bw - 24 * s) * pct, 5);
     }
-    // Aim reticle where the DOM crosshair sits.
+    // Aim reticle where the DOM crosshair sits (ellipse in canvas space so it
+    // is a true circle on screen whatever the viewport aspect is).
     {
       const ax = h.aimX * sx, ay = h.aimY * sy;
-      const r = 22 * s;
+      const rx = 22 * sx, ry = 22 * sy;
+      const r = Math.max(rx, ry);
       c.strokeStyle = 'rgba(255,255,255,0.9)';
       c.lineWidth = Math.max(2, 2.5 * s);
       shadow(4);
       c.beginPath();
-      c.arc(ax, ay, r, 0, Math.PI * 2);
+      c.ellipse(ax, ay, rx, ry, 0, 0, Math.PI * 2);
       c.stroke();
       c.beginPath();
       c.moveTo(ax - r - 8 * s, ay); c.lineTo(ax - r + 6 * s, ay);
@@ -173,14 +175,15 @@ export class HudOverlay {
     // Target markers: diamond in the team colour + label (ship %).
     for (const m of h.pointers) {
       const mx = m.x * sx, my = m.y * sy;
-      const r = 16 * s;
+      const rx = 16 * sx, ry = 16 * sy;
+      const r = Math.max(rx, ry);
       const col = `rgb(${(m.color[0] * 255) | 0},${(m.color[1] * 255) | 0},${(m.color[2] * 255) | 0})`;
       c.strokeStyle = col;
       c.lineWidth = Math.max(2, 3 * s);
       shadow(5);
       c.beginPath();
       if (m.over) {
-        c.arc(mx, my, r, 0, Math.PI * 2);
+        c.ellipse(mx, my, rx, ry, 0, 0, Math.PI * 2);
       } else {
         c.moveTo(mx, my - r); c.lineTo(mx + r, my); c.lineTo(mx, my + r); c.lineTo(mx - r, my);
         c.closePath();

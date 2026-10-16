@@ -1,15 +1,17 @@
-// Scene render targets + post-processing chain.
+// Scene render targets + post-processing chain: six explicit stages.
 //
-// The 3D scene is drawn into an offscreen target (color + per-object velocity +
-// depth) instead of the default framebuffer:
-//
-//   scene -> [motion blur (velocity)] -> [lens flare from the bright pass] -> canvas
+//   1. sky:        the dome, never blurred
+//   2. models:     all 3D meshes (opaque + transparent + glow/plume shells),
+//                  with depth test, coverage in alpha
+//   3. billboards: camera-facing sprites + smoke, depth-tested against the
+//                  models' depth (the depth attachment is shared, never
+//                  cleared or written here), additive premultiplied colour
+//   4. blur:       the models buffer blurred (sky and billboards excluded)
+//   5. UI:         HUD / score / life / missiles, drawn in GL over transparency
+//   6. final:      1 + 4 + 2 + 3 + 5, in that order, plus the lens-flare ghosts
 //
 // The depth is copied out right before the transparent pass so soft-particle
-// smoke can fade against the opaque geometry without a feedback loop, and the
-// velocity attachment carries each object's screen-space motion (computed by
-// the scene shaders from the previous frame's world/view-projection) so the
-// blur is per object, not a screen-space fake.
+// smoke can fade against the opaque geometry without a feedback loop.
 
 import { FS_VERT, POST_BLUR_FRAG, POST_BRIGHT_FRAG, POST_COMPOSITE_FRAG, linkProgram, uniforms } from './shaders';
 import type { TexEntry } from './texture';
@@ -48,8 +50,14 @@ export class Post {
   gl: WebGL2RenderingContext;
   w = 0;
   h = 0;
-  /** Scene colour: the 3D objects only, alpha = coverage (the sky is separate). */
+  /** Stage 2 colour: all 3D meshes, alpha = coverage (sky is separate). */
   colorTex: WebGLTexture | null = null;
+  /** Stage 3 colour: billboards + smoke (premultiplied, zero coverage). */
+  bbTex: WebGLTexture | null = null;
+  bbFbo: WebGLFramebuffer | null = null;
+  /** Stage 5 colour: the GL HUD over transparency. */
+  uiTex: WebGLTexture | null = null;
+  uiFbo: WebGLFramebuffer | null = null;
   /** The sky sphere, drawn on its own so it is never blurred. */
   skyTex: WebGLTexture | null = null;
   skyFbo: WebGLFramebuffer | null = null;
@@ -79,7 +87,7 @@ export class Post {
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
-    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uSharp', 'uBloom', 'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples']);
+    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uModels', 'uBloom', 'uBillboards', 'uUI', 'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples']);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -123,9 +131,13 @@ export class Post {
     disposeTarget(this.blurA);
     disposeTarget(this.blurB);
     if (this.sceneFbo) gl.deleteFramebuffer(this.sceneFbo);
+    if (this.bbFbo) gl.deleteFramebuffer(this.bbFbo);
+    if (this.uiFbo) gl.deleteFramebuffer(this.uiFbo);
     if (this.skyFbo) gl.deleteFramebuffer(this.skyFbo);
     if (this.skyTex) gl.deleteTexture(this.skyTex);
     if (this.colorTex) gl.deleteTexture(this.colorTex);
+    if (this.bbTex) gl.deleteTexture(this.bbTex);
+    if (this.uiTex) gl.deleteTexture(this.uiTex);
     if (this.depthTex) gl.deleteTexture(this.depthTex);
     if (this.depthRb) gl.deleteTexture(this.depthRb);
     // The depth-copy FBO references depthTex: keeping it would leave the blit
@@ -164,8 +176,30 @@ export class Post {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorTex, 0);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.depthRb, 0);
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    let status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
     if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Scene framebuffer incomplete: 0x' + status.toString(16));
+
+    // Stage 3 shares the models' depth attachment: billboards depth-test
+    // against the meshes without clearing or rewriting their depth.
+    this.bbTex = this.colorTarget(w, h);
+    this.bbFbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.bbFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.bbTex, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.depthRb, 0);
+    status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Billboard framebuffer incomplete: 0x' + status.toString(16));
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Stage 5: plain colour target, no depth.
+    this.uiTex = this.colorTarget(w, h);
+    this.uiFbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.uiFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.uiTex, 0);
+    status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error('UI framebuffer incomplete: 0x' + status.toString(16));
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
     const halfW = Math.max(1, w >> 1);
     const halfH = Math.max(1, h >> 1);
@@ -202,6 +236,27 @@ export class Post {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.skyFbo);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
     gl.viewport(0, 0, this.w, this.h);
+  }
+
+  /** Stage 3: bind the billboard target (colour cleared, models' depth kept). */
+  beginBillboards(): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.bbFbo);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    gl.viewport(0, 0, this.w, this.h);
+    gl.depthMask(false);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+
+  /** Stage 5: drop last frame's UI so a skipped HUD never leaves ghosts. */
+  clearUI(): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.uiFbo);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    gl.viewport(0, 0, this.w, this.h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
   }
 
   /** Back to the scene target after the sky pass (keeps its contents). */
@@ -263,15 +318,17 @@ export class Post {
     gl.uniform1i(loc, unit);
   }
 
-  /** Run the post chain into the default framebuffer. */
+  /** Run the post chain: blur the models, then composite 1+4+2+3+5. */
   present(opts: PresentOptions): void {
     const gl = this.gl;
-    const sharp = this.colorTex;
-    // 2. lens flare: bright pass -> small blur chain (from the sharp objects)
+    const models = this.colorTex;
+    // 4. blur, from the models only (stage 2): the sky is never blurred and
+    // the billboards stay sharp on top. Also feeds the lens-flare ghosts.
     const flare = opts.flareTex ? opts.flare : 0;
-    if (flare > 0) {
+    {
+      // Stage 4 always runs: the final pass layers it under the models.
       this.blitPass(this.progBright, this.bright, () => {
-        this.bindTex(this.uBright.uColor, 0, sharp);
+        this.bindTex(this.uBright.uColor, 0, models);
         gl.uniform1f(this.uBright.uThreshold, 0.8);
       }, this.bright.w, this.bright.h);
       const dirs: [number, number][] = [[1, 0], [0, 1]];
@@ -291,14 +348,16 @@ export class Post {
         gl.uniform2f(this.uBlur.uDir, 2.5 / this.blurB.w, 2.5 / this.blurB.h);
       }, this.blurB.w, this.blurB.h);
     }
-    // 2. composite to the canvas: sky + objects
+    // 6. final, in order: sky + blur + models + billboards + UI.
     const bloom = flare > 0 ? this.blurB.tex : this.blurA.tex;
     const vp = opts.viewport;
     this.blitPass(this.progComposite, null, () => {
       this.bindTex(this.uComposite.uSky, 0, this.skyTex);
-      this.bindTex(this.uComposite.uSharp, 1, sharp);
+      this.bindTex(this.uComposite.uModels, 1, models);
       this.bindTex(this.uComposite.uBloom, 2, bloom);
-      this.bindTex(this.uComposite.uFlareTex, 3, opts.flareTex ? opts.flareTex.tex : null);
+      this.bindTex(this.uComposite.uBillboards, 3, this.bbTex);
+      this.bindTex(this.uComposite.uUI, 4, this.uiTex);
+      this.bindTex(this.uComposite.uFlareTex, 5, opts.flareTex ? opts.flareTex.tex : null);
       gl.uniform1f(this.uComposite.uFlare, flare);
       gl.uniform1f(this.uComposite.uExposureKnee, 0.55);
       gl.uniform2f(this.uComposite.uZoomCenter, opts.zoomCenterX, opts.zoomCenterY);

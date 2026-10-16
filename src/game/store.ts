@@ -35,6 +35,9 @@ export const store = reactive({
   paused: false,
   /** VR mode: head-tracked view, gamepad-only input (see game/vr.ts). */
   vr: false,
+  /** The HUD (score, clock, aim, life, markers) renders in GL as stage 5 of
+   *  the final pass; the DOM keeps only the touch controls and the menus. */
+  glUi: true,
   username: '' as string,
   levelText: '' as string,
   result: null as { won: boolean; reward: string; message: string | null; level: string } | null,

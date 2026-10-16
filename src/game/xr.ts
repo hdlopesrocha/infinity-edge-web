@@ -34,7 +34,6 @@ import type { GameInstance } from './instance';
 import { store } from './store';
 import { calibrateVr } from './vr';
 import { syncHud } from './hud';
-import { HudOverlay } from '../engine/hud3d';
 
 type XrSystem = {
   isSessionSupported(mode: string): Promise<boolean>;
@@ -89,7 +88,8 @@ export async function enterXr(
     viewport: { x: number; y: number; w: number; h: number } | null;
     presentFbo: WebGLFramebuffer | null;
     beginFrame: () => void;
-    endFrame: () => void;
+    endFrame: (hud?: typeof store.hud | null) => void;
+    renderOptions: { zoom: number };
   },
   getInstance: () => GameInstance | null,
   onEnd: () => void,
@@ -116,7 +116,6 @@ export async function enterXr(
   const head = mat4.create();
   const chase = mat4.create();
   let last = 0;
-  let hudOverlay: HudOverlay | null = null;
 
   const loop = (time: number, frame: XRFrame): void => {
     if (!session) return;
@@ -148,15 +147,13 @@ export async function enterXr(
       renderer.viewport = { x: vp.x, y: vp.y, w: vp.width, h: vp.height };
       renderer.presentFbo = layer.framebuffer;
       renderer.beginFrame();   // scene target + frustum for this eye
-      instance.draw();         // scene into the scene target
-      renderer.endFrame();     // composite straight into the XR framebuffer
-      // The DOM is hidden inside the session, so the HUD (score, clock, aim,
-      // life, markers, notifications) is composited here in GL, per eye.
-      try {
-        if (!hudOverlay) hudOverlay = new HudOverlay(gl);
-        hudOverlay.update(store.hud);
-        hudOverlay.draw(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
-      } catch { /* a failed overlay must never kill the frame */ }
+      instance.draw();         // stages 1-3 into their targets
+      // Stage 5 rides the final pass now, so the per-eye overlay hook is
+      // gone; the HUD stays sharp while the world zoom-blurs behind it.
+      renderer.endFrame(store.hud);
+      if (renderer.renderOptions.zoom > 0) {
+        instance.drawShipsSharp(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
+      }
     }
     renderer.viewport = null;
     renderer.presentFbo = null;

@@ -14,6 +14,10 @@ import { mat4, vec3 } from './math';
 import { createNoiseTexture } from './noise';
 import type { NoiseTexture } from './noise';
 import { Post } from './post';
+import { HudOverlay } from './hud3d';
+import type { store } from '../game/store';
+
+type HudSnapshot = typeof store.hud;
 
 export interface RenderStats {
   fps: number;
@@ -59,6 +63,8 @@ export class Renderer {
   onFrame: ((dtMs: number) => void) | null = null;
   /** True while a WebXR session drives the rendering (see game/xr.ts). */
   xrActive = false;
+  /** Stage-5 overlay, drawn into the UI target ahead of the final pass. */
+  private hudOverlay: HudOverlay | null = null;
   onStats: ((s: RenderStats) => void) | null = null;
   onRebuilt: (() => void) | null = null;
   private raf = 0;
@@ -148,14 +154,29 @@ export class Renderer {
     this.draw.farPlane = this.camera.far;
     this.draw.setTime((performance.now() - this.startTime) / 1000);
     this.post.begin();
+    this.post.clearUI();
     this.draw.onBlitDepth = () => this.post.blitDepth();
   }
 
-  /** Composite the scene target onto the canvas (call after the scene draw). */
-  endFrame(): void {
+  /** Stage 5: paint the GL HUD into the UI target (null = no UI this frame). */
+  drawUI(hud: HudSnapshot | null): void {
+    if (!hud) return;
+    try {
+      if (!this.hudOverlay) this.hudOverlay = new HudOverlay(this.gl);
+      this.hudOverlay.update(hud);
+      const gl = this.gl;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.post.uiFbo);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+      this.hudOverlay.draw(this.post.uiFbo, { x: 0, y: 0, w: this.post.w, h: this.post.h });
+    } catch { /* a failed overlay must never kill the frame */ }
+  }
+
+  /** Composite the targets (call after the scene draw and drawUI). */
+  endFrame(hud?: HudSnapshot | null): void {
     mat4.copy(this.lastViewProj, this.camera.viewProj);
     vec3.copy(this.prevCameraPos, this.camera.position);
     this.hasPrevViewProj = true;
+    this.drawUI(hud ?? null);
     this.post.present({
       viewport: this.viewport,
       fbo: this.presentFbo,

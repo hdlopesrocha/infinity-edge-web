@@ -312,12 +312,20 @@ export class GameInstance {
       rc: this.rc,
     };
     this.drawSky();
-    if (this.gameType === 'BACK') {
-      this.map.draw(d);
-      return;
-    }
+    // Stages 2+3: every mesh lands in the models target while the billboard
+    // and smoke batches accumulate; afterwards they render into the
+    // billboard target, depth-tested against the models' depth.
+    const gl = r.gl;
+    r.draw.deferred = true;
     this.map.draw(d);
-    this.drawGhost(d);
+    if (this.gameType !== 'BACK') this.drawGhost(d);
+    r.draw.deferred = false;
+    r.post.beginBillboards();
+    gl.disable(gl.BLEND);
+    r.draw.flushBillboards();
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    r.draw.flushSmoke();
     void d;
   }
 
@@ -328,7 +336,10 @@ export class GameInstance {
    * against each other; there is no world depth there, which is the point --
    * they are highlighted, not re-occluded.
    */
-  drawShipsSharp(): void {
+  drawShipsSharp(
+    fbo: WebGLFramebuffer | null = null,
+    vp: { x: number; y: number; w: number; h: number } | null = null,
+  ): void {
     const r = this.renderer;
     const gl = r.gl;
     const d: DrawCtx = {
@@ -346,8 +357,9 @@ export class GameInstance {
       (o): o is SpaceShip => o instanceof SpaceShip && o.active,
     );
     if (ships.length === 0) return;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    if (vp) gl.viewport(vp.x, vp.y, vp.w, vp.h);
+    else gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.clearDepth(1 as unknown as number);
     gl.depthMask(true);
     gl.clear(gl.DEPTH_BUFFER_BIT);
