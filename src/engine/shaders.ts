@@ -357,6 +357,24 @@ void main() {
   oColor = wsum > 0.0 ? sum / wsum : c;
 }`;
 
+// Debug view for the motion-blur stage: renders the per-pixel velocity buffer
+// straight to the canvas. Red = signed +x, green = signed +y (both scaled and
+// biased around mid grey), blue = magnitude. Enable with
+//   #/game/<level>?debug=velocity
+// (optionally &scale=<n>, default 10).
+export const POST_VELOCITY_DEBUG_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uVelocity;  // UV per frame, signed
+uniform float uScale;
+out vec4 oColor;
+void main() {
+  vec2 v = texture(uVelocity, vUV).xy * uScale;
+  oColor = vec4(clamp(v.x, -1.0, 1.0) * 0.5 + 0.5,
+                clamp(v.y, -1.0, 1.0) * 0.5 + 0.5,
+                clamp(length(v), 0.0, 1.0), 1.0);
+}`;
+
 export const POST_BRIGHT_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUV;

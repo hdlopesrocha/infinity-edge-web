@@ -28,6 +28,10 @@ export interface RenderOptions {
   /** Lens-flare strength sampled from the rendered bright pass (0 = off). */
   flare: number;
   flareTex: TexEntry | null;
+  /** Render the velocity buffer instead of the scene (`?debug=velocity`). */
+  debugVelocity: boolean;
+  /** Visual gain for the velocity debug view. */
+  debugScale: number;
 }
 
 // Motion-blur tunables live in engine/motion.ts (exposure seconds, streak
@@ -47,7 +51,7 @@ export class Renderer {
   camera = new Camera();
   frustum: FrustumPlanes = createFrustum();
   stats: RenderStats = { fps: 0, draws: 0, culled: 0 };
-  renderOptions: RenderOptions = { motionBlur: false, flare: 0.9, flareTex: null };
+  renderOptions: RenderOptions = { motionBlur: false, flare: 0.9, flareTex: null, debugVelocity: false, debugScale: 10 };
   /** Reusable counter for hierarchical culling (no per-frame allocation). */
   readonly cullStats: CullStats = { culled: 0 };
   onFrame: ((dtMs: number) => void) | null = null;
@@ -176,6 +180,8 @@ export class Renderer {
       depthTolerance: MOTION_BLUR.depthTolerance,
       near: this.camera.near,
       far: this.camera.far,
+      debugVelocity: this.renderOptions.debugVelocity,
+      debugScale: this.renderOptions.debugScale,
     });
   }
 

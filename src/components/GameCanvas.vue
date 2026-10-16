@@ -146,6 +146,25 @@ function syncHud(g: GameInstance): void {
   hud.frame++;
 }
 
+// Debug views via the hash query: #/game/<level>?debug=velocity&scale=20
+let debugHash = '';
+let debugVelocity = false;
+let debugScale = 10;
+function readDebugFlags(): void {
+  const hash = location.hash;
+  if (hash === debugHash) return;
+  debugHash = hash;
+  const q = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+  try {
+    const params = new URLSearchParams(q);
+    debugVelocity = params.get('debug') === 'velocity';
+    const sc = Number(params.get('scale'));
+    debugScale = Number.isFinite(sc) && sc > 0 ? sc : 10;
+  } catch {
+    debugVelocity = false;
+  }
+}
+
 function onKeyDown(e: KeyboardEvent): void {
   audio.unlock();
   if (e.code === 'Backspace' && (e.target as HTMLElement)?.tagName !== 'INPUT') {
@@ -244,6 +263,9 @@ onMounted(() => {
       // Options screen changes take effect immediately (and roll back on
       // cancel).
       renderer.renderOptions.motionBlur = rc.options.motionBlur;
+      readDebugFlags();
+      renderer.renderOptions.debugVelocity = debugVelocity;
+      renderer.renderOptions.debugScale = debugScale;
       renderer.renderOptions.flareTex = rc.tex('flare2');
       // Lens flare belongs to the game/menu scenes; the boot wheel stays crisp.
       renderer.renderOptions.flare = rc.options.billboards && store.sceneKey !== 'engine' ? 0.45 : 0;

@@ -12,7 +12,7 @@
 // blur is per object, not a screen-space fake.
 
 import { mat4 } from './math';
-import { FS_VERT, POST_BLUR_FRAG, POST_BRIGHT_FRAG, POST_COMPOSITE_FRAG, POST_MB_FRAG, linkProgram, uniforms } from './shaders';
+import { FS_VERT, POST_BLUR_FRAG, POST_BRIGHT_FRAG, POST_COMPOSITE_FRAG, POST_MB_FRAG, POST_VELOCITY_DEBUG_FRAG, linkProgram, uniforms } from './shaders';
 import type { TexEntry } from './texture';
 
 interface Target {
@@ -42,6 +42,10 @@ export interface PresentOptions {
   /** Camera near/far, used to linearize the depth copy. */
   near: number;
   far: number;
+  /** Render the velocity buffer instead of the scene (debug view). */
+  debugVelocity: boolean;
+  /** Visual gain for the debug view. */
+  debugScale: number;
 }
 
 export class Post {
@@ -72,10 +76,12 @@ export class Post {
   private progBright: WebGLProgram;
   private progBlur: WebGLProgram;
   private progComposite: WebGLProgram;
+  private progVelDebug: WebGLProgram;
   private uMb: Record<string, WebGLUniformLocation | null>;
   private uBright: Record<string, WebGLUniformLocation | null>;
   private uBlur: Record<string, WebGLUniformLocation | null>;
   private uComposite: Record<string, WebGLUniformLocation | null>;
+  private uVelDebug: Record<string, WebGLUniformLocation | null>;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -84,10 +90,12 @@ export class Post {
     this.progBright = linkProgram(gl, FS_VERT, POST_BRIGHT_FRAG);
     this.progBlur = linkProgram(gl, FS_VERT, POST_BLUR_FRAG);
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
+    this.progVelDebug = linkProgram(gl, FS_VERT, POST_VELOCITY_DEBUG_FRAG);
     this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uDepth', 'uShutter', 'uMaxLen', 'uNear', 'uFar', 'uDepthTol', 'uSamples']);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
     this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uSharp', 'uBlur', 'uBloom', 'uFlareTex', 'uBlurAmount', 'uFlare', 'uExposureKnee']);
+    this.uVelDebug = uniforms(gl, this.progVelDebug, ['uVelocity', 'uScale']);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -288,6 +296,15 @@ export class Post {
   /** Run the post chain into the default framebuffer. */
   present(opts: PresentOptions): void {
     const gl = this.gl;
+    // Debug: show the velocity buffer itself (red = +x, green = +y, blue =
+    // magnitude) instead of the scene. Nothing else in the chain runs.
+    if (opts.debugVelocity) {
+      this.blitPass(this.progVelDebug, null, () => {
+        this.bindTex(this.uVelDebug.uVelocity, 0, this.velocityTex);
+        gl.uniform1f(this.uVelDebug.uScale, opts.debugScale);
+      }, gl.drawingBufferWidth, gl.drawingBufferHeight);
+      return;
+    }
     const sharp = this.colorTex;
     let blurred = sharp;
     let blurAmount = 0;
