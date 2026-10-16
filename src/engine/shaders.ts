@@ -183,6 +183,7 @@ void main() {
 // ship's frame (parallax when the camera moves) with a volumetric thickness
 // term and noise-driven flicker instead of a camera-facing sprite.
 export const PLUME_VERT = `#version 300 es
+uniform mat4 uWorld; uniform mat4 uView; uniform mat4 uProj;
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
