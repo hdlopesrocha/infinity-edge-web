@@ -6,11 +6,14 @@
      (the custom `_pixel`/`_ball` skins are gone); buttons keep their art. -->
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
 import { clearGameData, saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
+import { goBack } from '../game/nav';
 import type { Options } from '../game/resources';
 
+const router = useRouter();
 const o = store.options;
 const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
 const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
@@ -62,7 +65,7 @@ function save(): void {
   audio.setMusicVolume(o.musicVolume);
   applyLive();
   store.username = o.username;
-  history.back();
+  goBack(router, '/menu');
 }
 
 function clearAll(): void {

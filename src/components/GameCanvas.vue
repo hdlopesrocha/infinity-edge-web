@@ -323,7 +323,9 @@ onMounted(() => {
         const won = instance.result.won;
         store.result = { ...instance.result, level: lv };
         instance.result = null;
-        void router.push((won ? '/victory/' : '/defeat/') + lv);
+        // Replace: a finished match must not stay in the stack, or back
+        // from the result screen would re-enter the game.
+        void router.replace((won ? '/victory/' : '/defeat/') + lv);
       }
     };
     void rebuild();

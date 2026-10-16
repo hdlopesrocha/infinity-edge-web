@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
 import { store } from '../game/store';
 import { audio } from '../game/audio';
+import { goBack } from '../game/nav';
 
 const route = useRoute();
 const router = useRouter();
@@ -24,7 +25,7 @@ const user = computed(() => store.username || store.options.username || 'Infinit
 function back(): void {
   void audio.sfx('button');
   const lv = String(route.params.level ?? '');
-  void router.push(lv ? '/briefing/' + lv : '/menu');
+  goBack(router, lv ? '/briefing/' + lv : '/menu');
 }
 </script>
 

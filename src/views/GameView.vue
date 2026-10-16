@@ -8,6 +8,7 @@ import { useRoute, useRouter } from 'vue-router';
 import type { GameInstance } from '../game/instance';
 import { store } from '../game/store';
 import { audio } from '../game/audio';
+import { goBack } from '../game/nav';
 
 const route = useRoute();
 const router = useRouter();
@@ -85,13 +86,14 @@ function onUp(e: PointerEvent): void {
 }
 
 function onKey(e: KeyboardEvent): void {
-  if (e.code === 'Escape') void router.push('/briefing/' + route.params.level);
+  if (e.code === 'Escape') goBack(router, '/briefing/' + String(route.params.level));
 }
 
 function goBriefing(): void {
   audio.unlock();
   void audio.sfx('button');
-  void router.push('/briefing/' + route.params.level);
+  // LIFO: return to whatever menu we came from (the briefing), never forward.
+  goBack(router, '/briefing/' + String(route.params.level));
 }
 
 onMounted(() => {
