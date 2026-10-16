@@ -52,6 +52,8 @@ export class Renderer {
   renderOptions: RenderOptions = { flare: 0.9, flareTex: null, zoom: 0, zoomCenterX: 0.5, zoomCenterY: 0.5 };
   /** Composite target: null = whole canvas, or one eye's rectangle in stereo VR. */
   viewport: { x: number; y: number; w: number; h: number } | null = null;
+  /** Composite framebuffer: null = the canvas; WebXR sets its base layer here. */
+  presentFbo: WebGLFramebuffer | null = null;
   /** Reusable counter for hierarchical culling (no per-frame allocation). */
   readonly cullStats: CullStats = { culled: 0 };
   onFrame: ((dtMs: number) => void) | null = null;
@@ -156,6 +158,7 @@ export class Renderer {
     this.hasPrevViewProj = true;
     this.post.present({
       viewport: this.viewport,
+      fbo: this.presentFbo,
       flare: this.renderOptions.flare,
       flareTex: this.renderOptions.flareTex,
       zoom: this.renderOptions.zoom,

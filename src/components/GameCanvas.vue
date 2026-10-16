@@ -349,44 +349,51 @@ onMounted(() => {
       // Stereo VR (no WebXR headset): two eyes side by side. Each half is a
       // full render with the camera shifted along its right axis, which is
       // what makes the depth read in a phone viewer.
-      if (store.vr && !renderer.xrActive && !store.paused) {
+      if (store.vr && !renderer.xrActive) {
         instance.canvasW = canvasRef.value?.clientWidth || 1280;
         instance.canvasH = canvasRef.value?.clientHeight || 720;
-        instance.update(dtMs);
+        // While paused only the simulation stops; the eyes keep drawing so the
+        // background, the world and the HUD stay visible in the headset.
+        if (!store.paused) instance.update(dtMs);
         const gl = renderer.gl;
         const w = gl.drawingBufferWidth;
         const h = gl.drawingBufferHeight;
         const half = Math.floor(w / 2);
         const ipd = 0.25;                       // world units between the eyes
         const cam = renderer.camera;
-        const base = { x: cam.position[0], y: cam.position[1], z: cam.position[2] };
+        const base: [number, number, number] = [cam.position[0], cam.position[1], cam.position[2]];
+        const side: [number, number, number] = [cam.side[0], cam.side[1], cam.side[2]];
+        const finite = (v: number[]): boolean => v.every((n) => Number.isFinite(n));
+        const offset = finite(side) && finite(base) ? ipd : 0;   // never offset into NaN
         for (let eye = 0; eye < 2; eye++) {
           const sign = eye === 0 ? -1 : 1;
-          const side = cam.side;
-          cam.position[0] = base.x + side[0] * ipd * sign;
-          cam.position[1] = base.y + side[1] * ipd * sign;
-          cam.position[2] = base.z + side[2] * ipd * sign;
+          cam.position[0] = base[0] + side[0] * offset * sign;
+          cam.position[1] = base[1] + side[1] * offset * sign;
+          cam.position[2] = base[2] + side[2] * offset * sign;
           cam.updateMatrices();
           renderer.viewport = { x: eye * half, y: 0, w: half, h };
           gl.enable(gl.SCISSOR_TEST);
           gl.scissor(eye * half, 0, half, h);
+          gl.clearColor(0, 0, 0, 1);
+          gl.clear(gl.COLOR_BUFFER_BIT);
           renderer.beginFrame();
           instance.draw();
           renderer.endFrame();
           gl.disable(gl.SCISSOR_TEST);
         }
         renderer.viewport = null;
-        cam.position[0] = base.x;
-        cam.position[1] = base.y;
-        cam.position[2] = base.z;
+        cam.position[0] = base[0];
+        cam.position[1] = base[1];
+        cam.position[2] = base[2];
         cam.updateMatrices();
         syncHud(instance);
         return;
       }
       if (renderer.xrActive) {
-        // WebXR owns the drawing; this loop only advances the simulation so
-        // the ship keeps flying in the headset.
-        if (!store.paused) instance.update(dtMs);
+        // The XR session loop owns simulation and drawing (see game/xr.ts);
+        // head tracking comes from the pose, so drop the gyro look here.
+        renderer.camera.vrYaw = 0;
+        renderer.camera.vrPitch = 0;
         return;
       }
       if (store.paused) {

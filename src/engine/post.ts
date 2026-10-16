@@ -27,6 +27,8 @@ export interface PresentOptions {
   flareTex: TexEntry | null;
   /** Target rectangle for the composite; null = the whole canvas. */
   viewport: { x: number; y: number; w: number; h: number } | null;
+  /** Framebuffer the composite writes to; absent/null = the canvas. WebXR passes its base layer. */
+  fbo?: WebGLFramebuffer | null;
   /** Zoom-blur radius at the screen edge, in UV (0 = off). */
   zoom: number;
   /** Screen point (UV) the ship is flying toward. */
@@ -238,9 +240,9 @@ export class Post {
     return this.depthCopyFboCache;
   }
 
-  private blitPass(prog: WebGLProgram, target: Target | null, bind: () => void, w: number, h: number): void {
+  private blitPass(prog: WebGLProgram, target: Target | null, bind: () => void, w: number, h: number, fbo: WebGLFramebuffer | null = null): void {
     const gl = this.gl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : fbo);
     // drawBuffers is invalid for the default framebuffer (BACK/NONE only).
     if (target) gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
     gl.viewport(0, 0, w, h);
@@ -303,6 +305,6 @@ export class Post {
       gl.uniform1f(this.uComposite.uZoom, opts.zoom);
       gl.uniform1i(this.uComposite.uZoomSamples, ZOOM_BLUR.samples);
       if (vp) gl.viewport(vp.x, vp.y, vp.w, vp.h);
-    }, vp ? vp.w : gl.drawingBufferWidth, vp ? vp.h : gl.drawingBufferHeight);
+    }, vp ? vp.w : gl.drawingBufferWidth, vp ? vp.h : gl.drawingBufferHeight, opts.fbo ?? null);
   }
 }
