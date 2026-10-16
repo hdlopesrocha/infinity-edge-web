@@ -74,7 +74,7 @@ export class Post {
     this.progBright = linkProgram(gl, FS_VERT, POST_BRIGHT_FRAG);
     this.progBlur = linkProgram(gl, FS_VERT, POST_BLUR_FRAG);
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
-    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uShutter', 'uMaxLen', 'uGain', 'uTexel']);
+    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uShutter', 'uMaxLen', 'uGain']);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
     this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uSharp', 'uBlur', 'uBloom', 'uFlareTex', 'uBlurAmount', 'uFlare', 'uExposureKnee']);
@@ -289,7 +289,6 @@ export class Post {
         gl.uniform1f(this.uMb.uShutter, opts.shutter);
         gl.uniform1f(this.uMb.uMaxLen, opts.maxBlur);
         gl.uniform1f(this.uMb.uGain, opts.gain);
-        gl.uniform2f(this.uMb.uTexel, 1 / this.mbColor.w, 1 / this.mbColor.h);
       }, this.mbColor.w, this.mbColor.h);
       blurred = this.mbColor.tex;
       blurAmount = 1;

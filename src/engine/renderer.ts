@@ -34,6 +34,9 @@ export interface RenderOptions {
 // Motion-blur exposure: how much world motion one frame integrates. A fixed
 // *time* (like a real camera shutter) keeps the streak identical at any fps.
 const MOTION_BLUR_EXPOSURE_S = 1 / 60;
+// 1.5x the physical exposure: at this game's speeds the perspective-correct
+// streaks are otherwise almost invisible on a 192-unit draw distance.
+const MOTION_BLUR_EXPOSURE_SCALE = 1.5;
 
 export class Renderer {
   canvas: HTMLCanvasElement;
@@ -151,7 +154,7 @@ export class Renderer {
     // fixed exposure *time* (1/60 s) instead of a fixed fraction of a frame:
     // the streak then looks the same at 30, 60 or 120 fps.
     const dtS = Math.max(this.frameDtMs, 1) / 1000;
-    const shutter = Math.min(2, Math.max(0.25, MOTION_BLUR_EXPOSURE_S / dtS));
+    const shutter = Math.min(3, Math.max(0.35, MOTION_BLUR_EXPOSURE_S / dtS)) * MOTION_BLUR_EXPOSURE_SCALE;
     this.post.present({
       motionBlur: this.renderOptions.motionBlur,
       flare: this.renderOptions.flare,
