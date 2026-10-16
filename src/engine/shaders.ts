@@ -131,7 +131,11 @@ layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oVelocity;
 void main() {
   vec4 t = texture(uTex, vUV);
-  oColor = vec4(vColor * t.rgb, vAlpha * t.a);
+  // Premultiplied colour, zero coverage: batched billboards (starfield,
+  // nebula, debris sprites) are additive backdrops. Writing real coverage
+  // made the composite draw them sharp on top of the blurred layer and hide
+  // the motion blur completely.
+  oColor = vec4(vColor * t.rgb * vAlpha * t.a, 0.0);
   oVelocity = vec4(vVel, 0.0, 1.0);
 }`;
 
