@@ -38,6 +38,9 @@ export const store = reactive({
   /** The HUD (score, clock, aim, life, markers) renders in GL as stage 5 of
    *  the final pass; the DOM keeps only the touch controls and the menus. */
   glUi: true,
+  /** Briefing high-score board, published while the briefing is open so the
+   *  GL UI can render it per eye in VR (the DOM list is hidden there). */
+  scoreboard: null as { title: string; rows: string[] } | null,
   username: '' as string,
   levelText: '' as string,
   result: null as { won: boolean; reward: string; message: string | null; level: string } | null,

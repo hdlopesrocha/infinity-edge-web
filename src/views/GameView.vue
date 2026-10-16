@@ -219,7 +219,7 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
       <img v-else-if="m.iconUrl" :src="m.iconUrl" :width="m.w" :height="m.h" alt="" draggable="false" />
       <span v-if="m.label">{{ m.label }}</span>
     </div>
-    <div ref="layerRef" class="touch-layer" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp">
+    <div ref="layerRef" class="touch-layer" :class="{ 'gl-hidden': store.glUi }" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp">
       <template v-if="hud.stickOn">
         <img class="stick-back" draggable="false" :src="base + '_backAnalog.png'" alt="" :style="`left:${hud.backX}px;top:${hud.backY}px;`" />
         <img class="stick-knob" draggable="false" :src="base + '_stickAnalog.png'" alt="" :style="`left:${hud.knobX}px;top:${hud.knobY}px;`" />

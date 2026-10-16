@@ -17,6 +17,12 @@ const H = 1024;
 const TEX_BASE = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
 const AIM_URL = TEX_BASE + '_aim.png';
 const OVER_URL = TEX_BASE + '_over.png';
+const ACCEL_URL = TEX_BASE + '_accelAnalog.png';
+const FIRE_URL = TEX_BASE + '_fireButton.png';
+const FIRE_HM_URL = TEX_BASE + '_fireButtonHM.png';
+const NITRO_URL = TEX_BASE + '_nitro.png';
+const STICK_BACK_URL = TEX_BASE + '_backAnalog.png';
+const STICK_KNOB_URL = TEX_BASE + '_stickAnalog.png';
 
 /** Async icon cache: 2D-canvas drawImage of the real game art. Until an icon
  *  has loaded the overlay falls back to the procedural shapes, so a slow
@@ -121,6 +127,8 @@ export class HudOverlay {
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     this.vao = vao;
+    // Warm the item art so the buttons are there from the first frame.
+    for (const u of [AIM_URL, OVER_URL, ACCEL_URL, FIRE_URL, FIRE_HM_URL, NITRO_URL, STICK_BACK_URL, STICK_KNOB_URL]) icon(u);
   }
 
   /** Paint the DOM HUD's contents (score/clock/notify/timer/aim/life/markers). */
@@ -260,20 +268,49 @@ export class HudOverlay {
         c.fillRect(x, y, w * frac, hh);
       }
     }
-    // Missiles / nitro / throttle, bottom right.
+    // User items, bottom right: the same button art as the DOM - accelerator
+    // disc + fire, homing missiles and nitro, with their counts.
     {
-      c.textAlign = 'right';
-      c.fillStyle = '#fff';
-      c.font = `${Math.round(20 * s)}px system-ui, sans-serif`;
-      shadow(5);
-      const x = W - 20 * s;
-      let y = H - 100 * sy;
-      c.fillText(`HM ${h.homings}`, x, y);
-      y += 28 * sy;
-      c.fillStyle = h.nitroPct > 0 ? '#fff' : 'rgba(255,255,255,0.35)';
-      c.fillText(`NITRO ${h.nitroPct}%`, x, y);
-      c.textAlign = 'center';
+      const bw = 96 * s;
+      const bx = (h.canvasW - 96 - 128) * sx;
+      const items: { url: string; count: string; dim: boolean }[] = [
+        { url: FIRE_URL, count: '', dim: false },
+        { url: FIRE_HM_URL, count: String(h.homings), dim: h.homings === 0 },
+        { url: NITRO_URL, count: String(h.nitroPct), dim: h.nitroPct <= 0 },
+      ];
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const y = (h.canvasH - (96 + 32) * (i + 1)) * sy;
+        c.globalAlpha = it.dim ? 0.2 : 1;
+        const disc = icon(ACCEL_URL);
+        if (disc) c.drawImage(disc, bx, y, bw, bw);
+        const glyph = icon(it.url);
+        if (glyph) c.drawImage(glyph, bx, y, bw, bw);
+        if (it.count) {
+          c.fillStyle = '#fff';
+          c.font = `${Math.round(18 * s)}px system-ui, sans-serif`;
+          shadow(4);
+          c.fillText(it.count, bx + bw / 2, y + bw * 0.34);
+        }
+        c.globalAlpha = 1;
+      }
+      // Accelerator bar + knob (top right of the item stack).
+      c.fillStyle = 'rgba(255,255,255,0.2)';
+      c.fillRect((h.canvasW - 96 + 40) * sx, (h.canvasH - 400 + 48) * sy, 16 * s, (400 - 96) * s);
+      const knob = icon(ACCEL_URL);
+      if (knob) {
+        const ky = (h.canvasH - 400 + 48 + (400 - 96) * (1 - h.acel) - 48) * sy;
+        c.drawImage(knob, (h.canvasW - 96) * sx, ky, 96 * s, 96 * s);
+      }
+      // Flight stick, when the level enables it.
+      if (h.stickOn) {
+        const back = icon(STICK_BACK_URL);
+        if (back) c.drawImage(back, h.backX * sx, h.backY * sy, 256 * s, 256 * s);
+        const sk = icon(STICK_KNOB_URL);
+        if (sk) c.drawImage(sk, h.knobX * sx, h.knobY * sy, 96 * s, 96 * s);
+      }
     }
+
     c.shadowBlur = 0;
     // Upload (sub-image keeps the same texture object the session uses).
     const gl = this.gl;

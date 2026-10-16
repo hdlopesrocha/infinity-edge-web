@@ -94,7 +94,7 @@ function onVisibilityChange(): void {
 }
 
 /** In VR a tap on the scene re-centres the view on the current heading. */
-/** Stage 5 gets the live HUD in matches; menus keep the DOM UI instead. */
+/** Stage 5 gets the live HUD in matches; menus keep the DOM UI. */
 function uiHud(): typeof store.hud | null {
   return instance && instance.gameType !== 'BACK' ? store.hud : null;
 }

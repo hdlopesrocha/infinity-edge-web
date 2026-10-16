@@ -308,3 +308,15 @@ img, button, .icon-btn img, .fit-list img, .menu-window img, .hud img, .touch-la
 .pause-cols { display: flex; gap: 28px; align-items: flex-start; }
 .pause-panel { min-width: 620px; }
 .pause-settings .opt-row { font-size: 13px; }
+
+/* The GL UI (stage 5 of the final pass) draws the touch controls, so their DOM
+   copies are invisible - but still hit-testable, the input stays in the DOM. */
+.gl-hidden { opacity: 0; }
+
+/* VR menus: render the screen once per eye (each a half-scale copy of the
+   full-width layout), so both eyes show the same thing in the same place
+   instead of one layout stretched across the seam. */
+.vr-pair { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
+.vr-eye { position: absolute; top: 0; width: 50%; height: 100%; overflow: hidden; }
+.vr-eye + .vr-eye { left: 50%; }
+.vr-eye-content { width: 200%; height: 200%; transform: scale(0.5); transform-origin: top left; padding: 14% 0 0 5%; }

@@ -342,10 +342,9 @@ in vec2 vUV;
 uniform sampler2D uColor; uniform float uThreshold;
 out vec4 oColor;
 void main() {
-  vec3 c = texture(uColor, vUV).rgb;
-  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  float k = smoothstep(uThreshold, uThreshold + 0.4, l);
-  oColor = vec4(c * k, 1.0);
+  // Stage 4 source = stage 2 itself: the models layer is blurred as a whole
+  // (alpha included), so every object gets the smear, not just bright ones.
+  oColor = texture(uColor, vUV);
 }`;
 
 export const POST_BLUR_FRAG = `#version 300 es
@@ -354,11 +353,11 @@ in vec2 vUV;
 uniform sampler2D uTex; uniform vec2 uDir;
 out vec4 oColor;
 void main() {
-  vec3 sum = texture(uTex, vUV).rgb * 0.227;
-  sum += (texture(uTex, vUV + uDir * 1.0).rgb + texture(uTex, vUV - uDir * 1.0).rgb) * 0.194;
-  sum += (texture(uTex, vUV + uDir * 2.0).rgb + texture(uTex, vUV - uDir * 2.0).rgb) * 0.121;
-  sum += (texture(uTex, vUV + uDir * 3.0).rgb + texture(uTex, vUV - uDir * 3.0).rgb) * 0.054;
-  oColor = vec4(sum, 1.0);
+  vec4 sum = texture(uTex, vUV) * 0.227;
+  sum += (texture(uTex, vUV + uDir * 1.0) + texture(uTex, vUV - uDir * 1.0)) * 0.194;
+  sum += (texture(uTex, vUV + uDir * 2.0) + texture(uTex, vUV - uDir * 2.0)) * 0.121;
+  sum += (texture(uTex, vUV + uDir * 3.0) + texture(uTex, vUV - uDir * 3.0)) * 0.054;
+  oColor = sum;
 }`;
 
 // Final pass (stage 6): 1 + 4 + 2 + 3 + 5, in that order. The zoom blur taps
@@ -384,19 +383,24 @@ void main() {
   int zn = (uZoom < 0.0005) ? 1 : clamp(uZoomSamples, 2, 16);
   vec2 zd = vUV - uZoomCenter;
   vec3 sky = texture(uSky, vUV).rgb;
-  vec3 blur = vec3(0.0);
+  vec4 blur = vec4(0.0);
   for (int i = 0; i < 16; i++) {
     if (i >= zn) break;
     vec2 uv = clamp(vUV - zd * (uZoom * (float(i) / float(zn))), vec2(0.0), vec2(1.0));
-    blur += texture(uBloom, uv).rgb;
+    blur += texture(uBloom, uv);
   }
   blur /= float(zn);
   vec4 models = texture(uModels, vUV);
   vec3 bb = texture(uBillboards, vUV).rgb;
-  // 1 + 4 + 2 + 3: sky, blurred models, sharp models, billboards.
-  vec3 col = sky + blur * 0.30;
-  col = mix(col, models.rgb, models.a);
-  col += bb;
+  // 1 + 4 + 2 + 3: sky, blurred models, sharp models, billboards. The models
+  // target is straight-alpha composited from a transparent clear, so its
+  // colour already carries coverage: both copies go over as dst*(1-a) + rgb.
+  // (mix() dimmed rgb by alpha a second time, which made the arena walls -
+  // alpha ~0.1 - disappear.)
+  vec3 col = sky;
+  col = col * (1.0 - blur.a) + blur.rgb;      // 4: blurred models (no sky in it)
+  col = col * (1.0 - models.a) + models.rgb;  // 2: sharp models on top
+  col += bb;                                   // 3: billboards
   vec2 d = vUV - vec2(0.5);
   if (uFlare > 0.0) {
     vec3 flare = vec3(0.0);
@@ -409,7 +413,8 @@ void main() {
       float shape = texture(uFlareTex, fuv).r * 0.5 + texture(uFlareTex, fuv.yx * 0.9).g * 0.5;
       flare += s * shape * (0.6 / (1.0 + float(i) * 0.8));
     }
-    col += flare * uFlare;
+    // The flare now reads the blurred layer, so keep its weight subtle.
+    col += flare * uFlare * 0.35;
   }
   // 5: the UI on top, unblurred - sampled from this view's own sub-rect so
   // each eye gets its undistorted copy at the same relative position.

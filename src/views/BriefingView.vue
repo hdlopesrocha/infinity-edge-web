@@ -1,11 +1,11 @@
 <!-- Briefing = level Menu.xml: scoreBoard left (10 rows), textBox right,
      RU "start" -> Level.xml. Level text comes from the Level description. -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
 import { loadLevel } from '../game/levels';
-import { loadScores } from '../game/store';
+import { loadScores, store } from '../game/store';
 import { audio } from '../game/audio';
 
 const route = useRoute();
@@ -28,10 +28,15 @@ onMounted(async () => {
     list.forEach((g) => rows.push(g.toVisual(type)));
     while (rows.length < 10) rows.push('');
     scores.value = rows;
+    store.scoreboard = { title: 'High Scores', rows };
     loaded.value = true;
   } catch {
     loaded.value = false;
   }
+});
+
+onBeforeUnmount(() => {
+  store.scoreboard = null;
 });
 
 function start(): void {
@@ -46,9 +51,23 @@ const hasLevel = computed(() => loaded.value);
 <template>
   <MenuShell v-if="hasLevel" primary="start" :on-primary="start">
     <template #left>
-      <div class="f-small c-white" style="text-align: left; width: 100%;">High Scores<br /></div>
-      <div class="f-small c-white" style="text-align: left; width: 100%;">
-        <div v-for="(s, i) in scores" :key="i">{{ (i + 1) + ' - ' + s }}</div>
+      <template v-if="!store.vr">
+        <div class="f-small c-white" style="text-align: left; width: 100%;">High Scores<br /></div>
+        <div class="f-small c-white" style="text-align: left; width: 100%;">
+          <div v-for="(s, i) in scores" :key="i">{{ (i + 1) + ' - ' + s }}</div>
+        </div>
+      </template>
+      <!-- VR: the same board once per eye, each a half-scale copy of the
+           full-screen layout, so left and right show it in the same place. -->
+      <div v-else class="vr-pair">
+        <div v-for="eye in 2" :key="eye" class="vr-eye">
+          <div class="vr-eye-content">
+            <div class="f-small c-white" style="text-align: left; width: 100%;">High Scores<br /></div>
+            <div class="f-small c-white" style="text-align: left; width: 100%;">
+              <div v-for="(s, i) in scores" :key="i">{{ (i + 1) + ' - ' + s }}</div>
+            </div>
+          </div>
+        </div>
       </div>
     </template>
     <template #right>
