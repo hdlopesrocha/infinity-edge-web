@@ -1,6 +1,6 @@
 <!-- Persistent WebGL host: Renderer + RC + active GameInstance. -->
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref , watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { Renderer } from '../engine/renderer';
 import { ZOOM_BLUR } from '../engine/post';
@@ -11,6 +11,7 @@ import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
 import { store, syncOptionsFromRC } from '../game/store';
 import { calibrateVr, dragLook, vrLook } from '../game/vr';
+import { enterXr, leaveXr } from '../game/xr';
 import { Life3 } from '../game/life';
 import { audio } from '../game/audio';
 
@@ -164,6 +165,8 @@ function onVrDown(e: PointerEvent): void {
   // else on the scene the drag looks around.
   const t = e.target as HTMLElement | null;
   if (t && t.closest && t.closest(VR_CONTROL_SELECTOR)) return;
+  // Any click on the scene re-centres the view on the current heading.
+  calibrateVr();
   dragging = true;
   lastX = e.clientX;
   lastY = e.clientY;
@@ -230,6 +233,28 @@ function onPointerUp(e: PointerEvent): void {
   menuDrag = null;
   instance?.control.touches.delete(e.pointerId);
 }
+
+/**
+ * Immersive sessions hide the page DOM (menus, HUD, score), so menus take over
+ * with the split view: pausing ends the session, resuming or starting a match
+ * opens a new one. Both happen inside a user gesture, as requestSession needs.
+ */
+function tryImmersive(): void {
+  if (!renderer || !instance) return;
+  if (!store.vr || !store.interactive || store.paused || renderer.xrActive) return;
+  void enterXr(renderer, () => instance, () => undefined);
+}
+watch(() => store.paused, (p) => {
+  if (!renderer || !store.vr) return;
+  if (!store.interactive) return;
+  if (p) leaveXr(true);   // a menu opened: end the session, the DOM UI shows
+  else tryImmersive();    // resume click: back into the headset
+});
+watch(() => store.interactive, (on) => {
+  if (!renderer || !store.vr) return;
+  if (on && !store.paused) tryImmersive();
+  else if (!on && renderer.xrActive) leaveXr(true);
+});
 
 onMounted(() => {
   try {

@@ -137,11 +137,7 @@ async function toggleVr(): Promise<void> {
     setVr(false);
     return;
   }
-  await enableVr({
-    renderer: (window as unknown as { __ieRenderer: import('../engine/renderer').Renderer }).__ieRenderer,
-    getInstance: () => (window as unknown as { __ieGame?: import('../game/instance').GameInstance }).__ieGame ?? null,
-    onEnd: () => { store.paused = false; },
-  });
+  await enableVr();
   // Leave the pause so the view is live: otherwise enabling VR looks like a
   // no-op because the frozen scene sits behind the panel.
   if (store.vr) {

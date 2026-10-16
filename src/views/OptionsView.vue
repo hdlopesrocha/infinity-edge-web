@@ -36,11 +36,7 @@ async function toggleVr(): Promise<void> {
     setVr(false);
     return;
   }
-  await enableVr({
-    renderer: (window as unknown as { __ieRenderer: import('../engine/renderer').Renderer }).__ieRenderer,
-    getInstance: () => (window as unknown as { __ieGame?: import('../game/instance').GameInstance }).__ieGame ?? null,
-    onEnd: () => undefined,
-  });
+  await enableVr();
 }
 const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
 const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');

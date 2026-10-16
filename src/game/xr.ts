@@ -32,6 +32,7 @@ interface XRSession {
 import { mat4 } from '../engine/math';
 import type { GameInstance } from './instance';
 import { store } from './store';
+import { calibrateVr } from './vr';
 
 type XrSystem = {
   isSessionSupported(mode: string): Promise<boolean>;
@@ -44,6 +45,8 @@ function xr(): XrSystem | null {
 }
 
 let session: XRSession | null = null;
+let keepVrOnEnd = false;
+let entering = false;
 
 export function xrActive(): boolean {
   return session !== null;
@@ -60,9 +63,14 @@ export async function xrSupported(): Promise<boolean> {
   }
 }
 
-export function leaveXr(): void {
+/**
+ * End the session. `keepVr` keeps the app in VR mode (split view with the DOM
+ * UI) - that is what menus do, since an immersive session hides the page DOM.
+ */
+export function leaveXr(keepVr = false): void {
   const s = session;
   session = null;
+  keepVrOnEnd = keepVr;
   if (s) void s.end().catch(() => undefined);
 }
 
@@ -86,12 +94,16 @@ export async function enterXr(
 ): Promise<boolean> {
   const sys = xr();
   if (!sys) return false;
+  if (session || entering) return false;
+  entering = true;
   let s: XRSession;
   try {
     s = await sys.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'dom-overlay'], domOverlay: { root: document.body } });
   } catch {
+    entering = false;
     return false;
   }
+  entering = false;
   session = s;
   renderer.xrActive = true;
   const gl = renderer.gl;
@@ -139,10 +151,14 @@ export async function enterXr(
     renderer.presentFbo = null;
   };
   s.requestAnimationFrame(loop);
+  // A tap on the screen inside the session re-centres the view (there is no
+  // DOM in there, so this is the only click the page can see).
+  s.addEventListener('select', () => calibrateVr());
   s.addEventListener('end', () => {
     session = null;
     renderer.xrActive = false;
-    store.vr = false;
+    if (!keepVrOnEnd) store.vr = false;
+    keepVrOnEnd = false;
     onEnd();
   });
   return true;
