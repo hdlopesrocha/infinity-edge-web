@@ -6,7 +6,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { GameInstance } from '../game/instance';
-import { store } from '../game/store';
+import { saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
 
@@ -86,14 +86,44 @@ function onUp(e: PointerEvent): void {
 }
 
 function onKey(e: KeyboardEvent): void {
-  if (e.code === 'Escape') goBack(router, '/briefing/' + String(route.params.level));
+  if (e.code === 'Escape') (store.paused ? resume() : goBriefing());
 }
 
+const paused = computed(() => store.paused);
+const showSettings = ref(false);
+const o = store.options;
+const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
+
+/** In-game pause: the back button (or Escape) pauses instead of leaving. */
 function goBriefing(): void {
   audio.unlock();
   void audio.sfx('button');
-  // LIFO: return to whatever menu we came from (the briefing), never forward.
+  store.paused = true;
+  showSettings.value = false;
+}
+
+function resume(): void {
+  audio.unlock();
+  void audio.sfx('button');
+  store.paused = false;
+  showSettings.value = false;
+}
+
+/** Leave for good: LIFO back to whatever menu we came from. */
+function leaveMatch(): void {
+  audio.unlock();
+  void audio.sfx('button');
+  store.paused = false;
   goBack(router, '/briefing/' + String(route.params.level));
+}
+
+/** Options apply live to the running game (rc.options is read every frame)
+ *  and are persisted straight away. */
+function applyLive(): void {
+  const rc = (window as unknown as { __ieRC?: { options: typeof o } }).__ieRC;
+  if (rc) Object.assign(rc.options, o);
+  saveOptions(o);
+  audio.setMusicVolume(o.musicVolume);
 }
 
 onMounted(() => {
@@ -154,6 +184,45 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
         <img :src="base + '_nitro.png'" alt="" draggable="false" style="position:absolute;inset:0;" />
         <div class="count">{{ hud.nitroPct }}</div>
       </div>
+    </div>
+  </div>
+  <div v-if="paused" class="pause-backdrop">
+    <div class="pause-panel">
+      <div class="pause-title">PAUSED</div>
+      <button class="pause-btn primary" @click="resume">RESUME</button>
+      <button class="pause-btn" @click="showSettings = !showSettings">
+        {{ showSettings ? 'HIDE SETTINGS' : 'SETTINGS' }}
+      </button>
+      <div v-if="showSettings" class="pause-settings">
+        <label class="pause-row">
+          <span>Draw distance</span>
+          <input v-model.number="o.distance" type="range" min="128" max="512" step="1" @input="applyLive" />
+          <span class="pause-value">{{ o.distance }}</span>
+        </label>
+        <label class="pause-row">
+          <span>3D detail</span>
+          <input v-model.number="o.detail" type="range" min="0" max="4" step="1" @input="applyLive" />
+          <span class="pause-value">{{ detailNames[o.detail] }}</span>
+        </label>
+        <label class="pause-row">
+          <span>Special effects</span>
+          <input v-model="o.billboards" type="checkbox" @change="applyLive" />
+          <span class="pause-value" />
+        </label>
+        <label class="pause-row">
+          <span>Music volume</span>
+          <input v-model.number="o.musicVolume" type="range" min="0" max="1" step="0.05" @input="applyLive" />
+          <span class="pause-value">{{ Math.round(o.musicVolume * 100) }}%</span>
+        </label>
+        <label class="pause-row">
+          <span>Invert X / Y</span>
+          <span class="pause-value">
+            <input v-model="o.axisX" type="checkbox" @change="applyLive" />
+            <input v-model="o.axisY" type="checkbox" @change="applyLive" />
+          </span>
+        </label>
+      </div>
+      <button class="pause-btn leave" @click="leaveMatch">LEAVE MATCH</button>
     </div>
   </div>
   <button class="corner-btn lu" @click="goBriefing">back</button>

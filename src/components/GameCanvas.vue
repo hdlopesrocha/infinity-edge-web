@@ -315,6 +315,17 @@ onMounted(() => {
       if (!instance || !renderer) return;
       instance.canvasW = canvasRef.value?.clientWidth || 1280;
       instance.canvasH = canvasRef.value?.clientHeight || 720;
+      if (store.paused) {
+        // Paused: the world stands still but the frame keeps drawing, so the
+        // pause panel can show live option changes behind it.
+        instance.canvasW = canvasRef.value?.clientWidth || 1280;
+        instance.canvasH = canvasRef.value?.clientHeight || 720;
+        renderer.beginFrame();
+        instance.draw();
+        renderer.endFrame();
+        syncHud(instance);
+        return;
+      }
       instance.update(dtMs);
       renderer.beginFrame();
       instance.draw();

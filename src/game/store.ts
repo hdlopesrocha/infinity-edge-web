@@ -30,6 +30,9 @@ export const store = reactive({
   sceneKey: 'background' as string,
   levelKey: '' as string,
   interactive: false,
+  /** True while the in-game pause overlay is open: the world stops, the
+   *  scene keeps rendering so option changes are visible behind it. */
+  paused: false,
   username: '' as string,
   levelText: '' as string,
   result: null as { won: boolean; reward: string; message: string | null; level: string } | null,
