@@ -25,6 +25,8 @@ export interface PresentOptions {
   /** 0 disables the lens flare; ~0.6 is the tuned default. */
   flare: number;
   flareTex: TexEntry | null;
+  /** Target rectangle for the composite; null = the whole canvas. */
+  viewport: { x: number; y: number; w: number; h: number } | null;
   /** Zoom-blur radius at the screen edge, in UV (0 = off). */
   zoom: number;
   /** Screen point (UV) the ship is flying toward. */
@@ -289,6 +291,7 @@ export class Post {
     }
     // 2. composite to the canvas: sky + objects
     const bloom = flare > 0 ? this.blurB.tex : this.blurA.tex;
+    const vp = opts.viewport;
     this.blitPass(this.progComposite, null, () => {
       this.bindTex(this.uComposite.uSky, 0, this.skyTex);
       this.bindTex(this.uComposite.uSharp, 1, sharp);
@@ -299,6 +302,7 @@ export class Post {
       gl.uniform2f(this.uComposite.uZoomCenter, opts.zoomCenterX, opts.zoomCenterY);
       gl.uniform1f(this.uComposite.uZoom, opts.zoom);
       gl.uniform1i(this.uComposite.uZoomSamples, ZOOM_BLUR.samples);
-    }, gl.drawingBufferWidth, gl.drawingBufferHeight);
+      if (vp) gl.viewport(vp.x, vp.y, vp.w, vp.h);
+    }, vp ? vp.w : gl.drawingBufferWidth, vp ? vp.h : gl.drawingBufferHeight);
   }
 }

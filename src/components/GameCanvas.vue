@@ -346,6 +346,43 @@ onMounted(() => {
       if (!instance || !renderer) return;
       instance.canvasW = canvasRef.value?.clientWidth || 1280;
       instance.canvasH = canvasRef.value?.clientHeight || 720;
+      // Stereo VR (no WebXR headset): two eyes side by side. Each half is a
+      // full render with the camera shifted along its right axis, which is
+      // what makes the depth read in a phone viewer.
+      if (store.vr && !renderer.xrActive && !store.paused) {
+        instance.canvasW = canvasRef.value?.clientWidth || 1280;
+        instance.canvasH = canvasRef.value?.clientHeight || 720;
+        instance.update(dtMs);
+        const gl = renderer.gl;
+        const w = gl.drawingBufferWidth;
+        const h = gl.drawingBufferHeight;
+        const half = Math.floor(w / 2);
+        const ipd = 0.25;                       // world units between the eyes
+        const cam = renderer.camera;
+        const base = { x: cam.position[0], y: cam.position[1], z: cam.position[2] };
+        for (let eye = 0; eye < 2; eye++) {
+          const sign = eye === 0 ? -1 : 1;
+          const side = cam.side;
+          cam.position[0] = base.x + side[0] * ipd * sign;
+          cam.position[1] = base.y + side[1] * ipd * sign;
+          cam.position[2] = base.z + side[2] * ipd * sign;
+          cam.updateMatrices();
+          renderer.viewport = { x: eye * half, y: 0, w: half, h };
+          gl.enable(gl.SCISSOR_TEST);
+          gl.scissor(eye * half, 0, half, h);
+          renderer.beginFrame();
+          instance.draw();
+          renderer.endFrame();
+          gl.disable(gl.SCISSOR_TEST);
+        }
+        renderer.viewport = null;
+        cam.position[0] = base.x;
+        cam.position[1] = base.y;
+        cam.position[2] = base.z;
+        cam.updateMatrices();
+        syncHud(instance);
+        return;
+      }
       if (renderer.xrActive) {
         // WebXR owns the drawing; this loop only advances the simulation so
         // the ship keeps flying in the headset.

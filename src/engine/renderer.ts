@@ -50,6 +50,8 @@ export class Renderer {
   frustum: FrustumPlanes = createFrustum();
   stats: RenderStats = { fps: 0, draws: 0, culled: 0 };
   renderOptions: RenderOptions = { flare: 0.9, flareTex: null, zoom: 0, zoomCenterX: 0.5, zoomCenterY: 0.5 };
+  /** Composite target: null = whole canvas, or one eye's rectangle in stereo VR. */
+  viewport: { x: number; y: number; w: number; h: number } | null = null;
   /** Reusable counter for hierarchical culling (no per-frame allocation). */
   readonly cullStats: CullStats = { culled: 0 };
   onFrame: ((dtMs: number) => void) | null = null;
@@ -153,6 +155,7 @@ export class Renderer {
     vec3.copy(this.prevCameraPos, this.camera.position);
     this.hasPrevViewProj = true;
     this.post.present({
+      viewport: this.viewport,
       flare: this.renderOptions.flare,
       flareTex: this.renderOptions.flareTex,
       zoom: this.renderOptions.zoom,
