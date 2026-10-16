@@ -111,7 +111,11 @@ export async function enterXr(
   const gl = renderer.gl;
   await (gl as unknown as { makeXRCompatible(): Promise<void> }).makeXRCompatible();
   const layer = new XRWebGLLayer(s, gl);
-  s.updateRenderState({ baseLayer: layer });
+  // The runtime builds each eye's projection matrix, so its depth range has to
+  // be set from the same draw distance the settings use - otherwise XR renders
+  // with the runtime's own far plane, not the player's.
+  const far = Math.max(64, store.options.distance || 0) || 192;
+  s.updateRenderState({ baseLayer: layer, depthNear: 0.1, depthFar: far });
   const refSpace = await s.requestReferenceSpace('local');
   const head = mat4.create();
   const chase = mat4.create();
@@ -125,6 +129,9 @@ export async function enterXr(
     const instance = getInstance();
     const pose = frame.getViewerPose(refSpace);
     if (!instance || !pose) return;
+    // Keep the engine's far plane (fog falloff, fog/soft-particle range,
+    // culling) on the settings value too; the projection comes from the pose.
+    renderer.camera.far = far;
     // Simulate normally: this also positions the chase camera behind the ship.
     const fullW = gl.drawingBufferWidth;
     const fullH = gl.drawingBufferHeight;

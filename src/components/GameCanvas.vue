@@ -329,6 +329,8 @@ onMounted(() => {
         // While paused only the simulation stops; the eyes keep drawing so the
         // background, the world and the HUD stay visible in the headset.
         if (!store.paused) instance.update(dtMs);
+        // Stereo VR draws with the same far view distance as the settings.
+        renderer.camera.far = store.options.distance;
         const gl = renderer.gl;
         const w = gl.drawingBufferWidth;
         const h = gl.drawingBufferHeight;
@@ -426,9 +428,10 @@ onMounted(() => {
     renderer.start();
     sceneTimer = window.setInterval(() => {
       void rebuild();
-      if (renderer && rc && store.options.distance !== rc.options.distance) {
-        renderer.camera.far = store.options.distance;
-      }
+      // The far plane follows the settings' draw distance unconditionally
+      // (the old check only synced when the two mirrors disagreed, so a
+      // restored session could keep the 192 default forever).
+      if (renderer) renderer.camera.far = store.options.distance;
     }, 300);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('pointerdown', onVrDown, true);
