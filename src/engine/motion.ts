@@ -86,7 +86,7 @@ export function exposureShutter(
   exposureSeconds: number,
   frameSeconds: number,
   min = 0.35,
-  max = 3,
+  max = 200,
 ): number {
   const frame = Math.max(frameSeconds, 1e-4);
   return Math.min(max, Math.max(min, exposureSeconds / frame));
@@ -136,11 +136,12 @@ export interface MotionBlurConfig {
 }
 
 export const MOTION_BLUR: MotionBlurConfig = {
-  // 3x the nominal 1/60 s frame: the streaks are the length of three rendered
-  // frames of motion, which is what makes the effect read as speed.
-  exposureSeconds: 3 / 60,
-  // Cap raised with the exposure so long streaks are not clipped flat.
-  maxRadiusUV: 0.12,
+  // Long exposure: the streak is this many seconds of screen motion, so at
+  // 60 fps it is ~300 frames of movement -- everything moving on screen
+  // smears to the radius cap below.
+  exposureSeconds: 5.0,
+  // Cap: a third of the screen. This is what the streaks actually reach.
+  maxRadiusUV: 0.35,
   samples: 32,
   gainAtRest: 1,
   gainPerSpeed: 1,
