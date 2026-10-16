@@ -136,9 +136,12 @@ export interface MotionBlurConfig {
 }
 
 export const MOTION_BLUR: MotionBlurConfig = {
-  exposureSeconds: 1.5 / 60,
-  maxRadiusUV: 0.08,
-  samples: 24,
+  // 3x the nominal 1/60 s frame: the streaks are the length of three rendered
+  // frames of motion, which is what makes the effect read as speed.
+  exposureSeconds: 3 / 60,
+  // Cap raised with the exposure so long streaks are not clipped flat.
+  maxRadiusUV: 0.12,
+  samples: 32,
   gainAtRest: 1,
   gainPerSpeed: 1,
   gainMax: 2,

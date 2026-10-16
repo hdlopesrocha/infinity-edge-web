@@ -121,8 +121,8 @@ describe('exposure model', () => {
     expect(start[0]).toBeCloseTo(uv[0] - 0.1, 9);
   });
 
-  it('ships a documented default of 1.5 x the nominal 1/60 s frame', () => {
-    expect(MOTION_BLUR.exposureSeconds).toBeCloseTo(1.5 / 60, 9);
+  it('ships a documented default of 3 x the nominal 1/60 s frame', () => {
+    expect(MOTION_BLUR.exposureSeconds).toBeCloseTo(3 / 60, 9);
     expect(MOTION_BLUR.samples).toBeGreaterThanOrEqual(2);
     expect(MOTION_BLUR.samples).toBeLessThanOrEqual(32);
     expect(MOTION_BLUR.maxRadiusUV).toBeGreaterThan(0);
