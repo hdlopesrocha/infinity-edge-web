@@ -6,7 +6,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { GameInstance } from '../game/instance';
-import { saveOptions, store } from '../game/store';
+import { clearGameData, saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
 import { gamepadConnected, setVr } from '../game/vr';
@@ -99,6 +99,35 @@ const pad = ref(gamepadConnected());
 const vr = computed(() => store.vr);
 const padPoll = window.setInterval(() => { const now = gamepadConnected(); if (now !== pad.value) pad.value = now; }, 1000);
 onBeforeUnmount(() => window.clearInterval(padPoll));
+/** The pause settings mirror the Options screen: live apply, snapshot on
+ *  open, and closing without SAVE rolls everything back. */
+const snapshot = ref<Record<string, unknown> | null>(null);
+function openSettings(): void {
+  snapshot.value = { ...o };
+  showSettings.value = true;
+}
+function closeSettings(): void {
+  if (snapshot.value) Object.assign(o, snapshot.value);
+  snapshot.value = null;
+  showSettings.value = false;
+  applyLive();
+}
+function saveSettings(): void {
+  if (snapshot.value) Object.assign(o, snapshot.value);
+  snapshot.value = null;
+  saveOptions(o);
+  applyLive();
+  audio.unlock();
+  void audio.sfx('button');
+}
+function clearAll(): void {
+  clearGameData();
+  void audio.sfx('button');
+}
+function volumePct(): string {
+  return Math.round(o.musicVolume * 100) + '%';
+}
+
 function toggleVr(): void {
   audio.unlock();
   void audio.sfx('button');
@@ -110,7 +139,7 @@ function goBriefing(): void {
   audio.unlock();
   void audio.sfx('button');
   store.paused = true;
-  showSettings.value = false;
+  if (showSettings.value) closeSettings();
 }
 
 function resume(): void {
@@ -202,49 +231,69 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
     <div class="pause-panel">
       <div class="pause-title">PAUSED</div>
       <button class="pause-btn primary" @click="resume">RESUME</button>
-      <button class="pause-btn" @click="showSettings = !showSettings">
-        {{ showSettings ? 'HIDE SETTINGS' : 'SETTINGS' }}
+      <button class="pause-btn" @click="showSettings ? closeSettings() : openSettings()">
+        {{ showSettings ? 'CLOSE SETTINGS' : 'SETTINGS' }}
       </button>
       <div v-if="showSettings" class="pause-settings">
-        <label class="pause-row">
-          <span>Draw distance</span>
-          <input v-model.number="o.distance" type="range" min="128" max="512" step="1" @input="applyLive" />
-          <span class="pause-value">{{ o.distance }}</span>
-        </label>
-        <label class="pause-row">
-          <span>3D detail</span>
-          <input v-model.number="o.detail" type="range" min="0" max="4" step="1" @input="applyLive" />
-          <span class="pause-value">{{ detailNames[o.detail] }}</span>
-        </label>
-        <label class="pause-row">
-          <span>Special effects</span>
-          <input v-model="o.billboards" type="checkbox" @change="applyLive" />
-          <span class="pause-value" />
-        </label>
-        <label class="pause-row">
-          <span>Music volume</span>
-          <input v-model.number="o.musicVolume" type="range" min="0" max="1" step="0.05" @input="applyLive" />
-          <span class="pause-value">{{ Math.round(o.musicVolume * 100) }}%</span>
-        </label>
-        <div class="pause-row">
-          <span>VR mode <span class="c-white50">(gyroscope)</span></span>
-          <span class="pause-value">
-            <button class="pause-btn" style="padding: 4px 10px;"
-                    title="Move the device to look; tap the scene to re-centre"
-                    @click="toggleVr">{{ vr ? 'ON' : 'OFF' }}</button>
-          </span>
+        <div class="pause-cols">
+          <div class="opt-list">
+            <div class="opt-row">
+              <label>Username: </label>
+              <input v-model="o.username" class="opt-input" maxlength="12" />
+            </div>
+            <div class="opt-row">
+              <label>Draw Distance: </label>
+              <input v-model.number="o.distance" type="range" class="drag" min="128" max="512" step="1" @input="applyLive" />
+              <span class="opt-value">{{ ' ' + o.distance }}</span>
+            </div>
+            <div class="opt-row">
+              <label>3D detail: </label>
+              <input v-model.number="o.detail" type="range" class="drag" min="0" max="4" step="1" @input="applyLive" />
+              <span class="opt-value">{{ ' ' + detailNames[o.detail] }}</span>
+            </div>
+            <div class="opt-row">
+              <label>Music volume: </label>
+              <input v-model.number="o.musicVolume" type="range" class="drag" min="0" max="1" step="0.05" @input="applyLive" />
+              <span class="opt-value">{{ ' ' + volumePct() }}</span>
+            </div>
+            <div class="opt-row">
+              <label class="opt-check-label">
+                <span>Special Effects: </span>
+                <input v-model="o.billboards" type="checkbox" class="opt-check" @change="applyLive" />
+              </label>
+            </div>
+          </div>
+          <div class="opt-list">
+            <div class="opt-row">
+              <label class="opt-check-label">
+                <span>Invert X axis: </span>
+                <input v-model="o.axisX" type="checkbox" class="opt-check" @change="applyLive" />
+              </label>
+            </div>
+            <div class="opt-row">
+              <label class="opt-check-label">
+                <span>Invert Y axis: </span>
+                <input v-model="o.axisY" type="checkbox" class="opt-check" @change="applyLive" />
+              </label>
+            </div>
+            <div class="opt-row">
+              <span>VR mode <span class="c-white50">(gyroscope)</span></span>
+              <button class="pause-btn" style="padding: 4px 10px;"
+                      title="Move the device to look; tap the scene to re-centre"
+                      @click="toggleVr">{{ vr ? 'ON' : 'OFF' }}</button>
+            </div>
+            <div v-if="vr" class="opt-row">
+              <span class="c-white50">Look: move the device &middot; Re-centre: tap the scene</span>
+            </div>
+            <button class="track-btn menubtn-wide opt-clear" :style="`background-image:url(${base}_menubtn.png);`" @click="clearAll">
+              Clear All
+            </button>
+          </div>
         </div>
-        <div v-if="vr" class="pause-row">
-          <span class="c-white50">Look: move the device &middot; Re-centre: tap the scene
-            {{ pad ? '&middot; Gamepad: stick + RT' : '&middot; No gamepad: keyboard or touch still works' }}</span>
+        <div class="pause-cols">
+          <button class="pause-btn primary" @click="saveSettings">SAVE</button>
+          <button class="pause-btn" @click="closeSettings">CANCEL (REVERT)</button>
         </div>
-        <label class="pause-row">
-          <span>Invert X / Y</span>
-          <span class="pause-value">
-            <input v-model="o.axisX" type="checkbox" @change="applyLive" />
-            <input v-model="o.axisY" type="checkbox" @change="applyLive" />
-          </span>
-        </label>
       </div>
       <button class="pause-btn leave" @click="leaveMatch">LEAVE MATCH</button>
     </div>

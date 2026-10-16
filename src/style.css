@@ -302,3 +302,7 @@ input[type='checkbox'].opt-check { accent-color: var(--accent); }
 .pause-row input[type='range'] { accent-color: var(--accent); width: 150px; }
 .pause-row input[type='checkbox'] { accent-color: var(--accent); }
 .pause-value { min-width: 76px; text-align: right; color: var(--ink); }
+
+.pause-cols { display: flex; gap: 28px; align-items: flex-start; }
+.pause-panel { min-width: 620px; }
+.pause-settings .opt-row { font-size: 13px; }
