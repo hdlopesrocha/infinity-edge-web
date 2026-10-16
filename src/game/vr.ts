@@ -48,9 +48,48 @@ export function vrAvailable(): boolean {
   return gamepadConnected();
 }
 
+/** Last enable attempt's outcome, for the UI. */
+export type VrStatus = 'off' | 'on' | 'denied' | 'unsupported';
+export const vrState = { status: 'off' as VrStatus };
+
+/** iOS 13+ asks for motion access from a user gesture; other platforms have
+ *  no permission step at all (deviceorientation just starts firing). */
+interface PermissionCapable {
+  requestPermission?: () => Promise<'granted' | 'denied'>;
+}
+
+export async function enableVr(): Promise<VrStatus> {
+  const ev = (typeof window !== 'undefined'
+    ? (window as unknown as { DeviceOrientationEvent?: PermissionCapable }).DeviceOrientationEvent
+    : undefined);
+  if (!ev) {
+    vrState.status = 'unsupported';
+    return 'unsupported';
+  }
+  if (typeof ev.requestPermission === 'function') {
+    try {
+      const res = await ev.requestPermission();
+      if (res !== 'granted') {
+        vrState.status = 'denied';
+        store.vr = false;
+        return 'denied';
+      }
+    } catch {
+      vrState.status = 'denied';
+      store.vr = false;
+      return 'denied';
+    }
+  }
+  bind();
+  store.vr = true;
+  vrState.status = 'on';
+  return 'on';
+}
+
 export function setVr(on: boolean): void {
-  store.vr = on;
-  if (on) bind();
+  if (on) { void enableVr(); return; }
+  store.vr = false;
+  vrState.status = 'off';
 }
 
 /** Tap/click: make the current gyroscope reading the centre of the view. */

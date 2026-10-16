@@ -11,10 +11,24 @@ import MenuShell from '../components/MenuShell.vue';
 import { clearGameData, saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
+import { enableVr, setVr, vrState } from '../game/vr';
 import type { Options } from '../game/resources';
 
 const router = useRouter();
 const o = store.options;
+const vrOn = () => store.vr;
+const vrStatusText = () => {
+  if (vrState.status === 'denied') return 'permission denied';
+  if (vrState.status === 'unsupported') return 'not supported on this device';
+  if (store.vr) return 'gyroscope active - move the device to look';
+  return 'gyroscope';
+};
+async function toggleVr(): Promise<void> {
+  audio.unlock();
+  void audio.sfx('button');
+  if (store.vr) setVr(false);
+  else await enableVr();
+}
 const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
 const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
 
@@ -114,6 +128,15 @@ function volumePct(): string {
     </template>
     <template #right>
       <div class="opt-list opt-list-right">
+        <div class="opt-row">
+          <span class="opt-check-label">
+            <span>VR mode: </span>
+            <button class="pause-btn" style="padding: 4px 10px;" @click="toggleVr">{{ vrOn() ? 'ON' : 'OFF' }}</button>
+          </span>
+        </div>
+        <div class="opt-row">
+          <span class="c-white50" style="font-size: 12px;">{{ vrStatusText() }}</span>
+        </div>
         <div class="opt-row">
           <label class="opt-check-label">
             <span>Invert X axis: </span>

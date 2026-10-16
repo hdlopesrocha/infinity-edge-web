@@ -9,7 +9,7 @@ import type { GameInstance } from '../game/instance';
 import { clearGameData, saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
-import { gamepadConnected, setVr } from '../game/vr';
+import { enableVr, gamepadConnected, setVr, vrState } from '../game/vr';
 import GazeCursor from '../components/GazeCursor.vue';
 
 const route = useRoute();
@@ -131,8 +131,14 @@ function volumePct(): string {
 function toggleVr(): void {
   audio.unlock();
   void audio.sfx('button');
-  setVr(!store.vr);
+  if (store.vr) setVr(false);
+  else void enableVr();
 }
+const vrStatusText = (): string => {
+  if (vrState.status === 'denied') return 'Motion permission denied - allow it in the browser settings';
+  if (vrState.status === 'unsupported') return 'No gyroscope available on this device';
+  return store.vr ? 'Active - move the device to look, tap the scene to re-centre' : 'Needs a device with a gyroscope';
+};
 
 /** In-game pause: the back button (or Escape) pauses instead of leaving. */
 function goBriefing(): void {
@@ -283,7 +289,7 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
                       @click="toggleVr">{{ vr ? 'ON' : 'OFF' }}</button>
             </div>
             <div v-if="vr" class="opt-row">
-              <span class="c-white50">Look: move the device &middot; Re-centre: tap the scene</span>
+              <span class="c-white50">{{ vrStatusText() }}</span>
             </div>
             <button class="track-btn menubtn-wide opt-clear" :style="`background-image:url(${base}_menubtn.png);`" @click="clearAll">
               Clear All
