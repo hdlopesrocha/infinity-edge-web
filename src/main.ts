@@ -37,3 +37,17 @@ const net = initChannel();
 if (net.enabled) {
   net.onStatus = (s) => console.debug('[net]', s.state, s.url);
 }
+
+// The browser must never offer its own options on this UI: a long press
+// (mobile) or right click on any icon, button or the scene used to show
+// "open image in new tab / download / share". Blocked app-wide; text inputs
+// keep theirs so copy/paste still works while typing a name.
+window.addEventListener('contextmenu', (e) => {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+  e.preventDefault();
+}, { capture: true });
+window.addEventListener('dragstart', (e) => {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'IMG' || t.tagName === 'BUTTON')) e.preventDefault();
+}, { capture: true });

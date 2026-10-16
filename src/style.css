@@ -244,7 +244,9 @@ input[type='checkbox'].opt-check { accent-color: var(--accent); }
 
 /* Touch controls: no long-press callout, no image dragging. Without this a
    long press on the analog stick offers "open image in a new tab". */
-.hud img, .touch-layer img, .menu-window img, .fit-list img {
+/* Every image in the UI: no long-press callout, no dragging, no selection --
+   the icons are game chrome, not files. */
+img, button, .icon-btn img, .fit-list img, .menu-window img, .hud img, .touch-layer img {
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
   user-select: none;
