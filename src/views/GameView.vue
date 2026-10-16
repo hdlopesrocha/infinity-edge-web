@@ -145,11 +145,11 @@ async function toggleVr(): Promise<void> {
   }
 }
 const vrStatusText = (): string => {
-  if (vrState.status === 'denied') return 'Motion permission denied - allow it in the browser settings';
   if (vrState.status === 'unsupported') return 'No motion sensor in this browser';
   if (!store.vr) return 'Needs a phone or tablet with a gyroscope (over https)';
+  if (vrState.tracking && vrState.dragLook) return 'Active - drag the scene to look, tap to re-centre';
   if (vrState.tracking) return 'Active - move the device to look, tap the scene to re-centre';
-  return 'Switched on, no motion data yet - move/tilt the device, or open on a phone';
+  return 'Switched on: move the device, or drag the scene to look (sensor blocked?)';
 };
 
 /** In-game pause: the back button (or Escape) pauses instead of leaving. */

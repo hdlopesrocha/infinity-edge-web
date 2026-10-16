@@ -17,6 +17,8 @@ let zeroYaw = 0;
 let zeroPitch = 0;
 let haveOrientation = false;
 let eventCount = 0;
+let dragYaw = 0;
+let dragPitch = 0;
 let bound = false;
 
 function onOrientation(e: DeviceOrientationEvent): void {
@@ -62,6 +64,10 @@ export const vrState = reactive({
   status: 'off' as VrStatus,
   tracking: false,
   events: 0,
+  /** What the platform said about motion access, for the status line. */
+  permission: 'unknown' as string,
+  /** True once the player has looked around by dragging (sensor fallback). */
+  dragLook: false,
 });
 
 /** iOS 13+ asks for motion access from a user gesture; other platforms have
@@ -87,14 +93,18 @@ export async function enableVr(): Promise<VrStatus> {
   if (typeof ev.requestPermission === 'function') {
     try {
       const res = await ev.requestPermission();
-      if (res === 'denied') {
-        vrState.status = 'denied';
-        store.vr = false;
-        return 'denied';
-      }
+      // iOS answers 'denied' without a prompt when the site's motion access
+      // was switched off earlier or the call missed the gesture window. Do
+      // not give up on that: enable the mode and listen anyway (the sensor
+      // starts delivering the moment the user allows it in
+      // Settings -> Safari -> Motion & Orientation Access), and fall back to
+      // dragging the scene to look.
+      vrState.permission = res;
     } catch {
-      // No prompt available here: keep going.
+      vrState.permission = 'unavailable';
     }
+  } else {
+    vrState.permission = 'not-required';
   }
   await bind();
   store.vr = true;
@@ -108,9 +118,22 @@ export function setVr(on: boolean): void {
   vrState.status = 'off';
 }
 
-/** Tap/click: make the current gyroscope reading the centre of the view. */
+/**
+ * Sensor fallback: dragging across the scene looks around. Works on any
+ * touch device, so VR is usable even where motion access is blocked.
+ */
+export function dragLook(dx: number, dy: number): void {
+  if (!store.vr) return;
+  dragYaw += dx * 0.25;
+  dragPitch = Math.max(-80, Math.min(80, dragPitch - dy * 0.25));
+  vrState.dragLook = true;
+}
+
+/** Tap/click: make the current look direction the centre of the view. */
 export function calibrateVr(): void {
   if (!store.vr) return;
+  dragYaw = 0;
+  dragPitch = 0;
   // Re-read the current absolute values: the deltas are what we display, so
   // the calibration simply re-bases them.
   zeroYaw = ((yaw + zeroYaw + 540) % 360) - 180;
@@ -122,5 +145,8 @@ export function calibrateVr(): void {
 /** Current head offset in degrees (0/0 until the first orientation event). */
 export function vrLook(): { yaw: number; pitch: number; tracking: boolean } {
   void bind();
-  return { yaw, pitch, tracking: haveOrientation };
+  // The sensor wins when it delivers; the drag offset is the fallback.
+  if (haveOrientation) return { yaw, pitch, tracking: true };
+  if (vrState.dragLook) return { yaw: dragYaw, pitch: dragPitch, tracking: true };
+  return { yaw: 0, pitch: 0, tracking: false };
 }

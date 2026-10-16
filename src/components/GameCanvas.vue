@@ -10,7 +10,7 @@ import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
 import { store, syncOptionsFromRC } from '../game/store';
-import { calibrateVr, vrLook } from '../game/vr';
+import { calibrateVr, dragLook, vrLook } from '../game/vr';
 import { Life3 } from '../game/life';
 import { audio } from '../game/audio';
 
@@ -151,6 +151,31 @@ function syncHud(g: GameInstance): void {
 /** In VR a tap on the scene re-centres the view on the current heading. */
 function onVrTap(): void {
   if (store.vr) calibrateVr();
+}
+
+/** VR fallback: dragging across the scene looks around (touch or mouse). */
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+const VR_CONTROL_SELECTOR = '.stick-back, .stick-knob, .accel-knob, .accel-bar, .tbtn, button';
+function onVrDown(e: PointerEvent): void {
+  if (!store.vr) return;
+  // Controls keep their own drags (stick, accel knob, HUD buttons); anywhere
+  // else on the scene the drag looks around.
+  const t = e.target as HTMLElement | null;
+  if (t && t.closest && t.closest(VR_CONTROL_SELECTOR)) return;
+  dragging = true;
+  lastX = e.clientX;
+  lastY = e.clientY;
+}
+function onVrMove(e: PointerEvent): void {
+  if (!store.vr || !dragging) return;
+  dragLook(e.clientX - lastX, e.clientY - lastY);
+  lastX = e.clientX;
+  lastY = e.clientY;
+}
+function onVrUp(): void {
+  dragging = false;
 }
 
 function onKeyDown(e: KeyboardEvent): void {
@@ -368,7 +393,10 @@ onMounted(() => {
       }
     }, 300);
     window.addEventListener('keydown', onKeyDown);
-    canvasRef.value?.addEventListener('pointerdown', onVrTap);
+    window.addEventListener('pointerdown', onVrDown, true);
+    window.addEventListener('pointerup', onVrUp, true);
+    window.addEventListener('pointermove', onVrMove, true);
+    window.addEventListener('pointercancel', onVrUp, true);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onWindowBlur);
     document.addEventListener('visibilitychange', onVisibilityChange);

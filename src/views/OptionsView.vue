@@ -18,11 +18,11 @@ const router = useRouter();
 const o = store.options;
 const vrOn = () => store.vr;
 const vrStatusText = () => {
-  if (vrState.status === 'denied') return 'permission denied - allow motion access for this site';
   if (vrState.status === 'unsupported') return 'no motion sensor in this browser';
   if (!store.vr) return 'needs a phone or tablet with a gyroscope (over https)';
+  if (vrState.tracking && vrState.dragLook) return 'active - drag the scene to look';
   if (vrState.tracking) return 'active - move the device to look';
-  return 'switched on, no motion data yet - move/tilt the device';
+  return 'switched on: move the device, or drag the scene to look';
 };
 async function toggleVr(): Promise<void> {
   audio.unlock();
