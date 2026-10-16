@@ -292,12 +292,17 @@ export class SpaceObject extends Object3D {
       if (i >= 0) this.team.objects.splice(i, 1);
       map.removeObject(this);
     }
-    const frag = new Fragment(map, this, this.model, this.scale, 500);
-    frag.color = [...this.color] as [number, number, number];
-    vec3.set(frag.vel, 0, 0, 0);
-    // Killed: a proper fireball (bigger for the player's ship) plus debris.
-    const exScale = this instanceof SpaceShip ? 4.0 : 3.0;
-    spawnExplosion(map, vec3.clone(this.pos), exScale, { smoke: 12, debris: 6, launcher: this, life: 750 });
+    // A time-trial checkpoint (Ark) is *collected*, not destroyed: it just
+    // vanishes and the path advances. Debris and a fireball there read as the
+    // gate exploding in your face.
+    if (!(this instanceof Ark)) {
+      const frag = new Fragment(map, this, this.model, this.scale, 500);
+      frag.color = [...this.color] as [number, number, number];
+      vec3.set(frag.vel, 0, 0, 0);
+      // Killed: a proper fireball (bigger for the player's ship) plus debris.
+      const exScale = this instanceof SpaceShip ? 4.0 : 3.0;
+      spawnExplosion(map, vec3.clone(this.pos), exScale, { smoke: 12, debris: 6, launcher: this, life: 750 });
+    }
     const sel = gi.selectedObject;
     if (sel && (this as SpaceObject) !== (sel as SpaceObject)) {
       const vx = this.pos[0] - sel.pos[0];
@@ -314,7 +319,6 @@ export class SpaceObject extends Object3D {
     } else if (this instanceof Ark) {
       rc.playSfx('addonSound');
     }
-    void frag;
   }
 
   automaticAction(gi: GameInstance, dtMs: number): void {
