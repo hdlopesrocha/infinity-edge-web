@@ -12,6 +12,7 @@ import type { TexEntry } from './texture';
 import { clearModelCache } from './model';
 import { mat4, vec3 } from './math';
 import { createNoiseTexture } from './noise';
+import { MOTION_BLUR, exposureShutter } from './motion';
 import type { NoiseTexture } from './noise';
 import { Post } from './post';
 
@@ -31,12 +32,11 @@ export interface RenderOptions {
   gain: number;
 }
 
-// Motion-blur exposure: how much world motion one frame integrates. A fixed
-// *time* (like a real camera shutter) keeps the streak identical at any fps.
-const MOTION_BLUR_EXPOSURE_S = 1 / 60;
-// 1.5x the physical exposure: at this game's speeds the perspective-correct
-// streaks are otherwise almost invisible on a 192-unit draw distance.
-const MOTION_BLUR_EXPOSURE_SCALE = 1.5;
+// Motion-blur tunables live in engine/motion.ts (exposure seconds, streak
+// cap, sample count, depth tolerance) together with the conventions they
+// follow. The velocity buffer already measures displacement per rendered
+// frame, so the exposure is converted to a *fraction of the measured frame
+// interval* -- never multiplied by delta time again.
 
 export class Renderer {
   canvas: HTMLCanvasElement;
@@ -94,7 +94,6 @@ export class Renderer {
       }
     });
     this.resizeObs.observe(canvas);
-    this.draw.onVelocityWrite = (on: boolean): void => this.post.setVelocityWrite(on);
     this.camera.setAspect(canvas.clientWidth / Math.max(1, canvas.clientHeight));
     this.camera.updateMatrices();
   }
@@ -103,20 +102,7 @@ export class Renderer {
   private syncTargets(): void {
     this.post.resize(this.canvas.width, this.canvas.height);
     this.draw.bindSceneDepth(this.post.depthTex);
-    this.draw.invSize = [1 / Math.max(1, this.post.w), 1 / Math.max(1, this.post.h)];
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-  }
-
-  /**
-   * Drop the frame history so the next frame reports zero motion. Called on
-   * scene changes and after a context restore: without it the first frame of
-   * the new scene would be compared against the old scene's camera and the
-   * whole screen would streak.
-   */
-  resetHistory(): void {
-    this.hasPrevViewProj = false;
-    this.draw.prevViewProj = this.camera.viewProj;
-    vec3.copy(this.prevCameraPos, this.camera.position);
   }
 
   private handleLost(): void {
@@ -133,7 +119,6 @@ export class Renderer {
     this.noise = createNoiseTexture(this.gl);
     this.draw.bindNoise(this.noise.tex);
     this.syncTargets();
-    this.resetHistory();
     clearTextureCache();
     clearModelCache();
     this.onRebuilt?.();
@@ -142,7 +127,6 @@ export class Renderer {
 
   beginFrame(): void {
     const gl = this.gl;
-    this.draw.onVelocityWrite = (on: boolean): void => this.post.setVelocityWrite(on);
     if (resizeGL(this.canvas, gl)) {
       this.camera.setAspect(this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
       this.syncTargets();
@@ -161,23 +145,35 @@ export class Renderer {
     this.draw.onBlitDepth = () => this.post.blitDepth();
   }
 
+  /**
+   * Drop the temporal history: the next frame's motion vectors are zero, which
+   * is what a camera cut, a scene rebuild or a resize needs -- otherwise the
+   * whole frame reports the jump as motion and smears.
+   */
+  resetVelocityHistory(): void {
+    this.hasPrevViewProj = false;
+  }
+
   /** Composite the scene target onto the canvas (call after the scene draw). */
   endFrame(): void {
     mat4.copy(this.lastViewProj, this.camera.viewProj);
     vec3.copy(this.prevCameraPos, this.camera.position);
     this.hasPrevViewProj = true;
-    // The velocity buffer holds one frame of screen motion, so scale it to a
-    // fixed exposure *time* (1/60 s) instead of a fixed fraction of a frame:
-    // the streak then looks the same at 30, 60 or 120 fps.
-    const dtS = Math.max(this.frameDtMs, 1) / 1000;
-    const shutter = Math.min(3, Math.max(0.35, MOTION_BLUR_EXPOSURE_S / dtS)) * MOTION_BLUR_EXPOSURE_SCALE;
+    // Exposure model (engine/motion.ts): shutter = exposure / measured frame
+    // interval, clamped, applied to the per-frame velocity as a trailing
+    // exposure. No delta-time multiplication anywhere else.
+    const shutter = exposureShutter(MOTION_BLUR.exposureSeconds, Math.max(this.frameDtMs, 1) / 1000);
     this.post.present({
       motionBlur: this.renderOptions.motionBlur,
       flare: this.renderOptions.flare,
       flareTex: this.renderOptions.flareTex,
       shutter,
-      maxBlur: 0.08,
+      maxBlur: MOTION_BLUR.maxRadiusUV,
       gain: this.renderOptions.gain,
+      samples: MOTION_BLUR.samples,
+      depthTolerance: MOTION_BLUR.depthTolerance,
+      near: this.camera.near,
+      far: this.camera.far,
     });
   }
 

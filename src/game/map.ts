@@ -238,6 +238,9 @@ export class GameMap {
           const obj = timer.obj;
           obj.restoreLife();
           if (obj.team.base) vec3.copy(obj.pos, obj.team.base.randomAround(rc.random));
+          // Respawn is a teleport: the new pose is the new history, so the
+          // frame does not report the jump from the death spot as motion.
+          obj.markPrev();
           vec3.set(obj.vel, 0, 0, 0);
           let foundLookAt = false;
           for (const t of obj.team.enemys) {
@@ -262,9 +265,6 @@ export class GameMap {
             ypr(obj.rot, getH(d), getV(d), 0);
           }
           obj.update();
-          // Fresh history: the ship was teleported from where it died, so the
-          // old pose would read as a huge one-frame motion and streak.
-          obj.markPrev();
           this.insertObject(obj);
         } else {
           keep.push(timer);

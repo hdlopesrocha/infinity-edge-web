@@ -26,12 +26,19 @@ export interface PresentOptions {
   /** 0 disables the lens flare; ~0.6 is the tuned default. */
   flare: number;
   flareTex: TexEntry | null;
-  /** Exposure length in frames (1.0 = exactly one frame of motion). */
+  /** Exposure / rendered frame interval (1 = exactly one frame of motion). */
   shutter: number;
   /** Maximum blur length in UV units per frame. */
   maxBlur: number;
   /** Blur strength from the camera's velocity (1 = plain exposure). */
   gain: number;
+  /** Integration samples along the exposure segment. */
+  samples: number;
+  /** Relative view-depth tolerance for accepting a tap. */
+  depthTolerance: number;
+  /** Camera near/far, used to linearize the depth copy. */
+  near: number;
+  far: number;
 }
 
 export class Post {
@@ -74,10 +81,10 @@ export class Post {
     this.progBright = linkProgram(gl, FS_VERT, POST_BRIGHT_FRAG);
     this.progBlur = linkProgram(gl, FS_VERT, POST_BLUR_FRAG);
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
-    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uDepth', 'uShutter', 'uMaxLen', 'uGain', 'uDepthScale']);
+    this.uMb = uniforms(gl, this.progMb, ['uColor', 'uVelocity', 'uDepth', 'uShutter', 'uMaxLen', 'uGain', 'uNear', 'uFar', 'uDepthTol', 'uSamples']);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
-    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uBlur', 'uVelocity', 'uBloom', 'uFlareTex', 'uFlare', 'uExposureKnee', 'uDebug']);
+    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uSharp', 'uBlur', 'uBloom', 'uFlareTex', 'uBlurAmount', 'uFlare', 'uExposureKnee']);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -195,22 +202,9 @@ export class Post {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  /**
-   * Velocity is only written by the opaque pass: transparent and additive
-   * effects must not overwrite the motion vectors of the surfaces behind
-   * them (and their blended alpha would corrupt them anyway).
-   */
-  setVelocityWrite(on: boolean): void {
-    if (!this.sceneBound) return;
-    const gl = this.gl;
-    gl.drawBuffers(on ? [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1] : [gl.COLOR_ATTACHMENT0]);
-  }
-
   /** Bind the scene target and clear it (call at the start of a frame). */
   begin(): void {
     const gl = this.gl;
-    this.depthBlitted = false;
-    this.sceneBound = true;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     gl.viewport(0, 0, this.w, this.h);
@@ -232,7 +226,6 @@ export class Post {
   /** Back to the scene target after the sky pass (keeps its contents). */
   bindScene(): void {
     const gl = this.gl;
-    this.sceneBound = true;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     gl.viewport(0, 0, this.w, this.h);
@@ -241,7 +234,6 @@ export class Post {
   /** Copy the opaque scene depth so soft particles can sample it. */
   blitDepth(): void {
     const gl = this.gl;
-    this.depthBlitted = true;
     // Resolve the destination FBO first: creating it binds FRAMEBUFFER
     // (read+draw), which would clobber the READ binding below on the very
     // first call and turn the blit into a feedback-loop error.
@@ -256,11 +248,6 @@ export class Post {
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.sceneFbo);
   }
 
-  /** True once the depth copy has been made for the current frame. */
-  private depthBlitted = false;
-  /** `?debug=velocity` in the hash draws the velocity buffer instead of the scene. */
-  debugVelocity = typeof location !== 'undefined' && /[?&]debug=velocity\b/.test(location.hash);
-  private sceneBound = false;
   private depthCopyFboCache: WebGLFramebuffer | null = null;
   private depthCopyFbo(): WebGLFramebuffer {
     const gl = this.gl;
@@ -274,7 +261,6 @@ export class Post {
 
   private blitPass(prog: WebGLProgram, target: Target | null, bind: () => void, w: number, h: number): void {
     const gl = this.gl;
-    this.sceneBound = false;
     gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : null);
     // drawBuffers is invalid for the default framebuffer (BACK/NONE only).
     if (target) gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
@@ -300,10 +286,9 @@ export class Post {
   present(opts: PresentOptions): void {
     const gl = this.gl;
     const sharp = this.colorTex;
-    // The blur pass reads the scene colour and writes mbColor (never itself).
-    // When motion blur is off (or float targets are missing) the "blurred"
-    // image is simply the sharp scene, so the composite path is identical.
-    let blurTex = sharp;
+    let blurred = sharp;
+    let blurAmount = 0;
+    // 1. per-object motion blur of the objects (the sky is never blurred)
     if (opts.motionBlur && this.mbSupported) {
       this.blitPass(this.progMb, this.mbColor, () => {
         this.bindTex(this.uMb.uColor, 0, this.colorTex);
@@ -312,13 +297,15 @@ export class Post {
         gl.uniform1f(this.uMb.uShutter, opts.shutter);
         gl.uniform1f(this.uMb.uMaxLen, opts.maxBlur);
         gl.uniform1f(this.uMb.uGain, opts.gain);
-        // Foreground rejection needs the depth copy; it is only meaningful
-        // when that copy exists for this frame.
-        gl.uniform1f(this.uMb.uDepthScale, this.depthBlitted ? 1 : 0);
+        gl.uniform1f(this.uMb.uNear, opts.near);
+        gl.uniform1f(this.uMb.uFar, opts.far);
+        gl.uniform1f(this.uMb.uDepthTol, opts.depthTolerance);
+        gl.uniform1i(this.uMb.uSamples, opts.samples);
       }, this.mbColor.w, this.mbColor.h);
-      blurTex = this.mbColor.tex;
+      blurred = this.mbColor.tex;
+      blurAmount = 1;
     }
-    // 2. lens flare: bright pass -> small blur chain (from the sharp scene)
+    // 2. lens flare: bright pass -> small blur chain (from the sharp objects)
     const flare = opts.flareTex ? opts.flare : 0;
     if (flare > 0) {
       this.blitPass(this.progBright, this.bright, () => {
@@ -336,20 +323,21 @@ export class Post {
         src = dst;
         dst = dst === this.blurA ? this.blurB : this.blurA;
       }
+      // second, wider pass over the result
       this.blitPass(this.progBlur, this.blurB, () => {
         this.bindTex(this.uBlur.uTex, 0, this.blurA.tex);
         gl.uniform2f(this.uBlur.uDir, 2.5 / this.blurB.w, 2.5 / this.blurB.h);
       }, this.blurB.w, this.blurB.h);
     }
-    // 3. composite to the canvas: the sky with the blurred scene over it
+    // 3. composite to the canvas: sky + blurred objects + sharp objects
     const bloom = flare > 0 ? this.blurB.tex : this.blurA.tex;
     this.blitPass(this.progComposite, null, () => {
       this.bindTex(this.uComposite.uSky, 0, this.skyTex);
-      this.bindTex(this.uComposite.uBlur, 1, blurTex);
-      this.bindTex(this.uComposite.uVelocity, 2, this.velocityTex);
+      this.bindTex(this.uComposite.uSharp, 1, sharp);
+      this.bindTex(this.uComposite.uBlur, 2, blurred);
       this.bindTex(this.uComposite.uBloom, 3, bloom);
       this.bindTex(this.uComposite.uFlareTex, 4, opts.flareTex ? opts.flareTex.tex : null);
-      gl.uniform1f(this.uComposite.uDebug, this.debugVelocity ? 1 : 0);
+      gl.uniform1f(this.uComposite.uBlurAmount, blurAmount);
       gl.uniform1f(this.uComposite.uFlare, flare);
       gl.uniform1f(this.uComposite.uExposureKnee, 0.55);
     }, gl.drawingBufferWidth, gl.drawingBufferHeight);

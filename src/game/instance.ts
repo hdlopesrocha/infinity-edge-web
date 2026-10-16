@@ -360,6 +360,8 @@ export class GameInstance {
   }
 
   snapCamera(): void {
+    // A camera cut must not read as motion: start a fresh history.
+    this.renderer.resetVelocityHistory();
     if (this.gameType === 'BACK' || !this.selectedObject) {
       this.renderer.camera.lookAtPositionAuto(this.cameraTarget, 100000);
       return;
