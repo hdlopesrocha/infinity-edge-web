@@ -201,7 +201,7 @@ export class VrMenu {
     for (let i = 0; i < 3; i++) {
       world[i] = this.planeX[i] * MENU_WIDTH;
       world[4 + i] = this.planeY[i] * MENU_HEIGHT;
-      world[8 + i] = -this.planeN[i];
+      world[8 + i] = this.planeN[i];
       world[12 + i] = this.planePos[i];
     }
     world[15] = 1;
