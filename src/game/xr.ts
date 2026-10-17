@@ -50,6 +50,9 @@ function xr(): XrSystem | null {
 let session: XRSession | null = null;
 let keepVrOnEnd = false;
 let entering = false;
+let baselineYawAbs = 0;
+let latestHeadYawAbs = 0;
+let initialized = false;
 
 export function xrActive(): boolean {
   return session !== null;
@@ -139,6 +142,13 @@ export async function enterXr(
     const instance = getInstance();
     const pose = frame.getViewerPose(refSpace);
     if (!instance || !pose) return;
+    // Re-centering: the head yaw that maps to "forward" is the one recorded
+    // when VR starts, or the one recorded on a tap (select). Taps re-record it.
+    if (pose.views.length > 0) {
+      const m = pose.views[0].transform.matrix;
+      latestHeadYawAbs = Math.atan2(m[8], m[10]);
+      if (!initialized) { baselineYawAbs = latestHeadYawAbs; initialized = true; }
+    }
     // Keep the engine's far plane (fog falloff, fog/soft-particle range,
     // culling) on the settings value too; the projection comes from the pose.
     renderer.camera.far = far;
@@ -160,6 +170,9 @@ export async function enterXr(
       const vp = layer.getViewport(view);
       if (!vp || vp.width <= 0 || vp.height <= 0) continue;
       mat4.invert(head, view.transform.matrix);
+      // yaw-only re-center: looking the way you did when VR started (or when
+      // you last tapped) gives the unrotated chase view.
+      mat4.rotateY(head, head, baselineYawAbs);
       mat4.multiply(cam.view, head, chase);           // head rotation over the chase view
       mat4.copy(cam.proj, view.projectionMatrix);
       mat4.multiply(cam.viewProj, cam.proj, cam.view);
@@ -191,11 +204,14 @@ export async function enterXr(
   s.requestAnimationFrame(loop);
   // A tap on the screen inside the session re-centres the view (there is no
   // DOM in there, so this is the only click the page can see).
-  s.addEventListener('select', () => calibrateVr());
+  s.addEventListener('select', () => { baselineYawAbs = latestHeadYawAbs; });
   s.addEventListener('end', () => {
     session = null;
     renderer.xrActive = false;
     renderer.presentBounds = null;
+    baselineYawAbs = 0;
+    latestHeadYawAbs = 0;
+    initialized = false;
     if (!keepVrOnEnd) store.vr = false;
     keepVrOnEnd = false;
     onEnd();
