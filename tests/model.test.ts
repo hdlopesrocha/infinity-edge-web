@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createGpuModelBinary, validateModel } from '../src/engine/model';
+import { createGpuModel, validateModel } from '../src/engine/model';
 import type { ConvertedModel } from '../src/engine/model';
 
 const MODELS = join(process.cwd(), 'public', 'assets', 'models');
@@ -61,85 +61,78 @@ describe('converted model assets', () => {
     expect(files.length).toBeGreaterThan(20);
   });
 
-  it('every model JSON validates and its sidecar matches the declared size', () => {
+  it('every model JSON validates as a version-1 (inline) model', () => {
     for (const f of files) {
       const data = JSON.parse(readFileSync(join(MODELS, f), 'utf8')) as ConvertedModel;
       validateModel(data);
-      expect(data.version).toBe(2);
-      expect(data.binary, f).toBeTruthy();
-      const bin = join(MODELS, data.binary!.file);
-      expect(existsSync(bin), `${f} -> ${data.binary!.file}`).toBe(true);
-      expect(readFileSync(bin).byteLength).toBe(data.binary!.byteLength);
+      expect(data.version, f).toBe(1);
+      for (const mesh of data.meshes) {
+        expect(Array.isArray(mesh.positions), `${f} ${mesh.name} positions`).toBe(true);
+        expect(Array.isArray(mesh.indices), `${f} ${mesh.name} indices`).toBe(true);
+        expect(mesh.positions!.length, `${f} ${mesh.name} positions`).toBeGreaterThan(0);
+        expect(mesh.indices!.length, `${f} ${mesh.name} indices`).toBeGreaterThan(0);
+      }
     }
   });
 
-  it('builds GPU meshes straight from the binary buffer', () => {
+  it('builds GPU meshes straight from the inline JSON', () => {
     const f = files.includes('Fighter3.json') ? 'Fighter3.json' : files[0];
     const data = JSON.parse(readFileSync(join(MODELS, f), 'utf8')) as ConvertedModel;
-    const bin = readFileSync(join(MODELS, data.binary!.file));
-    const buf = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength) as ArrayBuffer;
     const { gl, calls } = fakeGl();
-    const gpu = createGpuModelBinary(gl, data, buf);
+    const gpu = createGpuModel(gl, data);
     expect(gpu.meshes).toHaveLength(data.meshes.length);
-    expect(gpu.meshes[0].indexCount).toBe(data.meshes[0].indexCount);
-    expect(gpu.meshes[0].indexType).toBe(
-      data.meshes[0].indexType === 'u32' ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
-    );
-    // positions + normals + uvs + indices per mesh, all uploaded at once.
+    expect(gpu.meshes[0].indexCount).toBe(data.meshes[0].indices!.length);
     expect(calls.buffers).toBe(data.meshes.length * 4);
     expect(gpu.boundingSphere.radius).toBeGreaterThan(0);
   });
 
-  it('mesh bounds cover every vertex of the sidecar', () => {
+  it('mesh bounds cover every vertex of the inline data', () => {
     const f = files.includes('Asteroid1.json') ? 'Asteroid1.json' : files[0];
     const data = JSON.parse(readFileSync(join(MODELS, f), 'utf8')) as ConvertedModel;
-    const bin = readFileSync(join(MODELS, data.binary!.file));
-    for (const mesh of data.meshes) {
-      const pos = new Float32Array(
-        bin.buffer, bin.byteOffset + mesh.section!.position.offset, mesh.vertexCount! * 3,
-      );
-      const c = mesh.bounds!.center;
-      let max = 0;
-      for (let i = 0; i < pos.length; i += 3) {
-        max = Math.max(max, Math.hypot(pos[i] - c[0], pos[i + 1] - c[1], pos[i + 2] - c[2]));
-      }
-      expect(max).toBeLessThanOrEqual(mesh.bounds!.radius + 1e-3);
-      expect(mesh.bounds!.radius).toBeLessThanOrEqual(max + 1e-2);
+    const c = data.boundingSphere.center;
+    const r = data.boundingSphere.radius;
+    const pos = new Float32Array(data.meshes[0].positions!);
+    let max = 0;
+    for (let i = 0; i < pos.length; i += 3) {
+      max = Math.max(max, Math.hypot(pos[i] - c[0], pos[i + 1] - c[1], pos[i + 2] - c[2]));
     }
+    expect(max).toBeLessThanOrEqual(r + 1e-3);
+    expect(r).toBeLessThanOrEqual(max + 1e-2);
   });
 
-  it('rejects a model whose ranges fall outside the sidecar', () => {
+  it('rejects a model with bad positions', () => {
     const data = JSON.parse(readFileSync(join(MODELS, files[0]), 'utf8')) as ConvertedModel;
-    data.meshes[0].section!.position.offset = data.binary!.byteLength + 8;
-    expect(() => validateModel(data)).toThrow(/outside binary/);
+    data.meshes[0].positions = [1, 2];
+    expect(() => validateModel(data)).toThrow(/bad positions/);
   });
 
-  it('keeps the sidecar verbatim but uploads GL-wound triangles', () => {
-    // The original content is authored for Direct3D/XNA, whose front faces are
-    // clockwise; WebGL defaults to counter-clockwise. The sidecar therefore
-    // disagrees with its normals, and the loader flips the index order on
-    // upload. Both halves of that contract are asserted here.
+  it('keeps the inline data verbatim but uploads GL-wound triangles', () => {
     const f = files.includes('Asteroid1.json') ? 'Asteroid1.json' : files[0];
     const data = JSON.parse(readFileSync(join(MODELS, f), 'utf8')) as ConvertedModel;
-    const bin = readFileSync(join(MODELS, data.binary!.file));
-    const buf = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength) as ArrayBuffer;
 
-    const mesh = data.meshes[0];
-    const s = mesh.section!;
-    const srcPos = new Float32Array(buf, s.position.offset, mesh.vertexCount! * 3);
-    const srcNor = new Float32Array(buf, s.normal.offset, mesh.vertexCount! * 3);
-    const srcIdx = mesh.indexType === 'u32'
-      ? new Uint32Array(buf, s.index.offset, mesh.indexCount!)
-      : new Uint16Array(buf, s.index.offset, mesh.indexCount!);
-    expect(ccwAgreement(srcPos, srcNor, srcIdx)).toBeLessThan(0.1);
-    // ...and the bytes on disk are untouched by the flip.
+    const srcPos = new Float32Array(data.meshes[0].positions!);
+    const srcIdx = data.meshes[0].indices!.some((i) => i > 65535)
+      ? new Uint32Array(data.meshes[0].indices!)
+      : new Uint16Array(data.meshes[0].indices!);
+
     const { gl, calls } = fakeGl();
-    const gpu = createGpuModelBinary(gl, data, buf);
-    const uploaded = calls.elements[0];
-    expect(uploaded.length).toBe(srcIdx.length);
-    const pos = calls.array[0];
-    const nor = calls.array[1];
-    expect(ccwAgreement(pos, nor, uploaded)).toBeGreaterThan(0.9);
-    expect(gpu.meshes[0].indexCount).toBe(srcIdx.length);
+    const gpu = createGpuModel(gl, data);
+    const uploadedIdx = calls.elements[0];
+    expect(uploadedIdx.length).toBe(srcIdx.length);
+    let flipped = 0;
+    for (let i = 0; i + 2 < srcIdx.length; i += 3) {
+      if (uploadedIdx[i + 1] === srcIdx[i + 2] && uploadedIdx[i + 2] === srcIdx[i + 1]) flipped++;
+    }
+    expect(flipped).toBe(srcIdx.length / 3);
+    expect(uploadedIdx).not.toBe(srcIdx);
+
+    const uploadedPos = calls.array[0];
+    expect(uploadedPos.length).toBe(srcPos.length);
+    let posEqual = true;
+    for (let i = 0; i < srcPos.length; i++) if (uploadedPos[i] !== srcPos[i]) { posEqual = false; break; }
+    expect(posEqual).toBe(true);
+
+    expect(ccwAgreement(uploadedPos, calls.array[1], uploadedIdx)).toBeGreaterThan(0.99);
   });
+
 });

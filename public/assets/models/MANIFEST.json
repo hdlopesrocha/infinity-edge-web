@@ -8,13 +8,8 @@
       "materials": [
         "red"
       ],
-      "binary": {
-        "file": "AddonHomingMissile.bin",
-        "byteLength": 4832
-      },
       "bytes": {
-        "json": 1061,
-        "bin": 4832
+        "json": 7990
       },
       "bounds": {
         "center": [
@@ -36,13 +31,8 @@
       "materials": [
         "orange"
       ],
-      "binary": {
-        "file": "AddonNitro.bin",
-        "byteLength": 4832
-      },
       "bytes": {
-        "json": 1046,
-        "bin": 4832
+        "json": 8016
       },
       "bounds": {
         "center": [
@@ -64,13 +54,8 @@
       "materials": [
         "green"
       ],
-      "binary": {
-        "file": "AddonRepair.bin",
-        "byteLength": 4832
-      },
       "bytes": {
-        "json": 1046,
-        "bin": 4832
+        "json": 7995
       },
       "bounds": {
         "center": [
@@ -92,13 +77,8 @@
       "materials": [
         "blue"
       ],
-      "binary": {
-        "file": "AddonShield.bin",
-        "byteLength": 4832
-      },
       "bytes": {
-        "json": 1043,
-        "bin": 4832
+        "json": 8011
       },
       "bounds": {
         "center": [
@@ -120,13 +100,8 @@
       "materials": [
         "obj1_0"
       ],
-      "binary": {
-        "file": "Ark.bin",
-        "byteLength": 23952
-      },
       "bytes": {
-        "json": 978,
-        "bin": 23952
+        "json": 38826
       },
       "bounds": {
         "center": [
@@ -148,13 +123,8 @@
       "materials": [
         "Asteroid Strike"
       ],
-      "binary": {
-        "file": "Asteroid1.bin",
-        "byteLength": 89856
-      },
       "bytes": {
-        "json": 1096,
-        "bin": 89856
+        "json": 157757
       },
       "bounds": {
         "center": [
@@ -176,13 +146,8 @@
       "materials": [
         "Asteroid Strike"
       ],
-      "binary": {
-        "file": "Asteroid1_lod1.bin",
-        "byteLength": 23456
-      },
       "bytes": {
-        "json": 1096,
-        "bin": 23456
+        "json": 39612
       },
       "bounds": {
         "center": [
@@ -204,13 +169,8 @@
       "materials": [
         "Asteroid Strike"
       ],
-      "binary": {
-        "file": "Asteroid1_lod2.bin",
-        "byteLength": 6080
-      },
       "bytes": {
-        "json": 1092,
-        "bin": 6080
+        "json": 10387
       },
       "bounds": {
         "center": [
@@ -232,13 +192,8 @@
       "materials": [
         "Asteroid Strike"
       ],
-      "binary": {
-        "file": "Asteroid1_lod3.bin",
-        "byteLength": 1632
-      },
       "bytes": {
-        "json": 1084,
-        "bin": 1632
+        "json": 3205
       },
       "bounds": {
         "center": [
@@ -260,13 +215,8 @@
       "materials": [
         "Asteroid Strike2"
       ],
-      "binary": {
-        "file": "Asteroid2.bin",
-        "byteLength": 147552
-      },
       "bytes": {
-        "json": 1102,
-        "bin": 147552
+        "json": 252237
       },
       "bounds": {
         "center": [
@@ -288,13 +238,8 @@
       "materials": [
         "Asteroid Strike2"
       ],
-      "binary": {
-        "file": "Asteroid2_lod1.bin",
-        "byteLength": 49088
-      },
       "bytes": {
-        "json": 1104,
-        "bin": 49088
+        "json": 81237
       },
       "bounds": {
         "center": [
@@ -316,13 +261,8 @@
       "materials": [
         "Asteroid Strike2"
       ],
-      "binary": {
-        "file": "Asteroid2_lod2.bin",
-        "byteLength": 16896
-      },
       "bytes": {
-        "json": 1098,
-        "bin": 16896
+        "json": 27891
       },
       "bounds": {
         "center": [
@@ -344,13 +284,8 @@
       "materials": [
         "Asteroid Strike2"
       ],
-      "binary": {
-        "file": "Asteroid2_lod3.bin",
-        "byteLength": 5248
-      },
       "bytes": {
-        "json": 1094,
-        "bin": 5248
+        "json": 9007
       },
       "bounds": {
         "center": [
@@ -372,13 +307,8 @@
       "materials": [
         "Ice Texture"
       ],
-      "binary": {
-        "file": "Asteroid3.bin",
-        "byteLength": 408000
-      },
       "bytes": {
-        "json": 1087,
-        "bin": 408000
+        "json": 657199
       },
       "bounds": {
         "center": [
@@ -400,13 +330,8 @@
       "materials": [
         "Ice Texture"
       ],
-      "binary": {
-        "file": "Asteroid3_lod1.bin",
-        "byteLength": 104448
-      },
       "bytes": {
-        "json": 1083,
-        "bin": 104448
+        "json": 167499
       },
       "bounds": {
         "center": [
@@ -428,13 +353,8 @@
       "materials": [
         "Ice Texture"
       ],
-      "binary": {
-        "file": "Asteroid3_lod2.bin",
-        "byteLength": 26112
-      },
       "bytes": {
-        "json": 1077,
-        "bin": 26112
+        "json": 41773
       },
       "bounds": {
         "center": [
@@ -456,13 +376,8 @@
       "materials": [
         "Ice Texture"
       ],
-      "binary": {
-        "file": "Asteroid3_lod3.bin",
-        "byteLength": 6528
-      },
       "bytes": {
-        "json": 1071,
-        "bin": 6528
+        "json": 10841
       },
       "bounds": {
         "center": [
@@ -484,13 +399,8 @@
       "materials": [
         "Lava Texture"
       ],
-      "binary": {
-        "file": "Asteroid4.bin",
-        "byteLength": 66368
-      },
       "bytes": {
-        "json": 1084,
-        "bin": 66368
+        "json": 109070
       },
       "bounds": {
         "center": [
@@ -512,13 +422,8 @@
       "materials": [
         "Lava Texture"
       ],
-      "binary": {
-        "file": "Asteroid4_lod1.bin",
-        "byteLength": 37152
-      },
       "bytes": {
-        "json": 1087,
-        "bin": 37152
+        "json": 60189
       },
       "bounds": {
         "center": [
@@ -540,13 +445,8 @@
       "materials": [
         "Lava Texture"
       ],
-      "binary": {
-        "file": "Asteroid4_lod2.bin",
-        "byteLength": 20352
-      },
       "bytes": {
-        "json": 1083,
-        "bin": 20352
+        "json": 33057
       },
       "bounds": {
         "center": [
@@ -568,13 +468,8 @@
       "materials": [
         "Lava Texture"
       ],
-      "binary": {
-        "file": "Asteroid4_lod3.bin",
-        "byteLength": 11008
-      },
       "bytes": {
-        "json": 1081,
-        "bin": 11008
+        "json": 18157
       },
       "bounds": {
         "center": [
@@ -596,13 +491,8 @@
       "materials": [
         "hexagon"
       ],
-      "binary": {
-        "file": "Base_color.bin",
-        "byteLength": 230312
-      },
       "bytes": {
-        "json": 1067,
-        "bin": 230312
+        "json": 376321
       },
       "bounds": {
         "center": [
@@ -624,13 +514,8 @@
       "materials": [
         "Capsule01_0"
       ],
-      "binary": {
-        "file": "Bullet.bin",
-        "byteLength": 8064
-      },
       "bytes": {
-        "json": 1078,
-        "bin": 8064
+        "json": 10634
       },
       "bounds": {
         "center": [
@@ -656,13 +541,8 @@
         "glass",
         "metal"
       ],
-      "binary": {
-        "file": "Fighter3.bin",
-        "byteLength": 46504
-      },
       "bytes": {
-        "json": 8030,
-        "bin": 46504
+        "json": 73072
       },
       "bounds": {
         "center": [
@@ -684,13 +564,8 @@
       "materials": [
         "metal"
       ],
-      "binary": {
-        "file": "Flag.bin",
-        "byteLength": 13536
-      },
       "bytes": {
-        "json": 4155,
-        "bin": 13536
+        "json": 19463
       },
       "bounds": {
         "center": [
@@ -712,13 +587,8 @@
       "materials": [
         "Sphere01_0"
       ],
-      "binary": {
-        "file": "Flag_color.bin",
-        "byteLength": 6548
-      },
       "bytes": {
-        "json": 1169,
-        "bin": 6548
+        "json": 10100
       },
       "bounds": {
         "center": [
@@ -740,13 +610,8 @@
       "materials": [
         "homing"
       ],
-      "binary": {
-        "file": "HomingMissile2.bin",
-        "byteLength": 2736
-      },
       "bytes": {
-        "json": 1238,
-        "bin": 2736
+        "json": 4981
       },
       "bounds": {
         "center": [
@@ -768,13 +633,8 @@
       "materials": [
         "sphere"
       ],
-      "binary": {
-        "file": "Sky1.bin",
-        "byteLength": 6176
-      },
       "bytes": {
-        "json": 1033,
-        "bin": 6176
+        "json": 9351
       },
       "bounds": {
         "center": [
@@ -796,13 +656,8 @@
       "materials": [
         "sphere"
       ],
-      "binary": {
-        "file": "Sky2.bin",
-        "byteLength": 6176
-      },
       "bytes": {
-        "json": 1033,
-        "bin": 6176
+        "json": 9351
       },
       "bounds": {
         "center": [
@@ -824,13 +679,8 @@
       "materials": [
         "sphere"
       ],
-      "binary": {
-        "file": "Sky3.bin",
-        "byteLength": 6176
-      },
       "bytes": {
-        "json": 1033,
-        "bin": 6176
+        "json": 9351
       },
       "bounds": {
         "center": [
@@ -852,13 +702,8 @@
       "materials": [
         "metal"
       ],
-      "binary": {
-        "file": "Wheel.bin",
-        "byteLength": 24224
-      },
       "bytes": {
-        "json": 1505,
-        "bin": 24224
+        "json": 27442
       },
       "bounds": {
         "center": [

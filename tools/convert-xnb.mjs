@@ -564,19 +564,12 @@ for (const folder of readdirSync(xnbRoot).sort()) {
   const convertOne = (file, outName) => {
     try {
       const json = convert(join(dir, file), folder, file);
-      const binFile = outName.replace(/\.json$/, '.bin');
-      const packed = packBinary(json.meshes, binFile);
-      // Binary sidecar replaces the inline vertex arrays; everything else
-      // (names, materials, bounds, nodes) stays in the JSON.
-      const out = {
-        ...json,
-        version: 2,
-        binary: packed.meta,
-        meshes: packed.meshes,
-      };
+      // Version 1: vertex/index data lives inline in the JSON. GitHub Pages
+      // already gzips the .json files, so a separate binary sidecar buys
+      // nothing and only adds a second fetch per model.
+      const out = { ...json, version: 1 };
       if (!CHECK) {
         writeFileSync(join(outDir, outName), JSON.stringify(out));
-        writeFileSync(join(outDir, binFile), packed.buffer);
       }
       const tris = json.meshes.reduce((n, m) => n + m.indices.length / 3, 0);
       const jsonBytes = Buffer.byteLength(JSON.stringify(out));
@@ -585,8 +578,7 @@ for (const folder of readdirSync(xnbRoot).sort()) {
         meshes: json.meshes.length,
         triangles: tris,
         materials: json.materials.map((m) => m.name),
-        binary: { file: binFile, byteLength: packed.meta.byteLength },
-        bytes: { json: jsonBytes, bin: packed.meta.byteLength },
+        bytes: { json: jsonBytes },
         bounds: {
           center: json.boundingSphere.center.map((v) => +v.toFixed(2)),
           radius: +json.boundingSphere.radius.toFixed(2),
@@ -595,7 +587,7 @@ for (const folder of readdirSync(xnbRoot).sort()) {
       };
       ok++;
       const m = json.boundingSphere;
-      console.log(`ok ${outName}: ${json.meshes.length} mesh(es), ${tris} tris, r=${m.radius.toFixed(2)} c=(${m.center.map((v) => v.toFixed(2)).join(',')}) json=${jsonBytes}B bin=${packed.meta.byteLength}B`);
+      console.log(`ok ${outName}: ${json.meshes.length} mesh(es), ${tris} tris, r=${m.radius.toFixed(2)} c=(${m.center.map((v) => v.toFixed(2)).join(',')}) json=${jsonBytes}B`);
     } catch (e) {
       failed.push(`${folder}/${file}: ${e.message}`);
       console.error(`FAIL ${folder}/${file}: ${e.message}`);

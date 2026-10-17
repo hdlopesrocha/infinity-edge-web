@@ -2,7 +2,7 @@
 // model/color variants, mesh-sphere ray tests.
 
 import { mat4, quat, vec3 } from './math';
-import { fetchAssetBytes, fetchAssetJson } from '../game/assetfetch';
+import { fetchAssetJson } from '../game/assetfetch';
 
 export interface ConvertedMesh {
   name: string;
@@ -83,39 +83,17 @@ const pending = new Map<string, Promise<GpuModel | null>>();
 export function validateModel(m: unknown): asserts m is ConvertedModel {
   const mm = m as ConvertedModel;
   if (!mm || typeof mm !== 'object') throw new Error('Model JSON is not an object');
-  if (mm.version !== 1 && mm.version !== 2) throw new Error('Unsupported model version');
+  if (mm.version !== 1) throw new Error('Unsupported model version');
   if (!Array.isArray(mm.meshes) || mm.meshes.length === 0)
     throw new Error('Model has no meshes: ' + (mm as { source?: string }).source);
-  const binary = mm.version === 2 ? mm.binary : undefined;
   for (const mesh of mm.meshes) {
-    if (binary) {
-      if (!mesh.section || !mesh.section.position || !mesh.section.index)
-        throw new Error(`Mesh ${mesh.name}: missing binary section`);
-      if (typeof mesh.vertexCount !== 'number' || typeof mesh.indexCount !== 'number')
-        throw new Error(`Mesh ${mesh.name}: missing binary counts`);
-      for (const key of ['position', 'normal', 'uv', 'index'] as const) {
-        const r = mesh.section[key];
-        if (!r || typeof r.offset !== 'number' || typeof r.length !== 'number')
-          throw new Error(`Mesh ${mesh.name}: bad ${key} range`);
-        if (r.offset + r.length > binary.byteLength)
-          throw new Error(`Mesh ${mesh.name}: ${key} range outside binary`);
-      }
-    } else {
-      if (!Array.isArray(mesh.positions) || mesh.positions.length % 3 !== 0)
-        throw new Error(`Mesh ${mesh.name}: bad positions`);
-      if (!Array.isArray(mesh.indices) || mesh.indices.length % 3 !== 0)
-        throw new Error(`Mesh ${mesh.name}: bad indices`);
-    }
+    if (!Array.isArray(mesh.positions) || mesh.positions.length % 3 !== 0)
+      throw new Error(`Mesh ${mesh.name}: bad positions`);
+    if (!Array.isArray(mesh.indices) || mesh.indices.length % 3 !== 0)
+      throw new Error(`Mesh ${mesh.name}: bad indices`);
   }
   if (!mm.boundingSphere || typeof mm.boundingSphere.radius !== 'number')
     throw new Error('Model missing boundingSphere');
-}
-
-function idxOf(buffer: ArrayBuffer, mesh: ConvertedMesh): Uint16Array | Uint32Array {
-  const s = mesh.section!;
-  return mesh.indexType === 'u32'
-    ? new Uint32Array(buffer, s.index.offset, mesh.indexCount!)
-    : new Uint16Array(buffer, s.index.offset, mesh.indexCount!);
 }
 
 /**
@@ -299,87 +277,6 @@ export function createGpuModel(gl: WebGL2RenderingContext, data: ConvertedModel)
     },
     source: data.source,
   };
-}
-
-/**
- * GPU upload straight from the fetched `.bin` sidecar: every mesh becomes
- * views into one ArrayBuffer, so no per-vertex JS arrays are built.
- */
-export function createGpuModelBinary(
-  gl: WebGL2RenderingContext,
-  data: ConvertedModel,
-  buffer: ArrayBuffer,
-): GpuModel {
-  validateModel(data);
-  const matIndex = new Map(data.materials.map((m, i) => [m.name, i]));
-  const meshes: GpuMesh[] = data.meshes.map((mesh) => {
-    const s = mesh.section!;
-    const nv = mesh.vertexCount!;
-    const pos = new Float32Array(buffer, s.position.offset, nv * 3);
-    // D3D clockwise-front -> GL counter-clockwise-front (see flipWinding).
-    const idx = flipWinding(idxOf(buffer, mesh));
-    let nor: Float32Array;
-    if (s.normal.length === nv * 12) {
-      nor = new Float32Array(buffer, s.normal.offset, nv * 3);
-    } else {
-      nor = computeNormalsTyped(pos, idx);
-    }
-    const uv = s.uv.length === nv * 8 ? new Float32Array(buffer, s.uv.offset, nv * 2) : new Float32Array(nv * 2);
-    const bounds = mesh.bounds
-      ? { center: vec3.fromValues(...mesh.bounds.center), radius: mesh.bounds.radius }
-      : meshBounds(pos);
-    return uploadMesh(gl, {
-      pos, nor, uv, idx,
-      indexCount: mesh.indexCount!,
-      materialIndex: mesh.material ? (matIndex.get(mesh.material) ?? 0) : 0,
-      bounds,
-      name: mesh.name,
-    });
-  });
-  return {
-    meshes,
-    materials: data.materials,
-    boundingSphere: { center: vec3.fromValues(...data.boundingSphere.center), radius: data.boundingSphere.radius },
-    boundingBox: {
-      min: vec3.fromValues(...data.boundingBox.min),
-      max: vec3.fromValues(...data.boundingBox.max),
-    },
-    source: data.source,
-  };
-}
-
-export async function loadModelOptional(gl: WebGL2RenderingContext, url: string): Promise<GpuModel | null> {
-  const hit = cache.get(url);
-  if (hit) return hit;
-  const p = pending.get(url);
-  if (p) return p;
-  const job: Promise<GpuModel | null> = (async () => {
-    try {
-      const data = await fetchAssetJson<ConvertedModel>(url);
-      // Version 2: vertex/index data lives in the sidecar .bin next to the
-      // JSON (or arrives over the WebSocket channel as a binary frame).
-      if (data.binary) {
-        const binUrl = new URL(data.binary.file, new URL(url, window.location.href)).href;
-        const buf = await fetchAssetBytes(binUrl);
-        if (buf.byteLength !== data.binary.byteLength) {
-          throw new Error(
-            `binary size mismatch for ${data.binary.file}: ${buf.byteLength} != ${data.binary.byteLength}`,
-          );
-        }
-        const gpu = createGpuModelBinary(gl, data, buf);
-        cache.set(url, gpu);
-        return gpu;
-      }
-      const gpu = createGpuModel(gl, data);
-      cache.set(url, gpu);
-      return gpu;
-    } catch {
-      return null;
-    }
-  })();
-  pending.set(url, job);
-  job.finally(() => pending.delete(url));
-  return job;
 }
 
 /** Drop every GPU model (VAOs/buffers) — see clearTextureCache(). */
