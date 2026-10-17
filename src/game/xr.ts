@@ -133,7 +133,6 @@ export async function enterXr(
     renderer.presentBounds = { w: layer.framebufferWidth, h: layer.framebufferHeight };
   }
   const vrMenu = new VrMenu(gl);
-  vrMenu.setItems([{ id: 'resume', label: 'RESUME' }, { id: 'leave', label: 'LEAVE MATCH' }, { id: 'exitvr', label: 'EXIT VR' }]);
   vrMenu.setOnFire((id) => { if (menuHandler) menuHandler(id); });
   const refSpace = await s.requestReferenceSpace('local');
   const head = mat4.create();
@@ -163,8 +162,13 @@ export async function enterXr(
     const fullH = gl.drawingBufferHeight;
     instance.canvasW = fullW;
     instance.canvasH = fullH;
-    if (!store.paused) instance.update(dt);
+    const inMenu = !store.interactive;
+    if (!store.paused && !inMenu) instance.update(dt);
     else vrMenu.update(dt);
+    // menu items follow the screen we are on
+    vrMenu.setItems(inMenu
+      ? [{ id: 'single', label: 'SINGLE PLAYER' }, { id: 'options', label: 'OPTIONS' }, { id: 'about', label: 'ABOUT' }, { id: 'back', label: 'BACK' }, { id: 'exitvr', label: 'EXIT VR' }]
+      : [{ id: 'resume', label: 'RESUME' }, { id: 'leave', label: 'LEAVE MATCH' }, { id: 'exitvr', label: 'EXIT VR' }]);
     syncHud(instance);
     mat4.copy(chase, renderer.camera.view);
     const cam = renderer.camera;
@@ -204,7 +208,7 @@ export async function enterXr(
       renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
       // While paused the DOM is hidden, so the pause menu is painted here,
       // one copy per eye, with a 1 s gaze-dwell to select an item.
-      if (store.paused) vrMenu.draw(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
+      if (store.paused || !store.interactive) vrMenu.draw(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
     }
     renderer.viewport = null;
     renderer.presentFbo = null;

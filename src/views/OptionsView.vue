@@ -12,6 +12,7 @@ import { clearGameData, saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
 import { enableVr, setVr, vrState } from '../game/vr';
+import { leaveXr } from '../game/xr';
 import type { Options } from '../game/resources';
 
 const router = useRouter();
@@ -31,12 +32,16 @@ async function toggleVr(): Promise<void> {
   audio.unlock();
   void audio.sfx('button');
   if (store.vr) {
-    const { leaveXr } = await import('../game/xr');
     leaveXr();
     setVr(false);
     return;
   }
-  await enableVr();
+  // Enter the session on the user gesture so the menus can live in the headset.
+  await enableVr({
+    renderer: (window as unknown as { __ieRenderer: import('../engine/renderer').Renderer }).__ieRenderer,
+    getInstance: () => (window as unknown as { __ieGame?: import('../game/instance').GameInstance }).__ieGame ?? null,
+    onEnd: () => undefined,
+  });
 }
 const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
 const base = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');

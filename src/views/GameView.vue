@@ -137,7 +137,14 @@ async function toggleVr(): Promise<void> {
     setVr(false);
     return;
   }
-  await enableVr();
+  // Enter the session on the user gesture (the click) so the menus can live
+  // inside the headset instead of forcing an exit to the DOM.
+  await enableVr({
+    renderer: (window as unknown as { __ieRenderer: import('../engine/renderer').Renderer }).__ieRenderer,
+    getInstance: () => (window as unknown as { __ieGame?: import('../game/instance').GameInstance }).__ieGame ?? null,
+    onEnd: () => undefined,
+  });
+  if (store.vr) { store.paused = false; showSettings.value = false; snapshot.value = null; }
   // Leave the pause so the view is live: otherwise enabling VR looks like a
   // no-op because the frozen scene sits behind the panel.
   if (store.vr) {
@@ -201,6 +208,14 @@ onMounted(() => {
     } else if (id === 'exitvr') {
       leaveXr();
       setVr(false);
+    } else if (id === 'single') {
+      window.location.hash = '#/single-player';
+    } else if (id === 'options') {
+      window.location.hash = '#/options';
+    } else if (id === 'about') {
+      window.location.hash = '#/about';
+    } else if (id === 'back') {
+      window.location.hash = '#/menu';
     }
   });
 });
