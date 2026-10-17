@@ -178,9 +178,10 @@ export async function enterXr(
       const headYawRel = latestHeadYawAbs - baselineYawAbs;
       const gd = new Float32Array(3);
       const cd = rCam.direction as unknown as number[];
-      // gaze = chase camera direction rotated by the relative head yaw
-      const cos = Math.cos(headYawRel);
-      const sin = Math.sin(headYawRel);
+      // gaze = chase camera direction rotated by -headYawRel
+      // (inverse of the view rotation, which is +headYawRel)
+      const cos = Math.cos(-headYawRel);
+      const sin = Math.sin(-headYawRel);
       gd[0] = cd[0] * cos + cd[2] * sin;
       gd[1] = cd[1];
       gd[2] = -cd[0] * sin + cd[2] * cos;
