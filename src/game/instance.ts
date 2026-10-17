@@ -371,9 +371,9 @@ export class GameInstance {
     if (this.gameType !== 'BACK') this.drawGhost(d);
     r.draw.deferred = false;
     r.post.beginBillboards();
-    gl.disable(gl.BLEND);
-    r.draw.flushBillboards();
     gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    r.draw.flushBillboards();
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     r.draw.flushSmoke();
     void d;
