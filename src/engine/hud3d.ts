@@ -161,9 +161,9 @@ export class HudOverlay {
     const sx = W / Math.max(1, h.canvasW);
     const sy = H / Math.max(1, h.canvasH);
     const s = Math.min(sx, sy);
-    // 16 screen px of padding: no UI hugs the border, only the 3D game does.
-    const padX = 16 * sx;
-    const padY = 16 * sy;
+    // 64 screen px of padding: no UI hugs the border, only the 3D game does.
+    const padX = 64 * sx;
+    const padY = 64 * sy;
     c.textAlign = 'center';
     c.textBaseline = 'top';
     const shadow = (blur: number): void => {
@@ -263,7 +263,7 @@ export class HudOverlay {
       // 16px padding from the border, same as every other HUD element.
       const mx = padX + (m.x / Math.max(1, h.canvasW)) * (W - 2 * padX);
       const my = padY + (m.y / Math.max(1, h.canvasH)) * (H - 2 * padY);
-      const rx = 16 * sx, ry = 16 * sy;
+      const rx = 64 * sx, ry = 64 * sy;
       const r = Math.max(rx, ry);
       const col = `rgb(${(m.color[0] * 255) | 0},${(m.color[1] * 255) | 0},${(m.color[2] * 255) | 0})`;
       const iwCss = m.over ? 48 : m.w;

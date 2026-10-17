@@ -10,7 +10,7 @@ import type { store } from '../game/store';
 
 const W = 1024;
 const H = 512;
-const MENU_DISTANCE = 2;          // world units in front of the ship
+const MENU_DISTANCE = 5;          // world units in front of the ship
 const MENU_WIDTH = 12;            // world units
 const MENU_HEIGHT = MENU_WIDTH * (H / W);
 
@@ -53,7 +53,7 @@ export class VrMenu {
     if (!tex) throw new Error('menu texture failed');
     this.tex = tex;
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -118,7 +118,7 @@ export class VrMenu {
   }
 
   /** Update the plane basis from the camera/ship and run gaze-dwell selection. */
-  update(dt: number, camPos: vec3, camDir: vec3, shipPos: vec3, shipDir: vec3): void {
+  update(dt: number, camPos: vec3, camDir: vec3, shipPos: vec3, shipDir: vec3, gazeDir?: vec3): void {
     // plane sits in front of the ship, facing the camera
     const fwd = vec3.normalize(vec3.create(), shipDir);
     vec3.scaleAndAdd(this.planePos, shipPos, fwd, MENU_DISTANCE);
@@ -131,14 +131,15 @@ export class VrMenu {
     if (ly < 1e-4) vec3.set(this.planeY, 0, 1, 0); else vec3.scale(this.planeY, this.planeY, 1 / ly);
     vec3.scale(this.planeN, camDir, -1);  // normal points TOWARD the camera
 
-    // gaze: intersect the screen-centre ray with the plane
+    // gaze: intersect the gaze ray with the plane
+    const gd = gazeDir ? gazeDir : camDir;
     const toP = vec3.subtract(vec3.create(), this.planePos, camPos);
-    const denom = vec3.dot(camDir, this.planeN);
+    const denom = vec3.dot(gd, this.planeN);
     let idx = -1;
     if (Math.abs(denom) > 1e-4) {
       const t = vec3.dot(toP, this.planeN) / denom;
       if (t > 0) {
-        const hit = vec3.scaleAndAdd(vec3.create(), camPos, camDir, t);
+        const hit = vec3.scaleAndAdd(vec3.create(), camPos, gd, t);
         const local = vec3.subtract(vec3.create(), hit, this.planePos);
         const u = vec3.dot(local, this.planeX) / MENU_WIDTH;
         const v = vec3.dot(local, this.planeY) / MENU_HEIGHT;
@@ -188,7 +189,7 @@ export class VrMenu {
     c.shadowBlur = 0;
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
