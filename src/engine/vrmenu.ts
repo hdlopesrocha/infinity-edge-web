@@ -79,7 +79,7 @@ export class VrMenu {
     if (idx !== this.hovered) { this.hovered = idx; this.dwellStart = performance.now(); this.dwellMs = 0; }
     else if (idx >= 0) {
       this.dwellMs = performance.now() - this.dwellStart;
-      if (this.dwellMs >= 1000) { this.onFire(this.items[idx].id); this.hovered = -1; this.dwellMs = 0; }
+      if (this.dwellMs >= 2000) { this.onFire(this.items[idx].id); this.hovered = -1; this.dwellMs = 0; }
     }
     // Paint
     const c = this.ctx;
@@ -91,7 +91,7 @@ export class VrMenu {
     c.shadowColor = 'rgba(0,0,0,0.9)'; c.shadowBlur = 8;
     c.fillText('PAUSED', W / 2, 80);
     c.font = '16px system-ui, sans-serif'; c.fillStyle = 'rgba(255,255,255,0.7)';
-    c.fillText('Gaze at a button for 1 s to select', W / 2, 120);
+    c.fillText('Gaze at a button or input for 2 s to select', W / 2, 120);
     for (let i = 0; i < this.items.length; i++) {
       const it = this.items[i];
       const hovered = i === this.hovered;
