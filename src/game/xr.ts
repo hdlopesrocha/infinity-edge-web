@@ -164,7 +164,14 @@ export async function enterXr(
     instance.canvasH = fullH;
     const inMenu = !store.interactive;
     if (!store.paused && !inMenu) instance.update(dt);
-    else vrMenu.update(dt);
+    else {
+      const sel = instance.selectedObject;
+      const rCam = renderer.camera;
+      vrMenu.update(dt,
+        rCam.position as unknown as Float32Array, rCam.direction as unknown as Float32Array,
+        (sel ? sel.pos : rCam.position) as unknown as Float32Array,
+        (sel ? sel.dir : rCam.direction) as unknown as Float32Array);
+    }
     // menu items follow the screen we are on
     vrMenu.setItems(inMenu
       ? [{ id: 'single', label: 'SINGLE PLAYER' }, { id: 'options', label: 'OPTIONS' }, { id: 'about', label: 'ABOUT' }, { id: 'back', label: 'BACK' }, { id: 'exitvr', label: 'EXIT VR' }]
@@ -208,7 +215,7 @@ export async function enterXr(
       renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
       // While paused the DOM is hidden, so the pause menu is painted here,
       // one copy per eye, with a 1 s gaze-dwell to select an item.
-      if (store.paused || !store.interactive) vrMenu.draw(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
+      if (store.paused || !store.interactive) vrMenu.draw(cam.view as unknown as Float32Array, cam.proj as unknown as Float32Array, cam.position as unknown as Float32Array);
     }
     renderer.viewport = null;
     renderer.presentFbo = null;
