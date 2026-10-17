@@ -6,7 +6,7 @@
 // uploaded as a texture, and composited as a screen-space quad into each eye's
 // viewport after the post composite. Same data the DOM overlay renders, so the
 // two can never disagree.
-import type { store } from '../game/store';
+import { store } from '../game/store';
 
 type Hud = typeof store.hud;
 
@@ -268,9 +268,9 @@ export class HudOverlay {
         c.fillRect(x, y, w * frac, hh);
       }
     }
-    // User items, bottom right: the same button art as the DOM - accelerator
-    // disc + fire, homing missiles and nitro, with their counts.
-    {
+    // Touch controls: outside VR only. In VR the buttons are gone and the
+    // ammo they carried sits next to the life bars instead (below).
+    if (!store.vr) {
       const bw = 96 * s;
       const bx = (h.canvasW - 96 - 128) * sx;
       const items: { url: string; count: string; dim: boolean }[] = [
@@ -309,6 +309,27 @@ export class HudOverlay {
         const sk = icon(STICK_KNOB_URL);
         if (sk) c.drawImage(sk, h.knobX * sx, h.knobY * sy, 96 * s, 96 * s);
       }
+    } else {
+      // VR: no touch controls - homing missiles and nitro as small icons with
+      // their counts, right beside the ship's life bars.
+      const iw = 40 * s;
+      const y = H - 52 * sy;
+      const x0 = W / 2 + 100 * s;
+      c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      const hm = icon(FIRE_HM_URL);
+      if (hm) c.drawImage(hm, x0, y, iw, iw);
+      c.font = `700 ${Math.round(22 * s)}px system-ui, sans-serif`;
+      c.fillStyle = h.homings > 0 ? '#fff' : 'rgba(255,255,255,0.35)';
+      shadow(4);
+      c.fillText(String(h.homings), x0 + iw + 8 * s, y + iw / 2);
+      const x1 = x0 + iw + 56 * s;
+      const ni = icon(NITRO_URL);
+      if (ni) c.drawImage(ni, x1, y, iw, iw);
+      c.fillStyle = h.nitroPct > 0 ? '#fff' : 'rgba(255,255,255,0.35)';
+      c.fillText(String(h.nitroPct), x1 + iw + 8 * s, y + iw / 2);
+      c.textAlign = 'center';
+      c.textBaseline = 'top';
     }
 
     c.shadowBlur = 0;
