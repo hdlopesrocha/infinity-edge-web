@@ -27,19 +27,24 @@ const STICK_KNOB_URL = TEX_BASE + '_stickAnalog.png';
 /** Async icon cache: 2D-canvas drawImage of the real game art. Until an icon
  *  has loaded the overlay falls back to the procedural shapes, so a slow
  *  texture can never blank the HUD. */
-/** Red copies of an icon (cached), for the lock crosshair. */
+/** Tinted copies of an icon (cached), for team colours and the lock
+ *  crosshair. */
 const tintCache = new Map<string, HTMLCanvasElement>();
-function tintedRed(img: HTMLImageElement): HTMLCanvasElement {
-  const key = img.src;
+function tinted(img: HTMLImageElement, css: string): HTMLCanvasElement {
+  const key = img.src + '|' + css;
   const hit = tintCache.get(key);
   if (hit) return hit;
+  if (tintCache.size > 48) {
+    const first = tintCache.keys().next();
+    if (!first.done) tintCache.delete(first.value);
+  }
   const cv = document.createElement('canvas');
   cv.width = img.naturalWidth;
   cv.height = img.naturalHeight;
   const g = cv.getContext('2d')!;
   g.drawImage(img, 0, 0);
   g.globalCompositeOperation = 'source-in';
-  g.fillStyle = '#ff4d3d';
+  g.fillStyle = css;
   g.fillRect(0, 0, cv.width, cv.height);
   tintCache.set(key, cv);
   return cv;
@@ -233,7 +238,7 @@ export class HudOverlay {
       if (h.lockOn && aimImg) {
         const iw = 32 * sx * 1.35, ih = 32 * sy * 1.35;
         shadow(8);
-        c.drawImage(tintedRed(aimImg), ax - iw / 2, ay - ih / 2, iw, ih);
+        c.drawImage(tinted(aimImg, '#ff4d3d'), ax - iw / 2, ay - ih / 2, iw, ih);
       }
       if (aimImg) {
       } else {
@@ -265,8 +270,9 @@ export class HudOverlay {
       c.shadowColor = col;
       c.shadowBlur = 5;
       if (sprite) {
+        // Friend and enemy alike: the icon itself in the team colour.
         const iw = iwCss * sx, ih = ihCss * sy;
-        c.drawImage(sprite, mx - iw / 2, my - ih / 2, iw, ih);
+        c.drawImage(tinted(sprite, col), mx - iw / 2, my - ih / 2, iw, ih);
       } else {
         c.strokeStyle = col;
         c.lineWidth = Math.max(2, 3 * s);

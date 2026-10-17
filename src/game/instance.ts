@@ -552,10 +552,9 @@ export class GameInstance {
         sx = cl.x;
         sy = cl.y;
       }
-      let c: [number, number, number] = [...obj.team.color] as [number, number, number];
-      if (!(obj instanceof Base) && !(obj instanceof Flag) && !(obj instanceof Ark)) {
-        c = [c[0] * 0.5, c[1] * 0.5, c[2] * 0.5];
-      }
+      // Full team colour: the HUD paints the icon itself in it (friend and
+      // enemy), so darkening it here would muddy both.
+      const c: [number, number, number] = [...obj.team.color] as [number, number, number];
       const sizeOverX = this.canvasW / 2;
       const sizeOverY = this.canvasH / 2;
       let vx = sx - sizeOverX, vy = sy - sizeOverY;
