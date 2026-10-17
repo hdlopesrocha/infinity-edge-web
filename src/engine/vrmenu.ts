@@ -198,9 +198,6 @@ export class VrMenu {
   draw(fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array, _camPos: vec3): void {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    const w = gl.drawingBufferWidth;
-    const h = gl.drawingBufferHeight;
-    gl.viewport(0, 0, w, h);
     gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
     gl.disable(gl.CULL_FACE);
