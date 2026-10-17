@@ -10,8 +10,8 @@ import type { store } from '../game/store';
 
 const W = 1024;
 const H = 512;
-const MENU_DISTANCE = 7;          // world units in front of the ship
-const MENU_WIDTH = 5;             // world units
+const MENU_DISTANCE = 4;          // world units in front of the ship
+const MENU_WIDTH = 8;             // world units
 const MENU_HEIGHT = MENU_WIDTH * (H / W);
 
 interface MenuItem { id: string; label: string; x: number; y: number; w: number; h: number }
@@ -161,7 +161,7 @@ export class VrMenu {
     // paint
     const c = this.ctx;
     c.clearRect(0, 0, W, H);
-    c.fillStyle = 'rgba(0,0,0,0.6)';
+    c.fillStyle = 'rgba(20, 20, 40, 0.85)';
     c.fillRect(0, 0, W, H);
     c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillStyle = '#fff'; c.font = '700 44px system-ui, sans-serif';
@@ -208,6 +208,7 @@ export class VrMenu {
     world[15] = 1;
     gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.prog); // note: prog has no uView/uProj uniforms set below via draw.unlit; use own
     // use the unlit program instead for proper view/proj

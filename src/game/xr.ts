@@ -165,11 +165,12 @@ export async function enterXr(
     const inMenu = !store.interactive;
     // Background/menu scenes still orbit their camera; only real matches freeze.
     if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
-    else {
+    // The GL menu always needs its canvas painted (and its texture uploaded)
+    // whenever it is on screen - even on menu screens where instance.update
+    // already ran for the background scene.
+    if (store.paused || inMenu) {
       const sel = instance.selectedObject;
       const rCam = renderer.camera;
-      // On menu screens there is no ship: anchor the plane in front of the
-      // camera so it stays put and is always in view.
       const shipPos = inMenu ? rCam.position : (sel ? sel.pos : rCam.position);
       const shipDir = inMenu ? rCam.direction : (sel ? sel.dir : rCam.direction);
       vrMenu.update(dt,
