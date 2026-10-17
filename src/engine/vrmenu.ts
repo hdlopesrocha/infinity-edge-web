@@ -14,7 +14,7 @@ const MENU_DISTANCE = 5;          // world units in front of the ship
 const MENU_WIDTH = 12;            // world units
 const MENU_HEIGHT = MENU_WIDTH * (H / W);
 
-interface MenuItem { id: string; label: string; x: number; y: number; w: number; h: number }
+interface MenuItem { id: string; label: string; type: 'button' | 'checkbox' | 'slider'; value?: number; x: number; y: number; w: number; h: number }
 
 export class VrMenu {
   private gl: WebGL2RenderingContext;
@@ -105,13 +105,13 @@ export class VrMenu {
 
   setOnFire(fn: (id: string) => void): void { this.onFire = fn; }
 
-  setItems(labels: { id: string; label: string }[]): void {
+  setItems(labels: { id: string; label: string; type?: 'button' | 'checkbox' | 'slider'; value?: number }[]): void {
     // stack items vertically, centred
     const itemH = 64, gap = 16;
     const totalH = labels.length * itemH + (labels.length - 1) * gap;
     let y = (H - totalH) / 2;
     this.items = labels.map((l) => {
-      const it = { ...l, x: W / 2 - 220, y, w: 440, h: itemH };
+      const it = { id: l.id, label: l.label, type: l.type ?? 'button', value: l.value, x: W / 2 - 220, y, w: 440, h: itemH };
       y += itemH + gap;
       return it;
     });
@@ -136,6 +136,7 @@ export class VrMenu {
     const toP = vec3.subtract(vec3.create(), this.planePos, camPos);
     const denom = vec3.dot(gd, this.planeN);
     let idx = -1;
+    let hitPx = -1;
     if (Math.abs(denom) > 1e-4) {
       const t = vec3.dot(toP, this.planeN) / denom;
       if (t > 0) {
@@ -144,19 +145,27 @@ export class VrMenu {
         const u = vec3.dot(local, this.planeX) / MENU_WIDTH;
         const v = vec3.dot(local, this.planeY) / MENU_HEIGHT;
         if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
-          const px = u * W, py = v * H;
+          hitPx = u * W;
+          const py = v * H;
           for (let i = 0; i < this.items.length; i++) {
             const it = this.items[i];
-            if (px >= it.x && px <= it.x + it.w && py >= it.y && py <= it.y + it.h) { idx = i; break; }
+            if (hitPx >= it.x && hitPx <= it.x + it.w && py >= it.y && py <= it.y + it.h) { idx = i; break; }
           }
         }
       }
     }
-
+    
+    // For sliders, update value based on gaze X position while hovering
+    if (idx >= 0 && this.items[idx].type === 'slider' && hitPx >= 0) {
+      const it = this.items[idx];
+      const tx = it.x + 16, tw = it.w - 32;
+      const val = Math.max(0, Math.min(1, (hitPx - tx) / tw));
+      this.items[idx].value = val;
+    }
     if (idx !== this.hovered) { this.hovered = idx; this.dwellStart = performance.now(); this.dwellMs = 0; }
     else if (idx >= 0) {
       this.dwellMs = performance.now() - this.dwellStart;
-      if (this.dwellMs >= 2000) { this.onFire(this.items[idx].id); this.hovered = -1; this.dwellMs = 0; }
+      if (this.dwellMs >= 3000) { this.onFire(this.items[idx].id); this.hovered = -1; this.dwellMs = 0; }
     }
 
     // paint
@@ -178,14 +187,56 @@ export class VrMenu {
       c.strokeStyle = hovered ? '#7fe8d8' : 'rgba(255,255,255,0.45)';
       c.lineWidth = 2; c.strokeRect(it.x, it.y, it.w, it.h);
       c.fillStyle = '#fff'; c.font = '700 28px system-ui, sans-serif'; c.shadowBlur = 6;
-      c.fillText(it.label, it.x + it.w / 2, it.y + it.h / 2);
+      if (it.type === 'checkbox') {
+        // checkbox on the left
+        const cbx = it.x + 16, cby = it.y + (it.h - 28) / 2;
+        c.strokeStyle = hovered ? '#7fe8d8' : 'rgba(255,255,255,0.45)';
+        c.lineWidth = 2; c.strokeRect(cbx, cby, 28, 28);
+        if (it.value && it.value > 0) {
+          c.fillStyle = '#7fe8d8';
+          c.fillRect(cbx + 4, cby + 4, 20, 20);
+        }
+        c.fillStyle = '#fff'; c.textAlign = 'left';
+        c.fillText(it.label, cbx + 40, it.y + it.h / 2);
+        c.textAlign = 'center';
+      } else if (it.type === 'slider') {
+        c.fillStyle = '#fff'; c.font = '700 20px system-ui, sans-serif'; c.shadowBlur = 4;
+        c.fillText(it.label, it.x + 16, it.y + it.h / 2 - 6);
+        c.textAlign = 'left';
+        // slider track
+        const tx = it.x + 16, ty = it.y + it.h / 2 + 8, tw = it.w - 32, th = 6;
+        c.fillStyle = 'rgba(255,255,255,0.15)';
+        c.fillRect(tx, ty, tw, th);
+        const val = Math.max(0, Math.min(1, it.value ?? 0.5));
+        c.fillStyle = '#7fe8d8';
+        c.fillRect(tx, ty, tw * val, th);
+        // knob
+        c.fillStyle = '#fff';
+        c.beginPath(); c.arc(tx + tw * val, ty + th / 2, 8, 0, Math.PI * 2); c.fill();
+        c.textAlign = 'center';
+      } else {
+        c.fillText(it.label, it.x + it.w / 2, it.y + it.h / 2);
+      }
       if (hovered) {
-        const prog = Math.min(1, this.dwellMs / 2000);
+        const prog = Math.min(1, this.dwellMs / 3000);
         c.strokeStyle = '#7fe8d8'; c.lineWidth = 3;
         c.beginPath(); c.arc(it.x + it.w / 2, it.y + it.h / 2, Math.min(it.w, it.h) / 2 - 6, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2);
         c.stroke();
       }
     }
+    // crosshair at center
+    c.strokeStyle = 'rgba(255,255,255,0.8)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(W / 2 - 12, H / 2); c.lineTo(W / 2 - 4, H / 2);
+    c.moveTo(W / 2 + 4, H / 2); c.lineTo(W / 2 + 12, H / 2);
+    c.moveTo(W / 2, H / 2 - 12); c.lineTo(W / 2, H / 2 - 4);
+    c.moveTo(W / 2, H / 2 + 4); c.lineTo(W / 2, H / 2 + 12);
+    c.stroke();
+    c.beginPath();
+    c.arc(W / 2, H / 2, 3, 0, Math.PI * 2);
+    c.fillStyle = 'rgba(255,255,255,0.6)';
+    c.fill();
     c.shadowBlur = 0;
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
