@@ -209,6 +209,17 @@ export class GameInstance {
     if (this.gameType !== 'BACK' && this.startCountdownMs > 0) {
       this.startCountdownMs -= dtMs;
       if (this.startCountdownMs < 0) this.startCountdownMs = 0;
+      // The world stands still, but the chase camera still has to be placed
+      // (the ship is at its spawn point) - otherwise VR starts at a bad
+      // angle and the view is stuck for the whole countdown.
+      if (this.selectedObject) {
+        const o = this.selectedObject;
+        this.renderer.camera.lookAtObject(
+          o.pos, o.dir, o.side, o.rot,
+          { stickX: 0, stickY: 0 },
+          this.rc.options.axisX, this.rc.options.axisY, this.rc.options.distance,
+        );
+      }
       return;
     }
     this.dtMs = dtMs;
