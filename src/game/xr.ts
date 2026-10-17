@@ -178,11 +178,14 @@ export async function enterXr(
       const headYawRel = latestHeadYawAbs - baselineYawAbs;
       const gd = new Float32Array(3);
       const cd = rCam.direction as unknown as number[];
+      // gaze = chase camera direction rotated by the NEGATIVE relative head yaw
+      // (the view is rotated by +headYawRel, so the world-space gaze is
+      //  camDir rotated by -headYawRel)
       const cos = Math.cos(-headYawRel);
       const sin = Math.sin(-headYawRel);
-      gd[0] = cd[0] * cos + cd[2] * sin;
+      gd[0] = cd[0] * cos - cd[2] * sin;
       gd[1] = cd[1];
-      gd[2] = -cd[0] * sin + cd[2] * cos;
+      gd[2] = cd[0] * sin + cd[2] * cos;
       vrMenu.update(dt,
         rCam.position as unknown as Float32Array, rCam.direction as unknown as Float32Array,
         shipPos as unknown as Float32Array, shipDir as unknown as Float32Array,

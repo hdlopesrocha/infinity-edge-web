@@ -137,6 +137,7 @@ export class VrMenu {
     const denom = vec3.dot(gd, this.planeN);
     let idx = -1;
     let hitPx = -1;
+    let hitPy = -1;
     if (Math.abs(denom) > 1e-4) {
       const t = vec3.dot(toP, this.planeN) / denom;
       if (t > 0) {
@@ -146,10 +147,10 @@ export class VrMenu {
         const v = vec3.dot(local, this.planeY) / MENU_HEIGHT;
         if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
           hitPx = u * W;
-          const py = v * H;
+          hitPy = v * H;
           for (let i = 0; i < this.items.length; i++) {
             const it = this.items[i];
-            if (hitPx >= it.x && hitPx <= it.x + it.w && py >= it.y && py <= it.y + it.h) { idx = i; break; }
+            if (hitPx >= it.x && hitPx <= it.x + it.w && hitPy >= it.y && hitPy <= it.y + it.h) { idx = i; break; }
           }
         }
       }
@@ -224,19 +225,23 @@ export class VrMenu {
         c.stroke();
       }
     }
-    // crosshair at center
-    c.strokeStyle = 'rgba(255,255,255,0.8)';
-    c.lineWidth = 2;
-    c.beginPath();
-    c.moveTo(W / 2 - 12, H / 2); c.lineTo(W / 2 - 4, H / 2);
-    c.moveTo(W / 2 + 4, H / 2); c.lineTo(W / 2 + 12, H / 2);
-    c.moveTo(W / 2, H / 2 - 12); c.lineTo(W / 2, H / 2 - 4);
-    c.moveTo(W / 2, H / 2 + 4); c.lineTo(W / 2, H / 2 + 12);
-    c.stroke();
-    c.beginPath();
-    c.arc(W / 2, H / 2, 3, 0, Math.PI * 2);
-    c.fillStyle = 'rgba(255,255,255,0.6)';
-    c.fill();
+    // crosshair at gaze hit point
+    if (hitPx >= 0) {
+      const cpx = hitPx;
+      const cpy = hitPy;
+      c.strokeStyle = 'rgba(255,255,255,0.9)';
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(cpx - 12, cpy); c.lineTo(cpx - 4, cpy);
+      c.moveTo(cpx + 4, cpy); c.lineTo(cpx + 12, cpy);
+      c.moveTo(cpx, cpy - 12); c.lineTo(cpx, cpy - 4);
+      c.moveTo(cpx, cpy + 4); c.lineTo(cpx, cpy + 12);
+      c.stroke();
+      c.beginPath();
+      c.arc(cpx, cpy, 3, 0, Math.PI * 2);
+      c.fillStyle = 'rgba(255,255,255,0.8)';
+      c.fill();
+    }
     c.shadowBlur = 0;
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
