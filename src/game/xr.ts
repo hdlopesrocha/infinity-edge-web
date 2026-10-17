@@ -122,7 +122,9 @@ export async function enterXr(
   // The eye viewports are in the layer's framebuffer pixels, not the canvas's:
   // the UI rect math needs that space to put the HUD in the same spot in both
   // eyes instead of doubling it.
-  renderer.presentBounds = { w: layer.framebufferWidth, h: layer.framebufferHeight };
+  if (layer.framebufferWidth > 0 && layer.framebufferHeight > 0) {
+    renderer.presentBounds = { w: layer.framebufferWidth, h: layer.framebufferHeight };
+  }
   const refSpace = await s.requestReferenceSpace('local');
   const head = mat4.create();
   const chase = mat4.create();

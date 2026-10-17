@@ -10,7 +10,7 @@ import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
 import { store, syncOptionsFromRC } from '../game/store';
-import { calibrateVr, dragLook, vrLook } from '../game/vr';
+import { calibrateVr, dragLook, setVr, vrLook } from '../game/vr';
 import { enterXr, leaveXr } from '../game/xr';
 import { syncHud } from '../game/hud';
 import { audio } from '../game/audio';
@@ -188,6 +188,19 @@ function onPointerUp(e: PointerEvent): void {
  * with the split view: pausing ends the session, resuming or starting a match
  * opens a new one. Both happen inside a user gesture, as requestSession needs.
  */
+/** Leave VR and go back to the menus: ends the session, drops the head-look
+ *  offsets and clears the flag, so the screens that follow behave exactly
+ *  like they do outside VR (no stuck, tilted camera). */
+function exitVr(): void {
+  if (!store.vr && !renderer?.xrActive) return;
+  leaveXr();
+  setVr(false);
+  if (renderer) {
+    renderer.camera.vrYaw = 0;
+    renderer.camera.vrPitch = 0;
+  }
+}
+
 function tryImmersive(): void {
   if (!renderer || !instance) return;
   if (!store.vr || !store.interactive || store.paused || renderer.xrActive) return;
@@ -200,9 +213,13 @@ watch(() => store.paused, (p) => {
   else tryImmersive();    // resume click: back into the headset
 });
 watch(() => store.interactive, (on) => {
-  if (!renderer || !store.vr) return;
-  if (on && !store.paused) tryImmersive();
-  else if (!on && renderer.xrActive) leaveXr(true);
+  if (!renderer) return;
+  if (on) {
+    if (store.vr && !store.paused) tryImmersive();
+  } else {
+    // The match is over (or the player left): VR ends with it.
+    exitVr();
+  }
 });
 
 onMounted(() => {
@@ -417,6 +434,9 @@ onMounted(() => {
       if (instance.result && store.route === 'game') {
         const lv = store.levelKey;
         const won = instance.result.won;
+        // A finished match must not leave a head-tracked camera over the
+        // result screens: leave VR, then hand over to the menu route.
+        exitVr();
         store.result = { ...instance.result, level: lv };
         instance.result = null;
         // Replace: a finished match must not stay in the stack, or back
