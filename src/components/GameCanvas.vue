@@ -209,8 +209,10 @@ function tryImmersive(): void {
 watch(() => store.paused, (p) => {
   if (!renderer || !store.vr) return;
   if (!store.interactive) return;
-  if (p) leaveXr(true);   // a menu opened: end the session, the DOM UI shows
-  else tryImmersive();    // resume click: back into the headset
+  // Paused: keep the session alive so the GL menu is drawn per eye (the DOM
+  // pause panel is hidden inside an immersive session). Resuming re-enters
+  // only if the session was lost.
+  if (!p) tryImmersive();
 });
 watch(() => store.interactive, (on) => {
   if (!renderer) return;

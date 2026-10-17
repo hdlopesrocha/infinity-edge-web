@@ -10,6 +10,7 @@ import { clearGameData, saveOptions, store } from '../game/store';
 import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
 import { enableVr, gamepadConnected, setVr, vrState } from '../game/vr';
+import { leaveXr, setMenuHandler } from '../game/xr';
 import GazeCursor from '../components/GazeCursor.vue';
 
 const route = useRoute();
@@ -132,7 +133,6 @@ async function toggleVr(): Promise<void> {
   audio.unlock();
   void audio.sfx('button');
   if (store.vr) {
-    const { leaveXr } = await import('../game/xr');
     leaveXr();
     setVr(false);
     return;
@@ -190,10 +190,24 @@ function applyLive(): void {
 
 onMounted(() => {
   window.addEventListener('keydown', onKey);
+  setMenuHandler((id) => {
+    if (id === 'resume') {
+      store.paused = false;
+      showSettings.value = false;
+      snapshot.value = null;
+    } else if (id === 'leave') {
+      store.paused = false;
+      leaveMatch();
+    } else if (id === 'exitvr') {
+      leaveXr();
+      setVr(false);
+    }
+  });
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
+  setMenuHandler(null);
 });
 
 function markerStyle(m: { color: [number, number, number]; x: number; y: number }): string {

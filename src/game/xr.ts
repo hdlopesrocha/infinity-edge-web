@@ -35,6 +35,7 @@ import { mat4 } from '../engine/math';
 import type { GameInstance } from './instance';
 import { store } from './store';
 import { calibrateVr } from './vr';
+import { VrMenu } from '../engine/vrmenu';
 import { syncHud } from './hud';
 
 type XrSystem = {
@@ -48,6 +49,8 @@ function xr(): XrSystem | null {
 }
 
 let session: XRSession | null = null;
+let menuHandler: ((id: string) => void) | null = null;
+export function setMenuHandler(fn: ((id: string) => void) | null): void { menuHandler = fn; }
 let keepVrOnEnd = false;
 let entering = false;
 let baselineYawAbs = 0;
@@ -129,6 +132,9 @@ export async function enterXr(
   if (layer.framebufferWidth > 0 && layer.framebufferHeight > 0) {
     renderer.presentBounds = { w: layer.framebufferWidth, h: layer.framebufferHeight };
   }
+  const vrMenu = new VrMenu(gl);
+  vrMenu.setItems([{ id: 'resume', label: 'RESUME' }, { id: 'leave', label: 'LEAVE MATCH' }, { id: 'exitvr', label: 'EXIT VR' }]);
+  vrMenu.setOnFire((id) => { if (menuHandler) menuHandler(id); });
   const refSpace = await s.requestReferenceSpace('local');
   const head = mat4.create();
   const chase = mat4.create();
@@ -158,6 +164,7 @@ export async function enterXr(
     instance.canvasW = fullW;
     instance.canvasH = fullH;
     if (!store.paused) instance.update(dt);
+    else vrMenu.update(dt);
     syncHud(instance);
     mat4.copy(chase, renderer.camera.view);
     const cam = renderer.camera;
@@ -195,6 +202,9 @@ export async function enterXr(
       // HUD straight into this eye's rectangle - the same math as the
       // crosshair and as the split view, so both eyes can only match.
       renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
+      // While paused the DOM is hidden, so the pause menu is painted here,
+      // one copy per eye, with a 1 s gaze-dwell to select an item.
+      if (store.paused) vrMenu.draw(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
     }
     renderer.viewport = null;
     renderer.presentFbo = null;
