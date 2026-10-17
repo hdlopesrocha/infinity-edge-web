@@ -285,6 +285,26 @@ export function clearModelCache(): void {
   pending.clear();
 }
 
+export async function loadModelOptional(gl: WebGL2RenderingContext, url: string): Promise<GpuModel | null> {
+  const hit = cache.get(url);
+  if (hit) return hit;
+  const p = pending.get(url);
+  if (p) return p;
+  const job: Promise<GpuModel | null> = (async () => {
+    try {
+      const data = await fetchAssetJson<ConvertedModel>(url);
+      const gpu = createGpuModel(gl, data);
+      cache.set(url, gpu);
+      return gpu;
+    } catch {
+      return null;
+    }
+  })();
+  pending.set(url, job);
+  job.finally(() => pending.delete(url));
+  return job;
+}
+
 export async function loadModel(gl: WebGL2RenderingContext, url: string): Promise<GpuModel> {
   const g = await loadModelOptional(gl, url);
   if (g) return g;
