@@ -262,7 +262,7 @@ export class HudOverlay {
       const segs = h.life.length === 1
         ? [{ x: W / 2 - 75 * s, w: 150 * s, seg: h.life[0] }]
         : h.life.map((seg, i) => ({ x: W / 2 - 117 * s + i * 80 * s, w: 72 * s, seg }));
-      const y = H - 40 * sy - padY, hh = 12 * sy;
+      const y = 74 * sy + padY, hh = 12 * sy;
       for (const { x, w, seg } of segs) {
         c.fillStyle = 'rgba(0,0,0,0.5)';
         c.fillRect(x - 4, y - 4, w + 8, hh + 8);
@@ -316,8 +316,8 @@ export class HudOverlay {
       // VR: no touch controls - homing missiles and nitro as small icons with
       // their counts, right beside the ship's life bars.
       const iw = 40 * s;
-      const y = H - 52 * sy - padY;
-      const x0 = W / 2 + 100 * s;
+      const y = 80 * sy + padY - 20 * s;
+      const x0 = W / 2 + 150 * s;
       c.textAlign = 'left';
       c.textBaseline = 'middle';
       const hm = icon(FIRE_HM_URL);
