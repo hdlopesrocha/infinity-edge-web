@@ -129,7 +129,7 @@ export class VrMenu {
     vec3.cross(this.planeY, camDir, this.planeX); // up
     const ly = vec3.length(this.planeY);
     if (ly < 1e-4) vec3.set(this.planeY, 0, 1, 0); else vec3.scale(this.planeY, this.planeY, 1 / ly);
-    vec3.copy(this.planeN, camDir);            // normal points toward camera
+    vec3.scale(this.planeN, camDir, -1);  // normal points TOWARD the camera
 
     // gaze: intersect the screen-centre ray with the plane
     const toP = vec3.subtract(vec3.create(), this.planePos, camPos);
