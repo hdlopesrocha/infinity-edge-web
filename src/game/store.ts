@@ -69,6 +69,8 @@ export const store = reactive({
     speed: 0,
     /** A homing missile is locked on the player's ship. */
     missileWarn: false,
+    /** An enemy is under the crosshair inside missile range. */
+    lockOn: false,
     stickOn: false,
     backX: 0,
     backY: 0,

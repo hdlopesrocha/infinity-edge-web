@@ -27,6 +27,24 @@ const STICK_KNOB_URL = TEX_BASE + '_stickAnalog.png';
 /** Async icon cache: 2D-canvas drawImage of the real game art. Until an icon
  *  has loaded the overlay falls back to the procedural shapes, so a slow
  *  texture can never blank the HUD. */
+/** Red copies of an icon (cached), for the lock crosshair. */
+const tintCache = new Map<string, HTMLCanvasElement>();
+function tintedRed(img: HTMLImageElement): HTMLCanvasElement {
+  const key = img.src;
+  const hit = tintCache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  cv.width = img.naturalWidth;
+  cv.height = img.naturalHeight;
+  const g = cv.getContext('2d')!;
+  g.drawImage(img, 0, 0);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = '#ff4d3d';
+  g.fillRect(0, 0, cv.width, cv.height);
+  tintCache.set(key, cv);
+  return cv;
+}
+
 const iconCache = new Map<string, HTMLImageElement>();
 const iconPending = new Set<string>();
 function icon(url: string | null): HTMLImageElement | null {
@@ -205,6 +223,14 @@ export class HudOverlay {
       if (aimImg) {
         const iw = 32 * sx, ih = 32 * sy;
         c.drawImage(aimImg, ax - iw / 2, ay - ih / 2, iw, ih);
+      }
+      // Extra red crosshair while an enemy is under it (missile lock ready).
+      if (h.lockOn && aimImg) {
+        const iw = 32 * sx * 1.35, ih = 32 * sy * 1.35;
+        shadow(8);
+        c.drawImage(tintedRed(aimImg), ax - iw / 2, ay - ih / 2, iw, ih);
+      }
+      if (aimImg) {
       } else {
         c.strokeStyle = 'rgba(255,255,255,0.9)';
         c.lineWidth = Math.max(2, 2.5 * s);

@@ -442,6 +442,24 @@ export class GameInstance {
     };
   }
 
+  /** True when an enemy ship sits under the crosshair inside missile range:
+   *  the moment a homing missile could be released and guide onto it. */
+  lockCandidate(): boolean {
+    const sel = this.selectedObject;
+    if (!sel) return false;
+    const found: import('../engine/octree').OctItem[] = [];
+    this.map.octree.sphereSelectInteractive(sel.sx, sel.sy, sel.sz, 256, found);
+    const cosCone = Math.cos(0.175);   // ~10 degrees, inside the missile's turn
+    for (const o of found) {
+      if (!(o instanceof SpaceShip) || !o.active || o === sel) continue;
+      if (!sel.team.enemys.includes(o.team)) continue;
+      const dx = o.sx - sel.sx, dy = o.sy - sel.sy, dz = o.sz - sel.sz;
+      const d = Math.hypot(dx, dy, dz) || 1;
+      if ((dx * sel.dir[0] + dy * sel.dir[1] + dz * sel.dir[2]) / d > cosCone) return true;
+    }
+    return false;
+  }
+
   /** True while at least one live homing missile is locked on the player's
    *  ship (the AIHoming command keeps its target on `target`). */
   missileLocked(): boolean {
