@@ -34,10 +34,10 @@ output shipped with the game, reused byte-for-byte by the `../infinity-edge-mono
 port). A copy of every `modelN.xnb` / `colorN.xnb` is vendored under
 `tools/xnb/Objects/`; the converter bakes `transforms[ParentBone] * vertex`
 (XNA `Model.CopyAbsoluteBoneTransformsTo` + `Model3D.Draw`) and reproduces
-`Model3D.GetBoundingSphere`. Each model is written as metadata JSON plus a
-binary vertex/index sidecar (`<Name>.json` + `<Name>.bin`; format documented in
-`docs/asset-formats.md`), which the loader uploads straight from the fetched
-buffer. Texture *file* names are resolved against
+`Model3D.GetBoundingSphere`. Each model is written as a single JSON file
+(`<Name>.json`) with the vertex/index data embedded inline; GitHub Pages
+already gzips the `.json` files, so a separate binary sidecar buys nothing.
+Texture *file* names are resolved against
 `../IE3D_37_T/InfinityEdge3D/InfinityEdge/InfinityEdgeContent` (auto-detects
 the `IE3D_37_T/InfinityEdge/InfinityEdgeContent` layout too).
 `node tools/convert-xnb.mjs --check` parses without writing. Every output is
