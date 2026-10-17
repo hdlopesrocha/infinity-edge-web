@@ -380,10 +380,13 @@ onMounted(() => {
           instance.canvasW = eyeCssW;
           instance.canvasH = fullH;
           syncHud(instance);
-          renderer.endFrame(uiHud());
+          renderer.endFrame(null);
           if (renderer.renderOptions.zoom > 0) {
             instance.drawShipsSharp(null, { x: eye * half, y: 0, w: half, h });
           }
+          // HUD last, straight into this eye's rectangle: score, clock,
+          // respawn timer, aim, life, markers - one copy per eye.
+          renderer.drawHudTo(null, { x: eye * half, y: 0, w: half, h }, uiHud());
           gl.disable(gl.SCISSOR_TEST);
         }
         renderer.viewport = null;

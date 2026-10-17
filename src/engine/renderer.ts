@@ -170,6 +170,18 @@ export class Renderer {
     return { x: r.x / bw, y: r.y / bh, w: r.w / bw, h: r.h / bh };
   }
 
+  /** Paint the GL HUD straight into a target rectangle (per eye in VR, the
+   *  whole canvas otherwise): the same overlay, the same math everywhere -
+   *  nothing to normalize, so left and right can only match. */
+  drawHudTo(fbo: WebGLFramebuffer | null, rect: { x: number; y: number; w: number; h: number }, hud: HudSnapshot | null): void {
+    if (!hud) return;
+    try {
+      if (!this.hudOverlay) this.hudOverlay = new HudOverlay(this.gl);
+      this.hudOverlay.update(hud);
+      this.hudOverlay.draw(fbo, rect);
+    } catch { /* a failed overlay must never kill the frame */ }
+  }
+
   /** Stage 5: paint the GL HUD into this view's UI rect (null = skip). */
   drawUI(hud: HudSnapshot | null, uv: { x: number; y: number; w: number; h: number }): void {
     if (!hud) return;

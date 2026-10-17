@@ -90,6 +90,7 @@ export async function enterXr(
     viewport: { x: number; y: number; w: number; h: number } | null;
     presentFbo: WebGLFramebuffer | null;
     presentBounds: { w: number; h: number } | null;
+    drawHudTo: (fbo: WebGLFramebuffer | null, rect: { x: number; y: number; w: number; h: number }, hud: typeof store.hud | null) => void;
     beginFrame: () => void;
     endFrame: (hud?: typeof store.hud | null) => void;
     renderOptions: { zoom: number };
@@ -164,6 +165,8 @@ export async function enterXr(
       mat4.multiply(cam.viewProj, cam.proj, cam.view);
       renderer.viewport = { x: vp.x, y: vp.y, w: vp.width, h: vp.height };
       renderer.presentFbo = layer.framebuffer;
+      // The per-eye UI rect is applied where the pixels land (see below), so
+      // the composite itself carries no UI.
       renderer.beginFrame();   // scene target + frustum for this eye
       instance.draw();         // stages 1-3 into their targets
       // Per-eye HUD in the eye's own rect (same relative position both eyes).
@@ -172,10 +175,13 @@ export async function enterXr(
       syncHud(instance);
       // Stage 5 rides the final pass now, so the per-eye overlay hook is
       // gone; the HUD stays sharp while the world zoom-blurs behind it.
-      renderer.endFrame(store.hud);
+      renderer.endFrame(null);
       if (renderer.renderOptions.zoom > 0) {
         instance.drawShipsSharp(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
       }
+      // HUD straight into this eye's rectangle - the same math as the
+      // crosshair and as the split view, so both eyes can only match.
+      renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
     }
     renderer.viewport = null;
     renderer.presentFbo = null;
