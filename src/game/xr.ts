@@ -218,6 +218,18 @@ export async function enterXr(
       // HUD straight into this eye's rectangle - the same math as the
       // crosshair and as the split view, so both eyes can only match.
       renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
+      // TEST: bright yellow fullscreen quad to verify drawing into XR fb works.
+      {
+        const gl = renderer.gl;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+        gl.viewport(vp.x, vp.y, vp.width, vp.height);
+        gl.disable(gl.DEPTH_TEST);
+        gl.depthMask(false);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.clearColor(1, 1, 0, 0.7);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
       // While paused the DOM is hidden, so the pause menu is painted here,
       // one copy per eye, with a 1 s gaze-dwell to select an item.
       if (store.paused || !store.interactive) vrMenu.draw(layer.framebuffer, cam.view as unknown as Float32Array, cam.proj as unknown as Float32Array, cam.position as unknown as Float32Array);
