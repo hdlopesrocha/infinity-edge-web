@@ -133,6 +133,12 @@ function volumePct(): string {
             <input v-model="o.billboards" type="checkbox" class="opt-check" />
           </label>
         </div>
+        <div class="opt-row">
+          <label class="opt-check-label">
+            <span>Speed blur: </span>
+            <input v-model="o.zoomBlur" type="checkbox" class="opt-check" />
+          </label>
+        </div>
       </div>
     </template>
     <template #right>

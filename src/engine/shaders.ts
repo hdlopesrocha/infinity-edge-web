@@ -342,9 +342,13 @@ in vec2 vUV;
 uniform sampler2D uColor; uniform float uThreshold;
 out vec4 oColor;
 void main() {
-  // Stage 4 source = stage 2 itself: the models layer is blurred as a whole
-  // (alpha included), so every object gets the smear, not just bright ones.
-  oColor = texture(uColor, vUV);
+  // Bright pass - used ONLY for the lens-flare ghosts now (the blur layer
+  // takes stage 2 unfiltered): thresholding the whole layer and then feeding
+  // it to the ghosts made them a mirrored second copy of the scene.
+  vec3 c = texture(uColor, vUV).rgb;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float k = smoothstep(uThreshold, uThreshold + 0.4, l);
+  oColor = vec4(c * k, 1.0);
 }`;
 
 export const POST_BLUR_FRAG = `#version 300 es
@@ -368,7 +372,8 @@ export const POST_COMPOSITE_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D uSky; uniform sampler2D uModels;
-uniform sampler2D uBloom; uniform sampler2D uBillboards; uniform sampler2D uUI;
+uniform sampler2D uBloom; uniform sampler2D uFlareSrc;
+uniform sampler2D uBillboards; uniform sampler2D uUI;
 uniform vec4 uUIRect;  // normalized UI sub-rect sampled for this view (one eye)
 uniform sampler2D uFlareTex;
 uniform float uFlare; uniform float uExposureKnee;
@@ -410,7 +415,7 @@ void main() {
       float k = -0.35 + float(i) * 0.55;
       vec2 g = vec2(0.5) + d * (1.0 + k) * -1.0 + d * k;
       g = clamp(g, vec2(0.0), vec2(1.0));
-      vec3 s = texture(uBloom, g).rgb;
+      vec3 s = texture(uFlareSrc, g).rgb;
       vec2 fuv = (g - vec2(0.5)) * 1.5 + vec2(0.5);
       float shape = texture(uFlareTex, fuv).r * 0.5 + texture(uFlareTex, fuv.yx * 0.9).g * 0.5;
       flare += s * shape * (0.6 / (1.0 + float(i) * 0.8));

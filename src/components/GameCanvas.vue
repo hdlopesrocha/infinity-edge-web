@@ -283,7 +283,7 @@ onMounted(() => {
           const cap = Math.max(1e-3, sel.physics.velMax * Math.max(1, sel.multiplier));
           const f = Math.min(1.2, speed / cap);
           if (f > 0.02 && speed > 1e-3) {
-            renderer.renderOptions.zoom = f * ZOOM_BLUR.maxRadiusUV;
+            renderer.renderOptions.zoom = rc.options.zoomBlur ? f * ZOOM_BLUR.maxRadiusUV : 0;
             const cam = renderer.camera;
             const p = instance.project(
               cam.position[0] + (sel.vel[0] / speed) * 1000,

@@ -18,6 +18,8 @@ export interface Options {
   distance: number;
   musicVolume: number;
   billboards: boolean;
+  /** Speed (zoom) blur behind the sharp models. */
+  zoomBlur: boolean;
   cheats: boolean;
   axisX: boolean;
   axisY: boolean;
@@ -29,7 +31,8 @@ export function defaultOptions(): Options {
     // C# default is false; the shipped screenshots (SS1–SS8) and the MonoGame
     // port run show the special effects (star/cloud billboards + engine
     // flares), so the web build defaults to on.
-    musicVolume: 0.5, billboards: true, cheats: false,
+    musicVolume: 0.5, billboards: true,
+  zoomBlur: true, cheats: false,
     axisX: false, axisY: false,
   };
 }
@@ -66,6 +69,7 @@ export function loadOptions(): Options {
       distance: parseInt(g('_distance', '192'), 10),
       musicVolume: parseFloat(g('_musicVolume', '0.5')),
       billboards: b('_billboards', d.billboards),
+      zoomBlur: b('_zoomBlur', d.zoomBlur),
       axisX: b('_axisX', d.axisX),
       axisY: b('_axisY', d.axisY),
       cheats: d.cheats,

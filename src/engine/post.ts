@@ -73,6 +73,9 @@ export class Post {
   /** Per-object motion blur needs a signed velocity target (RG16F). */
   private bright: Target = { fbo: null, tex: null, w: 0, h: 0 };
   private blurA: Target = { fbo: null, tex: null, w: 0, h: 0 };
+  /** Lens-flare bloom (bright pass of the models), small and soft. */
+  private flareA: Target = { fbo: null, tex: null, w: 0, h: 0 };
+  private flareB: Target = { fbo: null, tex: null, w: 0, h: 0 };
   private blurB: Target = { fbo: null, tex: null, w: 0, h: 0 };
   private quadVao: WebGLVertexArrayObject | null = null;
 
@@ -91,7 +94,7 @@ export class Post {
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
-    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uModels', 'uBloom', 'uBillboards', 'uUI', 'uUIRect', 'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples']);
+    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uModels', 'uBloom', 'uFlareSrc', 'uBillboards', 'uUI', 'uUIRect', 'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples']);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -134,6 +137,8 @@ export class Post {
     disposeTarget(this.bright);
     disposeTarget(this.blurA);
     disposeTarget(this.blurB);
+    disposeTarget(this.flareA);
+    disposeTarget(this.flareB);
     if (this.sceneFbo) gl.deleteFramebuffer(this.sceneFbo);
     if (this.bbFbo) gl.deleteFramebuffer(this.bbFbo);
     if (this.uiFbo) gl.deleteFramebuffer(this.uiFbo);
@@ -218,6 +223,8 @@ export class Post {
     mk(this.bright, halfW, halfH);
     mk(this.blurA, halfW, halfH);
     mk(this.blurB, halfW, halfH);
+    mk(this.flareA, Math.max(1, w >> 2), Math.max(1, h >> 2));
+    mk(this.flareB, Math.max(1, w >> 2), Math.max(1, h >> 2));
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
@@ -329,11 +336,28 @@ export class Post {
     // 4. blur, from the models only (stage 2): the sky is never blurred and
     // the billboards stay sharp on top. Also feeds the lens-flare ghosts.
     const flare = opts.flareTex ? opts.flare : 0;
-    {
-      // Stage 4 always runs: the final pass layers it under the models.
-      this.blitPass(this.progBright, this.bright, () => {
+    // Lens-flare bloom: bright pass of the models, blurred small - kept apart
+    // from the blur layer so the ghosts cannot duplicate the whole scene.
+    if (flare > 0) {
+      this.blitPass(this.progBright, this.flareA, () => {
         this.bindTex(this.uBright.uColor, 0, models);
         gl.uniform1f(this.uBright.uThreshold, 0.8);
+      }, this.flareA.w, this.flareA.h);
+      this.blitPass(this.progBlur, this.flareB, () => {
+        this.bindTex(this.uBlur.uTex, 0, this.flareA.tex);
+        gl.uniform2f(this.uBlur.uDir, 1.5 / this.flareB.w, 0);
+      }, this.flareB.w, this.flareB.h);
+      this.blitPass(this.progBlur, this.flareA, () => {
+        this.bindTex(this.uBlur.uTex, 0, this.flareB.tex);
+        gl.uniform2f(this.uBlur.uDir, 0, 1.5 / this.flareA.h);
+      }, this.flareA.w, this.flareA.h);
+    }
+    {
+      // Stage 4 always runs: the final pass layers it under the models.
+      // Blur source: stage 2 copied down (dir 0 = pure copy).
+      this.blitPass(this.progBlur, this.bright, () => {
+        this.bindTex(this.uBlur.uTex, 0, models);
+        gl.uniform2f(this.uBlur.uDir, 0, 0);
       }, this.bright.w, this.bright.h);
       const dirs: [number, number][] = [[1, 0], [0, 1]];
       let src = this.bright;
@@ -359,6 +383,7 @@ export class Post {
       this.bindTex(this.uComposite.uSky, 0, this.skyTex);
       this.bindTex(this.uComposite.uModels, 1, models);
       this.bindTex(this.uComposite.uBloom, 2, bloom);
+      this.bindTex(this.uComposite.uFlareSrc, 6, flare > 0 ? this.flareA.tex : null);
       this.bindTex(this.uComposite.uBillboards, 3, this.bbTex);
       this.bindTex(this.uComposite.uUI, 4, this.uiTex);
       const ur = opts.uiRect ?? { x: 0, y: 0, w: 1, h: 1 };
