@@ -386,7 +386,9 @@ void main() {
   vec4 blur = vec4(0.0);
   for (int i = 0; i < 16; i++) {
     if (i >= zn) break;
-    vec2 uv = clamp(vUV - zd * (uZoom * (float(i) / float(zn))), vec2(0.0), vec2(1.0));
+    // Opposite direction: the blur trails away from the flight point
+    // instead of collapsing toward it.
+    vec2 uv = clamp(vUV + zd * (uZoom * (float(i) / float(zn))), vec2(0.0), vec2(1.0));
     blur += texture(uBloom, uv);
   }
   blur /= float(zn);
