@@ -428,7 +428,11 @@ onMounted(() => {
       instance.update(dtMs);
       renderer.beginFrame();
       instance.draw();
-      renderer.endFrame(uiHud());
+      renderer.endFrame(null);
+      if (renderer.renderOptions.zoom > 0) instance.drawShipsSharp();
+      // HUD on top of everything, in its own padded layer (16px from the
+      // border, baked into the overlay canvas).
+      renderer.drawHudTo(null, { x: 0, y: 0, w: renderer.gl.drawingBufferWidth, h: renderer.gl.drawingBufferHeight }, uiHud());
       // After zoom blur: the ships are drawn sharp on top of the blurred view.
       if (renderer.renderOptions.zoom > 0) instance.drawShipsSharp();
       // After all movements of the frame: publish the HUD snapshot the DOM
