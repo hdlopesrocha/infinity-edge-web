@@ -204,6 +204,7 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
 
 <template>
   <div class="hud" @contextmenu.prevent>
+    <div v-if="!store.glUi" class="hud-dom">
     <div v-if="!store.glUi" class="hud-score">{{ hud.score }}</div>
     <div v-if="!store.glUi && hud.matchLeft !== null" class="hud-match" :class="{ low: matchLow }">{{ matchClock }}</div>
     <div v-if="!store.glUi && hud.notify" class="hud-notify">{{ hud.notify }}</div>
@@ -218,6 +219,7 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
       <img v-if="m.over" :src="base + '_over.png'" width="48" height="48" alt="" draggable="false" />
       <img v-else-if="m.iconUrl" :src="m.iconUrl" :width="m.w" :height="m.h" alt="" draggable="false" />
       <span v-if="m.label">{{ m.label }}</span>
+    </div>
     </div>
     <div ref="layerRef" class="touch-layer" :class="{ 'gl-hidden': store.glUi }" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp">
       <template v-if="hud.stickOn">

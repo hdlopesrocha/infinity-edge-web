@@ -320,3 +320,6 @@ img, button, .icon-btn img, .fit-list img, .menu-window img, .hud img, .touch-la
 .vr-eye { position: absolute; top: 0; width: 50%; height: 100%; overflow: hidden; }
 .vr-eye + .vr-eye { left: 50%; }
 .vr-eye-content { width: 200%; height: 200%; transform: scale(0.5); transform-origin: top left; padding: 14% 0 0 5%; }
+
+/* The DOM HUD block: drawn only when the GL UI is off (see store.glUi). */
+.hud-dom { position: absolute; inset: 0; pointer-events: none; }
