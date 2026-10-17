@@ -87,9 +87,10 @@ export class GameScore {
   toVisual(type: string): string {
     if (type === 'CTF') {
       let ret = '';
-      for (const s of this.scores) if (s.control) ret = String(s.points) + ret;
+      let name = '';
+      for (const s of this.scores) if (s.control) { ret = String(s.points) + ret; name = s.name; }
       for (const s of this.scores) if (!s.control) ret = ret + ' : ' + s.points;
-      return ret;
+      return (name ? name + ' - ' : '') + ret;
     }
     if (type === 'KOTS' || type === 'SURV') {
       const { ours, theirs } = this.duel(type as ScoreType);
