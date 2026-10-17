@@ -42,7 +42,7 @@ export function defaultOptions(): Options {
 const WALL_TEXTURES = new Set(['hexagon', '_hexagon']);
 
 const OPTIONS_KEY = 'options.ie3d';
-const OPTIONS_VERSION = '1.0.0.5';
+const OPTIONS_VERSION = '1.0.1';
 
 export function loadOptions(): Options {
   const d = defaultOptions();

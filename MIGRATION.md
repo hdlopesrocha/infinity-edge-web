@@ -81,7 +81,7 @@ Source: `../IE3D_37_T` (174 `.cs`, 38 FBX, ~100 textures, 26 sounds, 13 levels,
   hover colours, exit/back), menus built from the same XML data (icons,
   PEGASUS/LEO/DRACO, Track 01../Demo Track, PEGASUS watermark at 20%,
   briefing scoreBoard padded to 10 + verbatim textBox, options exact ranges
-  and labels, about 1.0.0.5 credits, victory "Congratulations <user>!" with
+  and labels, about 1.0.1 credits, victory "Congratulations <user>!" with
   128 px medal). `src/ui/scene-xml.ts` parses the same scene XML surface
   (background/body/buttonSkin/font/textures/models/scoreBoard/options/about/
   element refs) for data-driven views.

@@ -6,7 +6,7 @@ import MenuShell from '../components/MenuShell.vue';
 <template>
   <MenuShell wide>
     <template #left>
-      <div class="f-default c-lime">Infinity Edge (1.0.0.5) </div>
+      <div class="f-default c-lime">Infinity Edge (1.0.1) </div>
       <div class="f-small c-white">&nbsp;</div>
       <div class="f-middle c-yellow">=== GRAPHICS ===</div>
       <div class="f-small c-white">Goncalo Rocha</div>

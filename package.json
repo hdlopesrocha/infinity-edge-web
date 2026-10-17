@@ -1,7 +1,7 @@
 {
   "name": "infinity-edge-web",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "IE3D_37_T (XNA) migrated to the browser: Vue 3 + TypeScript + raw WebGL2 + gl-matrix",
   "scripts": {
