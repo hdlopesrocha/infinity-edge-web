@@ -12,8 +12,10 @@ npm install
 npm run copy:assets     # textures + sounds + icons from ../IE3D_37_T (once)
 npm run convert         # XNB -> JSON+bin models, Level.xml/Menu.xml -> JSON (once)
 npm run dev             # http://localhost:5173/#/
+npm run dev:https       # https://localhost:5173/#/ (self-signed cert, SAN: localhost, 127.0.0.1, LAN IP)
 npm run build           # typecheck + production build (dist/)
 npm run preview         # serve the build
+npm run deploy          # build + publish to GitHub Pages (gh-pages)
 npm run typecheck       # vue-tsc only
 npm test                # unit tests (protocol+gzip, frustum/ocTree, models, physics)
 
@@ -97,6 +99,38 @@ branch; on the phone the value survives the frame), so the ship keeps moving
 while you steer and fire. The keyboard is hold-to-thrust and falls back to the
 value left on the slider.
 
+No Ctrl/Alt modifiers are used (plain keys only), so browser shortcuts
+(Ctrl+W etc.) never fire. The UI blocks `contextmenu`/`dragstart` and
+image-saving everywhere.
+
+## VR
+
+Enterable from the **Settings** menu (same menu as the in-game pause overlay).
+Two paths, in order:
+
+- **Immersive WebXR** (`navigator.xr` immersive-vr): per-eye pose and
+  projection rendered straight into the XR framebuffer, tap on the screen
+  re-centres via the session's `select` event, gyroscope look is dropped
+  (the head pose carries the view), the HUD is drawn in WebGL per eye.
+- **Split-screen fallback** (no WebXR or refused): two eyes side by side
+  (camera shifted ±0.125 world units along its right axis, own scissor and
+  viewport per eye), with the gyroscope look (or a drag-to-look fallback
+  when sensors are blocked) and the DOM UI on top.
+
+VR input: gyroscope (DeviceOrientationEvent, iOS permission requested when
+present but never blocking) with a drag-to-look fallback on the scene; a
+reactive diagnostic readout (`sensor: N events · yaw … · pitch … · drag look`)
+proves the mode is alive. Gaze-dwell (1 s) clicks menu buttons. VR ends with
+the match so the result screens come up as normal menus. Tap on the scene
+re-centres in both modes.
+
+## Navigation
+
+LIFO back everywhere (`goBack` pops history; finished matches use
+`router.replace()` so the game leaves the stack). Clickable breadcrumb built
+from the navigation stack, persisted in `sessionStorage` with synthesised
+ancestry for cold deep links. Reload rebuilds the stack.
+
 ## Layout
 
 - `src/engine/` — GL context/loop, BasicEffect-exact GLSL (plain-BasicEffect
@@ -105,11 +139,9 @@ value left on the slider.
   converted-model loader with validation + LOD/fade, camera (follow + orbit),
   frustum, OcTree (frag > 32), draw primitives (billboards/quads drawn
   CullNone like `Draws.DrawBillBoard`, billboards gated on Special Effects),
-  `post.ts` (scene target + velocity motion blur + lens flare),
-  `noise.ts` (tileable 3D Perlin field for smoke/plume).
-- `src/game/assetmanifest.ts` — model/texture manifests so the loaders request
-  exactly the files that exist (no candidate-probing 404s during the boot
-  preload; falls back to probing without a manifest).
+  `post.ts` (six-stage pipeline: 1 sky / 2 models / 3 billboards / 4 blur /
+  5 UI / 6 final, zoom blur + lens flare), `noise.ts` (tileable 3D Perlin
+  field for smoke/plume), `hud3d.ts` (WebGL HUD overlay for stage 5).
 - `src/game/` — math (GetH/GetV verbatim), life pools (Life1/Life3 quirks),
   physics presets + NextPosition + PreviewDirection, Team/Score/Reward/
   Conditions (Destroyed = !active, MorePoints = strictly above minimum),
@@ -117,9 +149,12 @@ value left on the slider.
   homings=2, shield absorb + HUD /10), 13 AIs + XM_Actions factories, Map
   (stack timers, outsider root+box rule, first-hit bullets, walls), GameInstance
   (build/update/draw order, ghost record/playback, scores, victory/defeat),
-  controls (touch + keyboard), resources (Options XML, LOD/color caches),
+  controls (touch + keyboard + gamepad), resources (Options XML, LOD/color caches),
   audio (SFX/voices + music), net (framed binary + gzip), ghost (framed+gzip
   persistence), store (options/scores/nav→scene map), level catalogue.
+- `src/game/hud.ts` — shared HUD snapshot (frame loop and WebXR session).
+- `src/game/xr.ts` — WebXR immersive session driver.
+- `src/game/vr.ts` — VR state, gyro + drag-look fallback, calibration.
 - `src/components/`, `src/views/`, `src/router/` — canvas host, GenericMenu
   shell (from Import/GenericMenu.xml values), HUD (scoreboard, aim, pointers,
   life bar, touch controls), 12 views, hash router.
@@ -133,27 +168,44 @@ value left on the slider.
 - `docs/protocol.md`, `docs/asset-formats.md` — protocol and converted asset
   formats.
 
+## Rendering (verified behaviors)
+
+- **Six-stage framebuffer pipeline** (`src/engine/post.ts`):
+  1. Sky (dome, never blurred)
+  2. Models (all meshes, depth test + write, coverage in alpha)
+  3. Billboards (camera-facing sprites + smoke, shared depth, far-to-near sorted)
+  4. Blur (models only, never sky/billboards; zoom blur from ship velocity)
+  5. UI (WebGL HUD: score, clock, notify, timers, aim, life, markers, missiles,
+     nitro, speed, missile-lock warning, lock crosshair; 16 px padding from every
+     border so only the 3D game touches the edges)
+  6. Final = 1 + 4 + 2 + 3 + 5, in that order, plus lens-flare ghosts and the
+     exposure knee. Ships are re-drawn sharp on top of the blurred frame.
+- **Deferred depth test**: the opaque model pass runs depth-only first (colour
+  masked off), then the colour pass resolves with LEQUAL, so occlusion is
+  independent of draw order (the arena walls render correctly again).
+- **Zoom blur**: the ship's velocity vector drives a radial smear (radius 0.10
+  at full throttle, 16 taps); the models stay sharp on top. Toggleable via
+  "Speed blur" in Options / pause settings.
+- **Lens flare** (gated on Special Effects): bright-pass bloom kept separate
+  from the blur layer so the ghosts cannot duplicate the scene.
+- **Motion blur was removed** at the user's request (velocity buffer, MB shader,
+  debug view, config, option, tests and `src/engine/motion.ts` all deleted).
+- **VR**: WebXR immersive session (per-eye pose/projection into the XR
+  framebuffer) with a split-screen fallback; gyro look + drag-to-look; tap to
+  re-centre; gaze-dwell (1 s) clicks menu buttons; enterable without a
+  gamepad; the same Settings menu is shared with the pause panel (live apply,
+  save/revert).
+- **Gameplay**: 5 s pre-match countdown (world frozen, world units per second
+  "SPD" display, missile-lock warning, red lock crosshair, death-cause line in
+  the respawn panel, draw distance in VR matches the setting).
+- **Navigation**: LIFO back, clickable breadcrumb persisted across reloads,
+  `router.replace()` for finished matches.
+- **No context menu / long-press callout / image saving** anywhere in the UI.
+- **HTTPS dev server**: self-signed cert with SAN (localhost, 127.0.0.1, LAN
+  IP), served only when `certs/dev.{crt,key}` exist.
+
 ## Verified behaviors (browser)
 
-- **Rendering (web additions beyond the 2013 build)**: the scene is drawn into
-  an offscreen target (color + per-object velocity + depth) and composited by
-  `src/engine/post.ts`:
-  - **Real motion blur over the 3D objects** (Options → Motion Blur): every
-    scene shader writes its screen-space velocity from the previous frame's
-    world/view-projection (objects, particles, camera-locked sky), and the post
-    pass blurs along it. No temporal accumulation / fading frames.
-  - **Real flares, no billboards**: engine flares are additive cone plumes in
-    the ship's frame (3D, parallax, noise-driven flicker) and the lens flare is
-    a screen-space ghost chain sampled from the rendered bright pass (occluded
-    sources cannot flare); bullets/addons/pickups use additive glow shells.
-  - **Perlin smoke**: particles sample a tileable 3D Perlin field
-    (`src/engine/noise.ts`) in world space with a time drift, grow, drift and
-    dissolve over their lifetime and fade against the scene depth copy (soft
-    particles) instead of scrolling `holoSmoke` sprite billboards.
-- **Options (live + rollback)**: every control applies immediately (renderer
-  post options, camera far plane, LOD, music, scene rebuild for Special
-  Effects); leaving the screen without pressing "save" restores the saved
-  values, "save" persists them (localStorage).
 - Rendering matches the 2013 reference screenshots: engine/color flares, smoke
   trail, miniStar/cloud billboards and the hexagon walls (all previously culled
   by the missing `CullNone`), the plain-BasicEffect light (`Direction.Down`,
