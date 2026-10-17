@@ -138,6 +138,9 @@ export class HudOverlay {
     const sx = W / Math.max(1, h.canvasW);
     const sy = H / Math.max(1, h.canvasH);
     const s = Math.min(sx, sy);
+    // 16 screen px of padding: no UI hugs the border, only the 3D game does.
+    const padX = 16 * sx;
+    const padY = 16 * sy;
     c.textAlign = 'center';
     c.textBaseline = 'top';
     const shadow = (blur: number): void => {
@@ -149,7 +152,7 @@ export class HudOverlay {
       c.fillStyle = '#fff';
       c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
       shadow(6);
-      c.fillText(h.score, W / 2, 8 * sy);
+      c.fillText(h.score, W / 2, 8 * sy + padY);
     }
     // Match clock m:ss under the score, amber in the last 30 s.
     if (h.matchLeft !== null) {
@@ -158,14 +161,14 @@ export class HudOverlay {
       c.fillStyle = h.matchLeft <= 30000 ? '#ffcc55' : '#fff';
       c.font = `${Math.round(22 * s)}px system-ui, sans-serif`;
       shadow(5);
-      c.fillText(clock, W / 2, 44 * sy);
+      c.fillText(clock, W / 2, 44 * sy + padY);
     }
     // Notification line.
     if (h.notify) {
       c.fillStyle = '#fff';
       c.font = `${Math.round(24 * s)}px system-ui, sans-serif`;
       shadow(6);
-      c.fillText(h.notify, W / 2, 96 * sy);
+      c.fillText(h.notify, W / 2, 96 * sy + padY);
     }
     // Respawn / leaving-field countdown, centred panel.
     const t = h.outside ?? h.respawn;
@@ -259,7 +262,7 @@ export class HudOverlay {
       const segs = h.life.length === 1
         ? [{ x: W / 2 - 75 * s, w: 150 * s, seg: h.life[0] }]
         : h.life.map((seg, i) => ({ x: W / 2 - 117 * s + i * 80 * s, w: 72 * s, seg }));
-      const y = H - 40 * sy, hh = 12 * sy;
+      const y = H - 40 * sy - padY, hh = 12 * sy;
       for (const { x, w, seg } of segs) {
         c.fillStyle = 'rgba(0,0,0,0.5)';
         c.fillRect(x - 4, y - 4, w + 8, hh + 8);
@@ -272,7 +275,7 @@ export class HudOverlay {
     // ammo they carried sits next to the life bars instead (below).
     if (!store.vr) {
       const bw = 96 * s;
-      const bx = (h.canvasW - 96 - 128) * sx;
+      const bx = (h.canvasW - 96 - 128) * sx - padX;
       const items: { url: string; count: string; dim: boolean }[] = [
         { url: FIRE_URL, count: '', dim: false },
         { url: FIRE_HM_URL, count: String(h.homings), dim: h.homings === 0 },
@@ -280,7 +283,7 @@ export class HudOverlay {
       ];
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        const y = (h.canvasH - (96 + 32) * (i + 1)) * sy;
+        const y = (h.canvasH - (96 + 32) * (i + 1)) * sy - padY;
         c.globalAlpha = it.dim ? 0.2 : 1;
         const disc = icon(ACCEL_URL);
         if (disc) c.drawImage(disc, bx, y, bw, bw);
@@ -296,24 +299,24 @@ export class HudOverlay {
       }
       // Accelerator bar + knob (top right of the item stack).
       c.fillStyle = 'rgba(255,255,255,0.2)';
-      c.fillRect((h.canvasW - 96 + 40) * sx, (h.canvasH - 400 + 48) * sy, 16 * s, (400 - 96) * s);
+      c.fillRect((h.canvasW - 96 + 40) * sx - padX, (h.canvasH - 400 + 48) * sy - padY, 16 * s, (400 - 96) * s);
       const knob = icon(ACCEL_URL);
       if (knob) {
-        const ky = (h.canvasH - 400 + 48 + (400 - 96) * (1 - h.acel) - 48) * sy;
-        c.drawImage(knob, (h.canvasW - 96) * sx, ky, 96 * s, 96 * s);
+        const ky = (h.canvasH - 400 + 48 + (400 - 96) * (1 - h.acel) - 48) * sy - padY;
+        c.drawImage(knob, (h.canvasW - 96) * sx - padX, ky, 96 * s, 96 * s);
       }
       // Flight stick, when the level enables it.
       if (h.stickOn) {
         const back = icon(STICK_BACK_URL);
-        if (back) c.drawImage(back, h.backX * sx, h.backY * sy, 256 * s, 256 * s);
+        if (back) c.drawImage(back, h.backX * sx + padX, h.backY * sy - padY, 256 * s, 256 * s);
         const sk = icon(STICK_KNOB_URL);
-        if (sk) c.drawImage(sk, h.knobX * sx, h.knobY * sy, 96 * s, 96 * s);
+        if (sk) c.drawImage(sk, h.knobX * sx + padX, h.knobY * sy - padY, 96 * s, 96 * s);
       }
     } else {
       // VR: no touch controls - homing missiles and nitro as small icons with
       // their counts, right beside the ship's life bars.
       const iw = 40 * s;
-      const y = H - 52 * sy;
+      const y = H - 52 * sy - padY;
       const x0 = W / 2 + 100 * s;
       c.textAlign = 'left';
       c.textBaseline = 'middle';
