@@ -219,7 +219,7 @@ export async function enterXr(
       renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
       // While paused the DOM is hidden, so the pause menu is painted here,
       // one copy per eye, with a 1 s gaze-dwell to select an item.
-      if (store.paused || !store.interactive) vrMenu.draw(cam.view as unknown as Float32Array, cam.proj as unknown as Float32Array, cam.position as unknown as Float32Array);
+      if (store.paused || !store.interactive) vrMenu.draw(layer.framebuffer, cam.view as unknown as Float32Array, cam.proj as unknown as Float32Array, cam.position as unknown as Float32Array);
     }
     renderer.viewport = null;
     renderer.presentFbo = null;

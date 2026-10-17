@@ -193,8 +193,9 @@ export class VrMenu {
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
-  draw(view: Float32Array, proj: Float32Array, camPos: vec3): void {
+  draw(fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array, camPos: vec3): void {
     const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     // build the world matrix: a quad at planePos facing the camera
     const world = mat4.create();
     // column-major: columns = (planeX * MENU_WIDTH, planeY * MENU_HEIGHT, -camDir, planePos)
