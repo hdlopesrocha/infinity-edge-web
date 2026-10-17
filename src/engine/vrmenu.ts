@@ -193,37 +193,34 @@ export class VrMenu {
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
-  draw(fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array, camPos: vec3): void {
+  /** World-space plane: rendered last, over everything, no depth test. */
+  draw(fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array, _camPos: vec3): void {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    // build the world matrix: a quad at planePos facing the camera
-    const world = mat4.create();
-    // column-major: columns = (planeX * MENU_WIDTH, planeY * MENU_HEIGHT, -camDir, planePos)
-    for (let i = 0; i < 3; i++) {
-      world[i] = this.planeX[i] * MENU_WIDTH;
-      world[4 + i] = this.planeY[i] * MENU_HEIGHT;
-      world[8 + i] = this.planeN[i];
-      world[12 + i] = this.planePos[i];
-    }
-    world[15] = 1;
+    const w = gl.drawingBufferWidth;
+    const h = gl.drawingBufferHeight;
+    gl.viewport(0, 0, w, h);
     gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
     gl.disable(gl.CULL_FACE);
-    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.useProgram(this.prog); // note: prog has no uView/uProj uniforms set below via draw.unlit; use own
-    // use the unlit program instead for proper view/proj
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.prog);
-    // set uniforms manually
-    const uWorld = this.uWorld, uView = this.uView, uProj = this.uProj, uTex = this.uTex, uAlpha = this.uAlpha, uHasTex = this.uHasTex, uColor = this.uColor;
-    if (uWorld) gl.uniformMatrix4fv(uWorld, false, world as Float32Array);
-    if (uView) gl.uniformMatrix4fv(uView, false, view as Float32Array);
-    if (uProj) gl.uniformMatrix4fv(uProj, false, proj as Float32Array);
-    if (uAlpha) gl.uniform1f(uAlpha, 1.0);
-    if (uColor) gl.uniform3f(uColor, 1, 1, 1);
-    if (uHasTex) gl.uniform1i(uHasTex, 1);
+    const world = new Float32Array(16);
+    for (let i = 0; i < 3; i++) {
+      world[i]      = this.planeX[i] * MENU_WIDTH;
+      world[4 + i]  = this.planeY[i] * MENU_HEIGHT;
+      world[8 + i]  = this.planeN[i];
+      world[12 + i] = this.planePos[i];
+    }
+    world[15] = 1;
+    if (this.uWorld) gl.uniformMatrix4fv(this.uWorld, false, world);
+    if (this.uView) gl.uniformMatrix4fv(this.uView, false, view);
+    if (this.uProj) gl.uniformMatrix4fv(this.uProj, false, proj);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    if (uTex) gl.uniform1i(uTex, 0);
+    if (this.uTex) gl.uniform1i(this.uTex, 0);
+    if (this.uAlpha) gl.uniform1f(this.uAlpha, 1.0);
     gl.bindVertexArray(this.vao);
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
     gl.bindVertexArray(null);
