@@ -10,8 +10,8 @@ import type { store } from '../game/store';
 
 const W = 1024;
 const H = 512;
-const MENU_DISTANCE = 5;          // world units in front of the ship
-const MENU_WIDTH = 12;            // world units
+const MENU_DISTANCE = 3;          // world units in front of the ship
+const MENU_WIDTH = 16;            // world units
 const MENU_HEIGHT = MENU_WIDTH * (H / W);
 
 interface MenuItem { id: string; label: string; type: 'button' | 'checkbox' | 'slider'; value?: number; x: number; y: number; w: number; h: number }
@@ -123,7 +123,7 @@ export class VrMenu {
     const fwd = vec3.normalize(vec3.create(), shipDir);
     vec3.scaleAndAdd(this.planePos, shipPos, fwd, MENU_DISTANCE);
     const up = vec3.fromValues(0, 1, 0);
-    vec3.cross(this.planeX, up, camDir);   // right
+    vec3.cross(this.planeX, camDir, up);   // right (was up x camDir = left, causing horizontal mirror)
     const lx = vec3.length(this.planeX);
     if (lx < 1e-4) vec3.set(this.planeX, 1, 0, 0); else vec3.scale(this.planeX, this.planeX, 1 / lx);
     vec3.cross(this.planeY, camDir, this.planeX); // up
@@ -225,23 +225,21 @@ export class VrMenu {
         c.stroke();
       }
     }
-    // crosshair at gaze hit point
-    if (hitPx >= 0) {
-      const cpx = hitPx;
-      const cpy = hitPy;
-      c.strokeStyle = 'rgba(255,255,255,0.9)';
-      c.lineWidth = 2;
-      c.beginPath();
-      c.moveTo(cpx - 12, cpy); c.lineTo(cpx - 4, cpy);
-      c.moveTo(cpx + 4, cpy); c.lineTo(cpx + 12, cpy);
-      c.moveTo(cpx, cpy - 12); c.lineTo(cpx, cpy - 4);
-      c.moveTo(cpx, cpy + 4); c.lineTo(cpx, cpy + 12);
-      c.stroke();
-      c.beginPath();
-      c.arc(cpx, cpy, 3, 0, Math.PI * 2);
-      c.fillStyle = 'rgba(255,255,255,0.8)';
-      c.fill();
-    }
+    // crosshair at gaze hit point (or center if no hit)
+    const cpx = hitPx >= 0 ? hitPx : W / 2;
+    const cpy = hitPy >= 0 ? hitPy : H / 2;
+    c.strokeStyle = 'rgba(255,255,255,0.9)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(cpx - 12, cpy); c.lineTo(cpx - 4, cpy);
+    c.moveTo(cpx + 4, cpy); c.lineTo(cpx + 12, cpy);
+    c.moveTo(cpx, cpy - 12); c.lineTo(cpx, cpy - 4);
+    c.moveTo(cpx, cpy + 4); c.lineTo(cpx, cpy + 12);
+    c.stroke();
+    c.beginPath();
+    c.arc(cpx, cpy, 3, 0, Math.PI * 2);
+    c.fillStyle = 'rgba(255,255,255,0.8)';
+    c.fill();
     c.shadowBlur = 0;
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
