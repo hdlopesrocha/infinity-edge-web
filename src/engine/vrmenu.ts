@@ -10,8 +10,8 @@ import type { store } from '../game/store';
 
 const W = 1024;
 const H = 512;
-const MENU_DISTANCE = 1.5;        // world units in front of the ship
-const MENU_WIDTH = 16;            // world units
+const MENU_DISTANCE = 2;          // world units in front of the ship
+const MENU_WIDTH = 12;            // world units
 const MENU_HEIGHT = MENU_WIDTH * (H / W);
 
 interface MenuItem { id: string; label: string; x: number; y: number; w: number; h: number }
@@ -161,10 +161,8 @@ export class VrMenu {
     // paint
     const c = this.ctx;
     c.clearRect(0, 0, W, H);
-    c.fillStyle = 'rgba(10, 10, 30, 0.95)';
+    c.fillStyle = 'rgba(20, 20, 40, 0.85)';
     c.fillRect(0, 0, W, H);
-    // bright border so it's impossible to miss
-    c.strokeStyle = '#ff0'; c.lineWidth = 8; c.strokeRect(4, 4, W - 8, H - 8);
     c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillStyle = '#fff'; c.font = '700 44px system-ui, sans-serif';
     c.shadowColor = 'rgba(0,0,0,0.9)'; c.shadowBlur = 8;

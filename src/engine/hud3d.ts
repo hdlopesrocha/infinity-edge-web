@@ -175,7 +175,7 @@ export class HudOverlay {
       c.fillStyle = '#fff';
       c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
       shadow(6);
-      c.fillText(h.score, W / 2, padY);
+      c.fillText(h.score, W / 2, padY + 28 * sy);
     }
     // Match clock m:ss under the score, amber in the last 30 s.
     if (h.matchLeft !== null) {
@@ -184,7 +184,7 @@ export class HudOverlay {
       c.fillStyle = h.matchLeft <= 30000 ? '#ffcc55' : '#fff';
       c.font = `${Math.round(22 * s)}px system-ui, sans-serif`;
       shadow(5);
-      c.fillText(clock, W / 2, padY + 36 * sy);
+      c.fillText(clock, W / 2, padY + 52 * sy);
     }
     // Notification line.
     if (h.notify) {
@@ -324,7 +324,7 @@ export class HudOverlay {
       c.font = `700 ${Math.round(24 * s)}px system-ui, sans-serif`;
       c.fillStyle = 'rgba(255,255,255,0.92)';
       shadow(4);
-      c.fillText(`SPD ${Math.round(h.speed)}`, W / 2 - 150 * s, 74 * sy + padY);
+      c.fillText(`SPD ${Math.round(h.speed)}`, W / 2 - 150 * s, padY + 8 * sy);
       c.textAlign = 'center';
       c.textBaseline = 'top';
     }
@@ -333,7 +333,7 @@ export class HudOverlay {
       const segs = h.life.length === 1
         ? [{ x: W / 2 - 75 * s, w: 150 * s, seg: h.life[0] }]
         : h.life.map((seg, i) => ({ x: W / 2 - 117 * s + i * 80 * s, w: 72 * s, seg }));
-      const y = 74 * sy + padY, hh = 12 * sy;
+      const y = padY + 8 * sy, hh = 12 * sy;
       for (const { x, w, seg } of segs) {
         c.fillStyle = 'rgba(0,0,0,0.5)';
         c.fillRect(x - 4, y - 4, w + 8, hh + 8);
