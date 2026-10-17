@@ -65,6 +65,8 @@ export const store = reactive({
     matchLeft: null as number | null,
     homings: 0,
     nitroPct: 0,
+    /** Ship speed in world units per second (0 = no ship). */
+    speed: 0,
     stickOn: false,
     backX: 0,
     backY: 0,

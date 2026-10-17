@@ -47,6 +47,7 @@ export function syncHud(g: GameInstance): void {
   }
   // Match clock: the level's MoreTime goal is when the match ends.
   hud.matchLeft = g.matchTimeMs > 0 && sel ? Math.max(0, g.matchTimeMs - sel.team.timeMs) : null;
+  hud.speed = sel ? Math.hypot(sel.vel[0], sel.vel[1], sel.vel[2]) : 0;
   hud.homings = g.control.homings;
   hud.nitroPct = Math.floor(g.control.nitroFrac * 100);
   hud.stickOn = g.control.analogStick.enabled;

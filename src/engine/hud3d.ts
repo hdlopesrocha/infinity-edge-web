@@ -257,7 +257,18 @@ export class HudOverlay {
         c.fillText(m.label, mx, my + Math.max(ihCss * sy / 2, r) + 4 * sy);
       }
     }
-    // Life bars, bottom centre.
+    // Speed, left of the life bars on the same line (world units per second).
+    {
+      c.textAlign = 'right';
+      c.textBaseline = 'middle';
+      c.font = `700 ${Math.round(24 * s)}px system-ui, sans-serif`;
+      c.fillStyle = 'rgba(255,255,255,0.92)';
+      shadow(4);
+      c.fillText(`SPD ${Math.round(h.speed)}`, W / 2 - 150 * s, 80 * sy + padY);
+      c.textAlign = 'center';
+      c.textBaseline = 'top';
+    }
+    // Life bars, top centre (under the match clock).
     if (h.life.length > 0) {
       const segs = h.life.length === 1
         ? [{ x: W / 2 - 75 * s, w: 150 * s, seg: h.life[0] }]
