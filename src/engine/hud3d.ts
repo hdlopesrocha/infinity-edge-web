@@ -11,6 +11,7 @@ import { store } from '../game/store';
 type Hud = typeof store.hud;
 
 const W = 1024;
+const BUILD_VER = "v4";
 const H = 1024;
 
 // Same base the DOM HUD uses for its icons (GameView `base`).
@@ -402,6 +403,13 @@ export class HudOverlay {
       c.textAlign = 'center';
       c.textBaseline = 'top';
     }
+
+    // Tiny build marker in the corner (verifies which bundle is loaded).
+    c.font = '9px system-ui, sans-serif';
+    c.fillStyle = 'rgba(255,255,255,0.25)';
+    c.textAlign = 'left';
+    c.fillText(BUILD_VER, 4, H - 12);
+    c.textAlign = 'center';
 
     c.shadowBlur = 0;
     // Upload (sub-image keeps the same texture object the session uses).
