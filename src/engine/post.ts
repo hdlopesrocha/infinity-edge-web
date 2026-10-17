@@ -44,9 +44,10 @@ export interface PresentOptions {
 /** Zoom-blur tunables. */
 export const ZOOM_BLUR = {
   /** Radius at the screen edge, in UV, at full throttle. */
-  maxRadiusUV: 0.12,
-  /** Taps along the zoom ray. */
-  samples: 10,
+  maxRadiusUV: 0.10,
+  /** Taps along the zoom ray: enough to blend into a streak instead of
+   *  showing a second, mirrored-looking copy of the ship. */
+  samples: 16,
 };
 
 export class Post {
@@ -340,7 +341,7 @@ export class Post {
       for (let i = 0; i < 2; i++) {
         this.blitPass(this.progBlur, dst, () => {
           this.bindTex(this.uBlur.uTex, 0, src.tex);
-          gl.uniform2f(this.uBlur.uDir, dirs[i][0] / dst.w, dirs[i][1] / dst.h);
+          gl.uniform2f(this.uBlur.uDir, (dirs[i][0] * 2.4) / dst.w, (dirs[i][1] * 2.4) / dst.h);
         }, dst.w, dst.h);
         src = dst;
         dst = dst === this.blurA ? this.blurB : this.blurA;
@@ -348,7 +349,7 @@ export class Post {
       // second, wider pass over the result
       this.blitPass(this.progBlur, this.blurB, () => {
         this.bindTex(this.uBlur.uTex, 0, this.blurA.tex);
-        gl.uniform2f(this.uBlur.uDir, 2.5 / this.blurB.w, 2.5 / this.blurB.h);
+        gl.uniform2f(this.uBlur.uDir, 6 / this.blurB.w, 6 / this.blurB.h);
       }, this.blurB.w, this.blurB.h);
     }
     // 6. final, in order: sky + blur + models + billboards + UI.
