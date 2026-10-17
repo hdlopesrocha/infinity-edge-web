@@ -71,6 +71,8 @@ export const store = reactive({
     missileWarn: false,
     /** An enemy is under the crosshair inside missile range. */
     lockOn: false,
+    /** Pre-match countdown in seconds (0 = running). */
+    countdown: 0,
     stickOn: false,
     backX: 0,
     backY: 0,

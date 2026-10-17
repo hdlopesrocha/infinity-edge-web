@@ -58,6 +58,8 @@ export class GameInstance {
   finished = false;
   fireWasDown = false;
   homingWasDown = false;
+  /** Milliseconds left of the pre-match hold (5 s). */
+  startCountdownMs = 5000;
   aimedTarget: SpaceObject | null = null;
   result: { won: boolean; reward: RewardType; message: string | null } | null = null;
   skyGpu: import('../engine/model').GpuModel | null = null;
@@ -180,6 +182,13 @@ export class GameInstance {
   }
 
   update(dtMs: number): void {
+    // Pre-match hold: the world stands still for a few seconds (and a
+    // countdown is shown) so the player can put the VR goggles on.
+    if (this.gameType !== 'BACK' && this.startCountdownMs > 0) {
+      this.startCountdownMs -= dtMs;
+      if (this.startCountdownMs < 0) this.startCountdownMs = 0;
+      return;
+    }
     this.dtMs = dtMs;
     if (this.gameType === 'BACK') {
       this.map.update(this, dtMs);

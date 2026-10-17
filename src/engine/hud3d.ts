@@ -283,6 +283,16 @@ export class HudOverlay {
         c.fillText(m.label, mx, my + Math.max(ihCss * sy / 2, r) + 4 * sy);
       }
     }
+    // Pre-match countdown: big and centred, so the goggles can be put on.
+    if (h.countdown > 0) {
+      c.font = `700 ${Math.round(120 * s)}px system-ui, sans-serif`;
+      c.fillStyle = '#ffffff';
+      shadow(14);
+      c.fillText(String(h.countdown), W / 2, H * 0.36);
+      c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
+      c.fillStyle = '#7fe8d8';
+      c.fillText('READY IN', W / 2, H * 0.36 - 52 * sy);
+    }
     // Missile-lock warning: blink a red banner under the top block.
     if (h.missileWarn) {
       const blink = (typeof performance !== 'undefined' ? performance.now() : 0) % 700 < 450;
