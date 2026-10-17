@@ -118,7 +118,6 @@ export class GameInstance {
     }
     await rc.preload([...modelNames], [
       'flare1', 'flare2',
-      'holoSmoke1', 'holoSmoke2', 'holoSmoke3', 'holoSmoke4', 'holoSmoke5', 'holoSmoke6', 'holoSmoke7',
       'hexagon', 'aim', 'over',
       'Fighter3_icon', 'Ark_icon', 'Base_icon', 'Flag_icon',
     ]);

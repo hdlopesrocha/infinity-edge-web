@@ -214,13 +214,8 @@ export class GameMap {
       }
       obj = null;
     } else if (t === 'cloud') {
-      if (gi.rc.options.billboards) {
-        const qtt = def.amount ?? 1;
-        const tex = gi.rc.tex('holoSmoke' + (1 + Math.floor(gi.rc.random() * 7)));
-        for (let i = 0; i < qtt; i++) {
-          new Billboard(this, team, this.parsePosition(def.position, team), tex, 100, 0.2);
-        }
-      }
+      // Old holoSmoke billboard clouds are gone; smoke is now procedural
+      // (Perlin/simplex 3D noise in the engine, see engine/noise.ts).
       obj = null;
     }
     if (obj && def.name) gi.objects.set(def.name, obj);

@@ -238,7 +238,6 @@ export class RC {
     const gl = this.renderer.gl;
     await ensureManifests();
     const extraTex = [
-      'holoSmoke1', 'holoSmoke2', 'holoSmoke3', 'holoSmoke4', 'holoSmoke5', 'holoSmoke6', 'holoSmoke7',
       'hexagon', 'aim', 'over',
     ];
     const texAliases = [...new Set([...Object.keys(TEXTURES), ...extraTex])];

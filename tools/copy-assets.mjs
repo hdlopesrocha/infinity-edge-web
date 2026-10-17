@@ -29,10 +29,7 @@ const TEXTURE_ALIASES = {
   _normal: 'System/normal', _hard: 'System/hard', _key: 'System/key',
   _over: 'System/over', _engineLogo: 'System/engineLogo', _gameLogo: 'System/logo',
   _hexagon: 'System/hexagon',
-  _holoSmoke1: 'System/holoSmoke1', _holoSmoke2: 'System/holoSmoke2',
-  _holoSmoke3: 'System/holoSmoke3', _holoSmoke4: 'System/holoSmoke4',
-  _holoSmoke5: 'System/holoSmoke5', _holoSmoke6: 'System/holoSmoke6',
-  _holoSmoke7: 'System/holoSmoke7',
+
   _backAnalog: 'Control/backAnalog', _stickAnalog: 'Control/stickAnalog',
   _fireButton: 'Control/fire', _fireButtonHM: 'Control/fireHM',
   _accelAnalog: 'Control/accelAnalog', _nitro: 'Control/nitro',
