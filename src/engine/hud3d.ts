@@ -11,7 +11,6 @@ import { store } from '../game/store';
 type Hud = typeof store.hud;
 
 const W = 1024;
-const BUILD_VER = "v4";
 const H = 1024;
 
 // Same base the DOM HUD uses for its icons (GameView `base`).
@@ -226,7 +225,8 @@ export class HudOverlay {
     // Aim: the real _aim.png crosshair (32x32), exactly like the DOM HUD.
     // Falls back to the drawn reticle until the icon loads.
     {
-      const ax = h.aimX * sx, ay = h.aimY * sy;
+      const ax = padX + (h.aimX / Math.max(1, h.canvasW)) * (W - 2 * padX);
+      const ay = padY + (h.aimY / Math.max(1, h.canvasH)) * (H - 2 * padY);
       const rx = 22 * sx, ry = 22 * sy;
       const r = Math.max(rx, ry);
       const aimImg = icon(AIM_URL);
@@ -260,7 +260,9 @@ export class HudOverlay {
     // locked targets, the object's own icon otherwise - plus the label.
     // Procedural shapes cover icons that have not loaded yet.
     for (const m of h.pointers) {
-      const mx = m.x * sx, my = m.y * sy;
+      // 16px padding from the border, same as every other HUD element.
+      const mx = padX + (m.x / Math.max(1, h.canvasW)) * (W - 2 * padX);
+      const my = padY + (m.y / Math.max(1, h.canvasH)) * (H - 2 * padY);
       const rx = 16 * sx, ry = 16 * sy;
       const r = Math.max(rx, ry);
       const col = `rgb(${(m.color[0] * 255) | 0},${(m.color[1] * 255) | 0},${(m.color[2] * 255) | 0})`;
@@ -403,13 +405,6 @@ export class HudOverlay {
       c.textAlign = 'center';
       c.textBaseline = 'top';
     }
-
-    // Tiny build marker in the corner (verifies which bundle is loaded).
-    c.font = '9px system-ui, sans-serif';
-    c.fillStyle = 'rgba(255,255,255,0.25)';
-    c.textAlign = 'left';
-    c.fillText(BUILD_VER, 4, H - 12);
-    c.textAlign = 'center';
 
     c.shadowBlur = 0;
     // Upload (sub-image keeps the same texture object the session uses).
