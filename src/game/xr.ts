@@ -173,22 +173,28 @@ export async function enterXr(
       const rCam = renderer.camera;
       const shipPos = inMenu ? rCam.position : (sel ? sel.pos : rCam.position);
       const shipDir = inMenu ? rCam.direction : (sel ? sel.dir : rCam.direction);
-      // gaze direction: chase camera direction rotated by the relative head yaw
-      // so the user can look around and aim at menu items.
-      const headYawRel = latestHeadYawAbs - baselineYawAbs;
-      const gd = new Float32Array(3);
-      const cd = rCam.direction as unknown as number[];
-      // gaze = chase camera direction rotated by -headYawRel
-      // (inverse of the view rotation, which is +headYawRel)
-      const cos = Math.cos(-headYawRel);
-      const sin = Math.sin(-headYawRel);
-      gd[0] = cd[0] * cos + cd[2] * sin;
-      gd[1] = cd[1];
-      gd[2] = -cd[0] * sin + cd[2] * cos;
+      // Compute gaze direction from the head transform matrix.
+      // The head transform is pose.views[0].transform.matrix.
+      // The gaze direction in world space = chaseView^{-1} * headTransform * rotateY(-baseline) * (0,0,-1,0)
+      // = rotateY(camDir, baselineYawAbs - latestHeadYawAbs)
+      const headMat = pose.views.length > 0 ? pose.views[0].transform.matrix : null;
+      let gazeDir: Float32Array | undefined;
+      if (headMat) {
+        const headYaw = Math.atan2(headMat[8], headMat[10]);
+        const angle = baselineYawAbs - headYaw;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const cd = rCam.direction as unknown as number[];
+        gazeDir = new Float32Array([
+          cd[0] * cos + cd[2] * sin,
+          cd[1],
+          -cd[0] * sin + cd[2] * cos,
+        ]);
+      }
       vrMenu.update(dt,
         rCam.position as unknown as Float32Array, rCam.direction as unknown as Float32Array,
         shipPos as unknown as Float32Array, shipDir as unknown as Float32Array,
-        gd as unknown as Float32Array);
+        gazeDir);
     }
     // menu items follow the screen we are on
     vrMenu.setItems(inMenu

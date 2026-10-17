@@ -10,8 +10,8 @@ import type { store } from '../game/store';
 
 const W = 1024;
 const H = 512;
-const MENU_DISTANCE = 3;          // world units in front of the ship
-const MENU_WIDTH = 16;            // world units
+const MENU_DISTANCE = 2;          // world units in front of the ship
+const MENU_WIDTH = 20;            // world units
 const MENU_HEIGHT = MENU_WIDTH * (H / W);
 
 interface MenuItem { id: string; label: string; type: 'button' | 'checkbox' | 'slider'; value?: number; x: number; y: number; w: number; h: number }
@@ -123,7 +123,7 @@ export class VrMenu {
     const fwd = vec3.normalize(vec3.create(), shipDir);
     vec3.scaleAndAdd(this.planePos, shipPos, fwd, MENU_DISTANCE);
     const up = vec3.fromValues(0, 1, 0);
-    vec3.cross(this.planeX, camDir, up);   // right (was up x camDir = left, causing horizontal mirror)
+    vec3.cross(this.planeX, camDir, up);   // right
     const lx = vec3.length(this.planeX);
     if (lx < 1e-4) vec3.set(this.planeX, 1, 0, 0); else vec3.scale(this.planeX, this.planeX, 1 / lx);
     vec3.cross(this.planeY, camDir, this.planeX); // up
@@ -131,8 +131,11 @@ export class VrMenu {
     if (ly < 1e-4) vec3.set(this.planeY, 0, 1, 0); else vec3.scale(this.planeY, this.planeY, 1 / ly);
     vec3.scale(this.planeN, camDir, -1);  // normal points TOWARD the camera
 
-    // gaze: intersect the gaze ray with the plane
+    // gaze direction
     const gd = gazeDir ? gazeDir : camDir;
+
+    // gaze: intersect the gaze ray with the plane
+    const toP = vec3.subtract(vec3.create(), this.planePos, camPos);
     const toP = vec3.subtract(vec3.create(), this.planePos, camPos);
     const denom = vec3.dot(gd, this.planeN);
     let idx = -1;
