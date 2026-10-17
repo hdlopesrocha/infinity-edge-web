@@ -175,7 +175,7 @@ export class HudOverlay {
       c.fillStyle = '#fff';
       c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
       shadow(6);
-      c.fillText(h.score, W / 2, 8 * sy + padY);
+      c.fillText(h.score, W / 2, padY);
     }
     // Match clock m:ss under the score, amber in the last 30 s.
     if (h.matchLeft !== null) {
@@ -184,14 +184,14 @@ export class HudOverlay {
       c.fillStyle = h.matchLeft <= 30000 ? '#ffcc55' : '#fff';
       c.font = `${Math.round(22 * s)}px system-ui, sans-serif`;
       shadow(5);
-      c.fillText(clock, W / 2, 44 * sy + padY);
+      c.fillText(clock, W / 2, padY + 36 * sy);
     }
     // Notification line.
     if (h.notify) {
       c.fillStyle = '#fff';
       c.font = `${Math.round(24 * s)}px system-ui, sans-serif`;
       shadow(6);
-      c.fillText(h.notify, W / 2, 96 * sy + padY);
+      c.fillText(h.notify, W / 2, padY + 88 * sy);
     }
     // Respawn / leaving-field countdown, centred panel.
     const t = h.outside ?? h.respawn;
@@ -314,7 +314,7 @@ export class HudOverlay {
         c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
         c.fillStyle = '#ff4d3d';
         shadow(10);
-        c.fillText('MISSILE LOCK', W / 2, 112 * sy + padY);
+        c.fillText('MISSILE LOCK', W / 2, padY + 104 * sy);
       }
     }
     // Speed, left of the life bars on the same line (world units per second).
@@ -324,7 +324,7 @@ export class HudOverlay {
       c.font = `700 ${Math.round(24 * s)}px system-ui, sans-serif`;
       c.fillStyle = 'rgba(255,255,255,0.92)';
       shadow(4);
-      c.fillText(`SPD ${Math.round(h.speed)}`, W / 2 - 150 * s, 80 * sy + padY);
+      c.fillText(`SPD ${Math.round(h.speed)}`, W / 2 - 150 * s, 74 * sy + padY);
       c.textAlign = 'center';
       c.textBaseline = 'top';
     }
@@ -387,7 +387,7 @@ export class HudOverlay {
       // VR: no touch controls - homing missiles and nitro as small icons with
       // their counts, right beside the ship's life bars.
       const iw = 40 * s;
-      const y = 80 * sy + padY - 20 * s;
+      const y = 74 * sy + padY + 6 * sy - 20 * s;
       const x0 = W / 2 + 150 * s;
       c.textAlign = 'left';
       c.textBaseline = 'middle';
