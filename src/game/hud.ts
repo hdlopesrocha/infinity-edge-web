@@ -51,6 +51,7 @@ export function syncHud(g: GameInstance): void {
   hud.missileWarn = g.missileLocked();
   hud.lockOn = g.lockCandidate();
   hud.countdown = g.startCountdownMs > 0 ? Math.ceil(g.startCountdownMs / 1000) : 0;
+  hud.deathCause = g.deathCause;
   hud.homings = g.control.homings;
   hud.nitroPct = Math.floor(g.control.nitroFrac * 100);
   hud.stickOn = g.control.analogStick.enabled;

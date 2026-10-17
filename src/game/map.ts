@@ -390,6 +390,7 @@ export class GameMap {
           if (timer.elapsed < timer.max) {
             keep.push(timer);
           } else {
+            gi.nextDeathCause = 'left the field of battle';
             obj.destroyObject(gi);
             this.refreshObject(obj);
           }

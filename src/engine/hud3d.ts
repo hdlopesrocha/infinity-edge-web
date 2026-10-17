@@ -206,6 +206,11 @@ export class HudOverlay {
       c.fillText(label, W / 2, by + 8 * sy);
       c.font = `700 ${Math.round(44 * s)}px system-ui, sans-serif`;
       c.fillText(`${secs}s`, W / 2, by + 32 * sy);
+      if (h.respawn && h.deathCause) {
+        c.font = `${Math.round(16 * s)}px system-ui, sans-serif`;
+        c.fillStyle = 'rgba(255,255,255,0.85)';
+        c.fillText(h.deathCause, W / 2, by + 78 * sy);
+      }
       const pct = t.total > 0 ? Math.max(0, Math.min(1, t.left / t.total)) : 0;
       c.fillStyle = 'rgba(255,255,255,0.18)';
       c.fillRect(bx + 12 * s, by + bh - 16 * sy, bw - 24 * s, 5);

@@ -276,6 +276,7 @@ export class SpaceObject extends Object3D {
   }
 
   destroyObject(gi: GameInstance, attacker: SpaceObject | null = null): void {
+    gi.recordDeath(this, attacker);
     const map = gi.map;
     const rc = gi.rc;
     // Survival: whoever destroyed a *ship* scores for their team (ramming

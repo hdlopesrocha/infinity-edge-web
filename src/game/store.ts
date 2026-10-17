@@ -73,6 +73,8 @@ export const store = reactive({
     lockOn: false,
     /** Pre-match countdown in seconds (0 = running). */
     countdown: 0,
+    /** How the player's ship was destroyed (empty when alive). */
+    deathCause: '',
     stickOn: false,
     backX: 0,
     backY: 0,

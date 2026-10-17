@@ -7,7 +7,7 @@ import type { Renderer } from '../engine/renderer';
 import type { TexEntry } from '../engine/texture';
 import { GameMap } from './map';
 import type { DrawCtx } from './objects';
-import { Ark, Base, Flag, HomingMissile, SpaceObject, SpaceShip } from './objects';
+import { Ark, Asteroid, Base, Bullet, Flag, HomingMissile, SpaceObject, SpaceShip } from './objects';
 import {
   Team, GameScore, Reward, CondDestroyed, CondMoreTime, CondLessTime, CondMorePoints, CondNoPath,
   CondTopScore, parseTimeSpan,
@@ -35,6 +35,17 @@ export interface PointerMark {
   label: string | null;
 }
 
+/** How a destroyed ship met its end, for the respawn panel. */
+function killerText(a: SpaceObject | null): string {
+  if (!a) return 'cause unknown';
+  const who = a.team && a.team.name ? a.team.name : '';
+  if (a instanceof HomingMissile) return 'homing missile' + (who ? ' (' + who + ')' : '');
+  if (a instanceof Bullet) return 'cannon fire' + (who ? ' (' + who + ')' : '');
+  if (a instanceof SpaceShip) return 'rammed by ' + (who || 'another ship');
+  if (a instanceof Asteroid) return 'asteroid collision';
+  return who ? 'destroyed by ' + who : 'cause unknown';
+}
+
 export class GameInstance {
   map!: GameMap;
   teams = new Map<string, Team>();
@@ -60,6 +71,17 @@ export class GameInstance {
   homingWasDown = false;
   /** Milliseconds left of the pre-match hold (5 s). */
   startCountdownMs = 5000;
+  /** How the player's ship was destroyed (shown with the respawn countdown). */
+  deathCause = '';
+  /** Set by the map just before it destroys a ship for leaving the arena. */
+  nextDeathCause = '';
+
+  /** Called by SpaceObject.destroyObject for every destroyed object. */
+  recordDeath(victim: SpaceObject, attacker: SpaceObject | null): void {
+    if (victim !== this.selectedObject) return;
+    this.deathCause = this.nextDeathCause || killerText(attacker);
+    this.nextDeathCause = '';
+  }
   aimedTarget: SpaceObject | null = null;
   result: { won: boolean; reward: RewardType; message: string | null } | null = null;
   skyGpu: import('../engine/model').GpuModel | null = null;
