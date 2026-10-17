@@ -1,0 +1,174 @@
+{
+ "source": "Web/KingoftheSystem/Teams/Easy/Level.xml",
+ "description": {
+  "type": "KOTS",
+  "name": "King of the System \u2014 Teams",
+  "save": "KOTS_T_E.svg",
+  "sky": "Sky2",
+  "size": 2048,
+  "text": ""
+ },
+ "imports": [],
+ "objects": [
+  {
+   "team": "ambient",
+   "type": "sun",
+   "model": "",
+   "position": "0|0|0",
+   "amount": 30
+  },
+  {
+   "team": "ambient",
+   "type": "region",
+   "model": "",
+   "position": "0|0|0",
+   "amount": 150
+  },
+  {
+   "team": "ambient",
+   "type": "miniStar",
+   "model": "",
+   "position": "random",
+   "amount": 6000
+  },
+  {
+   "team": "ambient",
+   "type": "cloud",
+   "model": "",
+   "position": "random",
+   "amount": 700
+  },
+  {
+   "team": "human",
+   "type": "base",
+   "model": "Base",
+   "position": "400|400|400"
+  },
+  {
+   "team": "alien",
+   "type": "base",
+   "model": "Base",
+   "position": "-400|-400|-400"
+  },
+  {
+   "team": "human",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "HS1",
+   "life": "100|100|100"
+  },
+  {
+   "team": "human",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "HS2",
+   "life": "100|100|100"
+  },
+  {
+   "team": "human",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "HS3",
+   "life": "100|100|100"
+  },
+  {
+   "team": "human",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "HS4",
+   "life": "100|100|100"
+  },
+  {
+   "team": "alien",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "AS1",
+   "life": "100|100|100"
+  },
+  {
+   "team": "alien",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "AS2",
+   "life": "100|100|100"
+  },
+  {
+   "team": "alien",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "AS3",
+   "life": "100|100|100"
+  }
+ ],
+ "camara": {
+  "name": "LookAtObject",
+  "value": "HS1"
+ },
+ "actions": [
+  {
+   "name": "HILocal",
+   "from": "HS1"
+  },
+  {
+   "name": "AIKingOfHill",
+   "from": "HS2"
+  },
+  {
+   "name": "AIKingOfHill",
+   "from": "HS3"
+  },
+  {
+   "name": "AIKingOfHill",
+   "from": "HS4"
+  },
+  {
+   "name": "AIKingOfHill",
+   "from": "AS1"
+  },
+  {
+   "name": "AIKingOfHill",
+   "from": "AS2"
+  },
+  {
+   "name": "AIKingOfHill",
+   "from": "AS3"
+  }
+ ],
+ "goals": [
+  {
+   "reward": "Victory",
+   "message": "The system is yours!",
+   "goals": [
+    {
+     "name": "MoreTime",
+     "value": "00:05:00"
+    },
+    {
+     "name": "MoreHillTime"
+    }
+   ]
+  },
+  {
+   "reward": "Defeat",
+   "message": "The system slipped away.",
+   "goals": [
+    {
+     "name": "MoreTime",
+     "value": "00:05:00"
+    }
+   ]
+  }
+ ],
+ "menuText": "The sun at the centre of the system is the prize: hold the green sphere around it longer than anyone else. Five minutes. Team or solo.",
+ "scoreBoard": {
+  "type": "KOTS",
+  "save": "KOTS_T_E.svg"
+ }
+}

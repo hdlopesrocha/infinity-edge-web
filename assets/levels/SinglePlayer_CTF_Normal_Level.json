@@ -1,0 +1,431 @@
+{
+  "source": "SinglePlayer/CTF/Normal/Level.xml",
+  "description": {
+    "type": "CTF",
+    "name": "Level 01",
+    "save": "CTF_N.svg",
+    "sky": "Sky2",
+    "size": 2048,
+    "text": ""
+  },
+  "imports": [
+    "Content/Import/ModelConfig.xml",
+    "Content/Import/TextureConfig.xml",
+    "Content/Import/TeamConfig.xml",
+    "Content/Import/GameInterface.xml"
+  ],
+  "objects": [
+    {
+      "team": "human",
+      "type": "base",
+      "model": "Base",
+      "position": "800|800|800",
+      "name": "HB"
+    },
+    {
+      "team": "alien",
+      "type": "base",
+      "model": "Base",
+      "position": "-800|-800|-800",
+      "name": "AB"
+    },
+    {
+      "team": "human",
+      "type": "flag",
+      "model": "Flag",
+      "position": ""
+    },
+    {
+      "team": "alien",
+      "type": "flag",
+      "model": "Flag",
+      "position": ""
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS1",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS2",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS3",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS4",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS5",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS6",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS7",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS8",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS9",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS10",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "HS11",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS1",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS2",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS3",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS4",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS5",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS6",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS7",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS8",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS9",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS10",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS11",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS12",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS13",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS14",
+      "life": "100|100|100"
+    },
+    {
+      "team": "alien",
+      "type": "spaceShipRespawn",
+      "model": "Fighter3",
+      "position": "around",
+      "name": "AS15",
+      "life": "100|100|100"
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid1",
+      "position": "random",
+      "life": "50",
+      "amount": 6000
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid2",
+      "position": "random",
+      "life": "50",
+      "amount": 6000
+    },
+    {
+      "team": "ambient",
+      "type": "miniStar",
+      "model": "",
+      "position": "random",
+      "amount": 10000
+    },
+    {
+      "team": "ambient",
+      "type": "cloud",
+      "model": "",
+      "position": "random",
+      "amount": 1000
+    }
+  ],
+  "camara": {
+    "name": "LookAtObject",
+    "value": "HS1"
+  },
+  "actions": [
+    {
+      "name": "HILocal",
+      "from": "HS1",
+      "to": "AB"
+    },
+    {
+      "name": "AIBodyGuard",
+      "from": "HS2",
+      "to": "HS1"
+    },
+    {
+      "name": "AIFlagCap",
+      "from": "HS3"
+    },
+    {
+      "name": "AIBodyGuard",
+      "from": "HS4",
+      "to": "HS3"
+    },
+    {
+      "name": "AIFlagProt",
+      "from": "HS5"
+    },
+    {
+      "name": "AISpawnKiller",
+      "from": "HS6",
+      "to": "AB"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "HS7"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "HS8"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "HS9"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "HS10"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "HS11"
+    },
+    {
+      "name": "AIFlagCap",
+      "from": "AS1"
+    },
+    {
+      "name": "AIFlagCap",
+      "from": "AS2"
+    },
+    {
+      "name": "AIBodyGuard",
+      "from": "AS3",
+      "to": "AS1"
+    },
+    {
+      "name": "AIBodyGuard",
+      "from": "AS4",
+      "to": "AS2"
+    },
+    {
+      "name": "AIFlagProt",
+      "from": "AS5"
+    },
+    {
+      "name": "AIFlagProt",
+      "from": "AS6"
+    },
+    {
+      "name": "AISpawnKiller",
+      "from": "AS7",
+      "to": "HB"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "AS8"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "AS9"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "AS10"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "AS11"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "AS12"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "AS13"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "AS14"
+    },
+    {
+      "name": "AIGoRandomOffensive",
+      "from": "AS15"
+    }
+  ],
+  "goals": [
+    {
+      "reward": "Victory",
+      "message": "Your team won!",
+      "goals": [
+        {
+          "name": "MoreTime",
+          "value": "00:05:00"
+        },
+        {
+          "name": "MorePoints",
+          "value": "human"
+        }
+      ]
+    },
+    {
+      "reward": "Defeat",
+      "message": "Your team lost!",
+      "goals": [
+        {
+          "name": "MoreTime",
+          "value": "00:05:00"
+        }
+      ]
+    }
+  ],
+  "menuText": "Score by bringing the enemy's flag to your base. You have 5 minutes to win.",
+  "scoreBoard": {
+    "type": "CTF",
+    "save": "CTF_N.svg"
+  }
+}

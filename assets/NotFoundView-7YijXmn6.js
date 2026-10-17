@@ -1,0 +1,1 @@
+import{_ as e}from"./MenuShell.vue_vue_type_script_setup_true_lang-CdmWcQ1I.js";import{d as o,k as r,l as m,i as n}from"./index-CrHBmz6f.js";import"./GazeCursor-DTS428PH.js";const f=o({__name:"NotFoundView",setup(a){return(i,t)=>(n(),r(e,{wide:"",primary:"menu","primary-to":"/menu"},{left:m(()=>[...t[0]||(t[0]=[])]),_:1}))}});export{f as default};

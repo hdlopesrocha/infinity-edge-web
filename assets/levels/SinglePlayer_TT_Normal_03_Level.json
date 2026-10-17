@@ -1,0 +1,270 @@
+{
+  "source": "SinglePlayer/TT/Normal/03/Level.xml",
+  "description": {
+    "type": "TT",
+    "name": "Level 01",
+    "save": "TT_N_03.svg",
+    "sky": "Sky2",
+    "size": 2048,
+    "text": ""
+  },
+  "imports": [
+    "Content/Import/ModelConfig.xml",
+    "Content/Import/TextureConfig.xml",
+    "Content/Import/TeamConfig.xml",
+    "Content/Import/GameInterface.xml"
+  ],
+  "importGhost": "TT_N_03.ghs",
+  "objects": [
+    {
+      "team": "human",
+      "type": "spaceShip",
+      "model": "Fighter3",
+      "position": "0|0|0",
+      "name": "HS1",
+      "life": "100|100|100"
+    },
+    {
+      "team": "human",
+      "type": "base",
+      "model": "Base",
+      "position": "0|0|0"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|32"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|64"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|96"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|128"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|160"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|9.37|182.62"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|32|192"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|54.62|182.62"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|64|160"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|54.62|137.37"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|32|128"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|9.37|137.37"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|160"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|192"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|224"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|256"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|288"
+    },
+    {
+      "team": "ambient",
+      "type": "ark",
+      "model": "Ark",
+      "position": "0|0|320"
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid3",
+      "position": "0|0|192",
+      "life": "50"
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid1",
+      "position": "0|8|256",
+      "life": "50"
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid1",
+      "position": "0|-8|256",
+      "life": "50"
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid1",
+      "position": "8|0|256",
+      "life": "50"
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid1",
+      "position": "-8|0|256",
+      "life": "50"
+    },
+    {
+      "team": "ambient",
+      "type": "asteroid",
+      "model": "Asteroid3",
+      "position": "0|0|288",
+      "life": "50"
+    },
+    {
+      "team": "ambient",
+      "type": "miniStar",
+      "model": "",
+      "position": "random",
+      "amount": 10000
+    },
+    {
+      "team": "ambient",
+      "type": "cloud",
+      "model": "",
+      "position": "random",
+      "amount": 1000
+    }
+  ],
+  "camara": {
+    "name": "LookAtObject",
+    "value": "HS1"
+  },
+  "actions": [
+    {
+      "name": "HILocal",
+      "from": "HS1"
+    }
+  ],
+  "goals": [
+    {
+      "reward": "Gold",
+      "goals": [
+        {
+          "name": "NoPath"
+        },
+        {
+          "name": "LessTime",
+          "value": "00:00:12"
+        }
+      ]
+    },
+    {
+      "reward": "Silver",
+      "goals": [
+        {
+          "name": "NoPath"
+        },
+        {
+          "name": "LessTime",
+          "value": "00:00:15"
+        }
+      ]
+    },
+    {
+      "reward": "Bronze",
+      "goals": [
+        {
+          "name": "NoPath"
+        },
+        {
+          "name": "LessTime",
+          "value": "00:00:20"
+        }
+      ]
+    },
+    {
+      "reward": "Defeat",
+      "message": "Not fast enough!",
+      "goals": [
+        {
+          "name": "NoPath"
+        }
+      ]
+    },
+    {
+      "reward": "Defeat",
+      "message": "Your spaceship was destroyed!",
+      "goals": [
+        {
+          "name": "Destroyed",
+          "value": "HS1"
+        }
+      ]
+    }
+  ],
+  "menuText": "Make a vertical loop. Be careful! Control your speed and take down some asteroids.",
+  "scoreBoard": {
+    "type": "TT",
+    "save": "TT_N_03.svg"
+  }
+}
