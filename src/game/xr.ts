@@ -163,14 +163,18 @@ export async function enterXr(
     instance.canvasW = fullW;
     instance.canvasH = fullH;
     const inMenu = !store.interactive;
-    if (!store.paused && !inMenu) instance.update(dt);
+    // Background/menu scenes still orbit their camera; only real matches freeze.
+    if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
     else {
       const sel = instance.selectedObject;
       const rCam = renderer.camera;
+      // On menu screens there is no ship: anchor the plane in front of the
+      // camera so it stays put and is always in view.
+      const shipPos = inMenu ? rCam.position : (sel ? sel.pos : rCam.position);
+      const shipDir = inMenu ? rCam.direction : (sel ? sel.dir : rCam.direction);
       vrMenu.update(dt,
         rCam.position as unknown as Float32Array, rCam.direction as unknown as Float32Array,
-        (sel ? sel.pos : rCam.position) as unknown as Float32Array,
-        (sel ? sel.dir : rCam.direction) as unknown as Float32Array);
+        shipPos as unknown as Float32Array, shipDir as unknown as Float32Array);
     }
     // menu items follow the screen we are on
     vrMenu.setItems(inMenu
