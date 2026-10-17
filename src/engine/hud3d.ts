@@ -257,6 +257,16 @@ export class HudOverlay {
         c.fillText(m.label, mx, my + Math.max(ihCss * sy / 2, r) + 4 * sy);
       }
     }
+    // Missile-lock warning: blink a red banner under the top block.
+    if (h.missileWarn) {
+      const blink = (typeof performance !== 'undefined' ? performance.now() : 0) % 700 < 450;
+      if (blink) {
+        c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
+        c.fillStyle = '#ff4d3d';
+        shadow(10);
+        c.fillText('MISSILE LOCK', W / 2, 112 * sy + padY);
+      }
+    }
     // Speed, left of the life bars on the same line (world units per second).
     {
       c.textAlign = 'right';

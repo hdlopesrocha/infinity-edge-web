@@ -7,7 +7,7 @@ import type { Renderer } from '../engine/renderer';
 import type { TexEntry } from '../engine/texture';
 import { GameMap } from './map';
 import type { DrawCtx } from './objects';
-import { Ark, Base, Flag, SpaceObject, SpaceShip } from './objects';
+import { Ark, Base, Flag, HomingMissile, SpaceObject, SpaceShip } from './objects';
 import {
   Team, GameScore, Reward, CondDestroyed, CondMoreTime, CondLessTime, CondMorePoints, CondNoPath,
   CondTopScore, parseTimeSpan,
@@ -440,6 +440,22 @@ export class GameInstance {
       x: ((cx / cw) * 0.5 + 0.5) * this.canvasW,
       y: (1 - ((cy / cw) * 0.5 + 0.5)) * this.canvasH,
     };
+  }
+
+  /** True while at least one live homing missile is locked on the player's
+   *  ship (the AIHoming command keeps its target on `target`). */
+  missileLocked(): boolean {
+    const sel = this.selectedObject;
+    if (!sel) return false;
+    const found: import('../engine/octree').OctItem[] = [];
+    this.map.octree.sphereSelectInteractive(sel.sx, sel.sy, sel.sz, 100000, found);
+    for (const o of found) {
+      if (o instanceof HomingMissile && o.active) {
+        const ai = o.intelligence as unknown as { target?: SpaceObject | null } | null;
+        if (ai?.target === sel) return true;
+      }
+    }
+    return false;
   }
 
   pointers(): PointerMark[] {

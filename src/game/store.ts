@@ -67,6 +67,8 @@ export const store = reactive({
     nitroPct: 0,
     /** Ship speed in world units per second (0 = no ship). */
     speed: 0,
+    /** A homing missile is locked on the player's ship. */
+    missileWarn: false,
     stickOn: false,
     backX: 0,
     backY: 0,
