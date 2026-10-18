@@ -6,6 +6,7 @@ import { Renderer } from '../engine/renderer';
 import { ZOOM_BLUR } from '../engine/post';
 import { mat4, vec3 } from '../engine/math';
 import { GameInstance } from '../game/instance';
+import { NetGame, resolveGameWsUrl } from '../game/netgame';
 import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
@@ -61,11 +62,28 @@ async function rebuild(): Promise<void> {
   const gen = ++buildGen;
   try {
     const def = await loadLevel(key);
-    const gi = await GameInstance.create(renderer, rc, def, store.levelText);
+    // With a game server configured the C++ side owns the match: the client
+    // renders its frames and streams the player's input. A missing or dead
+    // server falls back to the local simulation on the same level.
+    let gi: GameInstance | null = null;
+    const wsUrl = resolveGameWsUrl();
+    if (wsUrl) {
+      try {
+        gi = await NetGame.open(renderer, rc, wsUrl, def.key);
+      } catch (e) {
+        console.warn('[net] game server unavailable, running the local simulation:', e);
+      }
+    }
+    if (!gi) gi = await GameInstance.create(renderer, rc, def, store.levelText);
     // Stale-build drop: a newer rebuild started while we were loading.
-    if (gen !== buildGen) return;
+    if (gen !== buildGen) {
+      if (gi instanceof NetGame) gi.dispose();
+      return;
+    }
     gi.canvasW = canvasRef.value?.clientWidth || 1280;
     gi.canvasH = canvasRef.value?.clientHeight || 720;
+    // The replaced instance may own a server session: leave the match first.
+    if (instance instanceof NetGame) instance.dispose();
     instance = gi;
     (window as unknown as { __ieGame?: GameInstance }).__ieGame = gi;
   } catch (e) {
@@ -243,6 +261,7 @@ onMounted(() => {
       // everything (drawing the old instance meanwhile spams GL errors).
       rc?.clearCaches();
       engineScene = null;
+      if (instance instanceof NetGame) instance.dispose();
       instance = null;
       (window as unknown as { __ieGame?: GameInstance | null }).__ieGame = null;
       building = '';
@@ -481,6 +500,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', onKeyUp);
   window.removeEventListener('blur', onWindowBlur);
   document.removeEventListener('visibilitychange', onVisibilityChange);
+  if (instance instanceof NetGame) instance.dispose();
   renderer?.dispose();
   renderer = null;
   instance = null;

@@ -222,9 +222,40 @@ export class GameMap {
     return obj;
   }
 
+  /**
+   * One simulation step (local matches). Server-driven matches (NetGame)
+   * never call this: the C++ server owns every rule, and the client only runs
+   * updateVisuals() below over the poses and events it receives.
+   */
   update(gi: GameInstance, dtMs: number): void {
+    this.updateRespawns(gi, dtMs);
+    this.updatePathColor();
+    this.updateBullets(gi, dtMs);
+    this.updateExplosions(dtMs);
+    this.updateSmoke(dtMs);
+    this.updateTimedBillboards(dtMs);
+    this.updateFragments(dtMs);
+    this.updateOutsiders(gi, dtMs);
+    this.updateTumble(gi, dtMs);
+  }
+
+  /**
+   * The parts of the frame the client owns even when the server simulates:
+   * fireballs, smoke, debris, the path gate's highlight and the cosmetic
+   * asteroid/addon tumble. Everything else arrived over the wire.
+   */
+  updateVisuals(gi: GameInstance, dtMs: number): void {
+    this.updatePathColor();
+    this.updateExplosions(dtMs);
+    this.updateSmoke(dtMs);
+    this.updateTimedBillboards(dtMs);
+    this.updateFragments(dtMs);
+    this.updateTumble(gi, dtMs);
+  }
+
+  /** MANAGE RESPAWNS (Stack + Swap equivalent) */
+  private updateRespawns(gi: GameInstance, dtMs: number): void {
     const rc = gi.rc;
-    // MANAGE RESPAWNS (Stack + Swap equivalent)
     {
       const keep: OutsideTimer[] = [];
       for (const timer of this.respawned) {
@@ -267,12 +298,18 @@ export class GameMap {
       }
       this.respawned = keep;
     }
-    // SET_COLOR_OF_PATH
+  }
+
+  /** SET_COLOR_OF_PATH: the next time-trial gate glows green. */
+  private updatePathColor(): void {
     if (this.path.length > 0) {
       this.path[0].alpha = 1;
       this.path[0].color = [0.2, 1, 0.2];
     }
-    // MOVE_BULLETS (first hit only, no shield branch)
+  }
+
+  /** MOVE_BULLETS (first hit only, no shield branch) */
+  private updateBullets(gi: GameInstance, dtMs: number): void {
     {
       const keep: BulletTimer[] = [];
       for (const timer of this.allBullets) {
@@ -316,7 +353,10 @@ export class GameMap {
       }
       this.allBullets = keep;
     }
-    // EXPLOSIONS (fireballs expand and fade, then leave the octree)
+  }
+
+  /** EXPLOSIONS (fireballs expand and fade, then leave the octree) */
+  private updateExplosions(dtMs: number): void {
     {
       const keep: import('./objects').Explosion[] = [];
       for (const ex of this.explosions) {
@@ -329,7 +369,10 @@ export class GameMap {
       }
       this.explosions = keep;
     }
-    // SMOKE PARTICLES (Perlin-driven puffs: grow, drift, dissolve)
+  }
+
+  /** SMOKE PARTICLES (Perlin-driven puffs: grow, drift, dissolve) */
+  private updateSmoke(dtMs: number): void {
     {
       const keep: SmokePuff[] = [];
       for (const puff of this.smokePuffs) {
@@ -342,7 +385,10 @@ export class GameMap {
       }
       this.smokePuffs = keep;
     }
-    // MANAGE_SMOKE (legacy sprite billboards: alpha drains per 30 fps frame)
+  }
+
+  /** MANAGE_SMOKE (legacy sprite billboards: alpha drains per 30 fps frame) */
+  private updateTimedBillboards(dtMs: number): void {
     {
       const keep: { obj: Billboard; elapsed: number; max: number }[] = [];
       for (const timer of this.timedBillboards) {
@@ -359,7 +405,10 @@ export class GameMap {
       }
       this.timedBillboards = keep;
     }
-    // MANAGE_FRAGMENTS
+  }
+
+  /** MANAGE_FRAGMENTS */
+  private updateFragments(dtMs: number): void {
     {
       const keep: { obj: Fragment; elapsed: number; max: number }[] = [];
       for (const timer of this.fragments) {
@@ -375,7 +424,10 @@ export class GameMap {
       }
       this.fragments = keep;
     }
-    // MANAGE_OUTSIDERS (only while !insideMap)
+  }
+
+  /** MANAGE_OUTSIDERS (only while !insideMap) */
+  private updateOutsiders(gi: GameInstance, dtMs: number): void {
     {
       const keep: OutsideTimer[] = [];
       for (const timer of this.outsideObjects) {
@@ -393,7 +445,10 @@ export class GameMap {
       }
       this.outsideObjects = keep;
     }
-    // AUTOMATIC_ACTION (visible asteroids + addons)
+  }
+
+  /** AUTOMATIC_ACTION (visible asteroids + addons) */
+  private updateTumble(gi: GameInstance, dtMs: number): void {
     for (const obj of this.visible) {
       if ((obj instanceof Asteroid || obj instanceof Addon) && obj.active) {
         obj.automaticAction(gi, dtMs);
