@@ -13,7 +13,7 @@ import {
   CondTopScore, parseTimeSpan,
 } from './team';
 import type { RewardType, ScoreEntry } from './team';
-import { TEAMS } from './config';
+import { TEAMS, SKY_HSB } from './config';
 import { Control } from './controls';
 import { applyAction, upgradeAIShips } from './ai';
 import { addScore } from './store';
@@ -86,6 +86,8 @@ export class GameInstance {
   result: { won: boolean; reward: RewardType; message: string | null } | null = null;
   skyGpu: import('../engine/model').GpuModel | null = null;
   skyTex: TexEntry | null = null;
+  /** Hue (deg), saturation and value multipliers for the single skysphere. */
+  skyHsb: [number, number, number] = [0, 1, 1];
   cameraTarget = vec3.create();
 
   constructor(
@@ -109,7 +111,10 @@ export class GameInstance {
     gi.ghostFile = def.importGhost ?? null;
     gi.map = new GameMap(def.description.sky, def.description.size || 2048);
     gi.map.rng = rc.random;
-    const modelNames = new Set<string>([def.description.sky]);
+    // One skysphere shared by every level; the level's original sky name is
+    // kept only as the per-difficulty colour key (see SKY_HSB in config.ts).
+    gi.skyHsb = SKY_HSB[def.description.sky] ?? [0, 1, 1];
+    const modelNames = new Set<string>(['Sky1']);
     for (const o of def.objects) {
       if (o.model) modelNames.add(o.model);
     }
@@ -121,7 +126,7 @@ export class GameInstance {
       'hexagon', 'aim', 'over',
       'Fighter3_icon', 'Ark_icon', 'Base_icon', 'Flag_icon',
     ]);
-    const sky = rc.model(def.description.sky);
+    const sky = rc.model('Sky1');
     if (sky) {
       const lod0 = sky.solid[0] ?? sky.color[0];
       if (lod0) {
@@ -433,7 +438,7 @@ export class GameInstance {
     // translation keeps its motion-blur velocity at zero (it is "at infinity").
     const prev = mat4.create();
     mat4.fromTranslation(prev, r.prevCameraPos);
-    draw.drawUnlit(this.skyGpu, this.skyTex, m, r.camera.view, r.camera.proj, [1, 1, 1], 1, prev);
+    draw.drawUnlit(this.skyGpu, this.skyTex, m, r.camera.view, r.camera.proj, [1, 1, 1], 1, prev, this.skyHsb);
     r.trackDraws(this.skyGpu.meshes.length);
     draw.setCull('none');
     draw.setDepth();

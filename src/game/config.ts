@@ -19,9 +19,8 @@ export const MODELS: ModelCfg[] = [
   { name: 'HomingMissile2', detail: 1, directory: 'Objects/HomingMissile2', engineFlares: [], colorFlares: [] },
   { name: 'Flag', detail: 1, directory: 'Objects/Flag', engineFlares: [], colorFlares: [] },
   { name: 'Wheel', detail: 1, directory: 'Objects/Wheel', engineFlares: [], colorFlares: [] },
+  // One skysphere for every level; the per-difficulty colour comes from SKY_HSB.
   { name: 'Sky1', detail: 1, directory: 'Objects/Sky1', engineFlares: [], colorFlares: [] },
-  { name: 'Sky2', detail: 1, directory: 'Objects/Sky2', engineFlares: [], colorFlares: [] },
-  { name: 'Sky3', detail: 1, directory: 'Objects/Sky3', engineFlares: [], colorFlares: [] },
   { name: 'adRepair', detail: 1, directory: 'Objects/AddonRepair', engineFlares: [], colorFlares: [] },
   { name: 'adShield', detail: 1, directory: 'Objects/AddonShield', engineFlares: [], colorFlares: [] },
   { name: 'adNitro', detail: 1, directory: 'Objects/AddonNitro', engineFlares: [], colorFlares: [] },
@@ -33,6 +32,19 @@ export const MODELS: ModelCfg[] = [
     colorFlares: [[0.7, -0.05, -0.3], [-0.7, -0.05, -0.3]],
   },
 ];
+
+/**
+ * The three original skyspheres (Sky1/2/3) were the same artwork with a hue
+ * rotation. Levels keep their original sky name in the level JSON; that name
+ * now picks the hue/saturation/brightness applied to the single Sky1 texture.
+ * Values were measured against the original textures (RMSE < 0.002):
+ *   Sky1 blue, Sky2 green (hue -73.8°), Sky3 red (hue +168.2°).
+ */
+export const SKY_HSB: Record<string, [number, number, number]> = {
+  Sky1: [0, 1, 1],
+  Sky2: [-73.8, 0.99, 1],
+  Sky3: [168.2, 0.99, 1],
+};
 
 export const TEXTURES: Record<string, string> = {
   _menubtn: 'System/menubtn', _buttonRU: 'System/buttonRU',

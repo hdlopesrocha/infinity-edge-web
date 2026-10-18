@@ -166,7 +166,7 @@ export class Draw {
     this.lit = linkProgram(gl, LIT_VERT, LIT_FRAG);
     this.unlit = linkProgram(gl, UNLIT_VERT, UNLIT_FRAG);
     this.uLit = uniforms(gl, this.lit, ['uWorld', 'uView', 'uProj', 'uWorldInvT', 'uPrevWorld', 'uViewProjPrev', 'uTex', 'uHasTex', 'uDiffuse', 'uEmissive', 'uAmbient', 'uLightDir', 'uLightDiffuse', 'uLightSpec', 'uShininess', 'uCamPos', 'uAlpha']);
-    this.uUnlit = uniforms(gl, this.unlit, ['uWorld', 'uPrevWorld', 'uViewProjPrev', 'uView', 'uProj', 'uTex', 'uHasTex', 'uColor', 'uAlpha']);
+    this.uUnlit = uniforms(gl, this.unlit, ['uWorld', 'uPrevWorld', 'uViewProjPrev', 'uView', 'uProj', 'uTex', 'uHasTex', 'uColor', 'uAlpha', 'uHue', 'uSat', 'uVal']);
     this.bbq = linkProgram(gl, BBQ_VERT, BBQ_FRAG);
     this.uBbq = uniforms(gl, this.bbq, ['uView', 'uProj', 'uViewProjPrev', 'uTex']);
     {
@@ -369,12 +369,17 @@ export class Draw {
     world: mat4, view: mat4, proj: mat4,
     color: [number, number, number], alpha: number,
     prevWorld?: mat4 | null,
+    hsb?: [number, number, number] | null,
   ): void {
     const gl = this.gl;
     this.flushBillboards();
     this.flushSmoke();
     gl.useProgram(this.unlit);
     const U = this.uUnlit;
+    const tint = hsb ?? [0, 1, 1];
+    gl.uniform1f(U.uHue, tint[0]);
+    gl.uniform1f(U.uSat, tint[1]);
+    gl.uniform1f(U.uVal, tint[2]);
     gl.uniformMatrix4fv(U.uView, false, view as Float32Array);
     gl.uniformMatrix4fv(U.uProj, false, proj as Float32Array);
     gl.uniformMatrix4fv(U.uWorld, false, world as Float32Array);

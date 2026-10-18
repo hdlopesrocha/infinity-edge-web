@@ -649,52 +649,6 @@
         76.46
       ]
     },
-    "Sky2.json": {
-      "source": "Objects/Sky2/model0.xnb",
-      "meshes": 1,
-      "triangles": 224,
-      "materials": [
-        "sphere"
-      ],
-      "bytes": {
-        "json": 9351
-      },
-      "bounds": {
-        "center": [
-          0,
-          0,
-          0
-        ],
-        "radius": 76.46
-      },
-      "zRange": [
-        -76.46,
-        76.46
-      ]
-    },
-    "Sky3.json": {
-      "source": "Objects/Sky3/model0.xnb",
-      "meshes": 1,
-      "triangles": 224,
-      "materials": [
-        "sphere"
-      ],
-      "bytes": {
-        "json": 9351
-      },
-      "bounds": {
-        "center": [
-          0,
-          0,
-          0
-        ],
-        "radius": 76.46
-      },
-      "zRange": [
-        -76.46,
-        76.46
-      ]
-    },
     "Wheel.json": {
       "source": "Objects/Wheel/model0.xnb",
       "meshes": 2,
