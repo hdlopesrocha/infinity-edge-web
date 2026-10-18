@@ -175,7 +175,7 @@ export class HudOverlay {
       c.fillStyle = '#fff';
       c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
       shadow(6);
-      c.fillText(h.score, W / 2, padY + 28 * s);
+      c.fillText(h.score, W / 2, padY + 28 * sy);
     }
     // Match clock m:ss under the score, amber in the last 30 s.
     if (h.matchLeft !== null) {
@@ -184,21 +184,21 @@ export class HudOverlay {
       c.fillStyle = h.matchLeft <= 30000 ? '#ffcc55' : '#fff';
       c.font = `${Math.round(22 * s)}px system-ui, sans-serif`;
       shadow(5);
-      c.fillText(clock, W / 2, padY + 52 * s);
+      c.fillText(clock, W / 2, padY + 52 * sy);
     }
     // Notification line.
     if (h.notify) {
       c.fillStyle = '#fff';
       c.font = `${Math.round(24 * s)}px system-ui, sans-serif`;
       shadow(6);
-      c.fillText(h.notify, W / 2, padY + 88 * s);
+      c.fillText(h.notify, W / 2, padY + 88 * sy);
     }
     // Respawn / leaving-field countdown, centred panel.
     const t = h.outside ?? h.respawn;
     if (t) {
       const secs = Math.max(0, Math.ceil(t.left / 1000));
       const label = h.outside ? 'Leaving the field of battle' : 'Waiting to respawn';
-      const bw = 300 * s, bh = 110 * s;
+      const bw = 300 * s, bh = 110 * sy;
       const bx = W / 2 - bw / 2, by = H * 0.3;
       c.fillStyle = 'rgba(0,0,0,0.45)';
       c.fillRect(bx, by, bw, bh);
@@ -208,19 +208,19 @@ export class HudOverlay {
       c.fillStyle = '#fff';
       c.font = `${Math.round(18 * s)}px system-ui, sans-serif`;
       shadow(4);
-      c.fillText(label, W / 2, by + 8 * s);
+      c.fillText(label, W / 2, by + 8 * sy);
       c.font = `700 ${Math.round(44 * s)}px system-ui, sans-serif`;
-      c.fillText(`${secs}s`, W / 2, by + 32 * s);
+      c.fillText(`${secs}s`, W / 2, by + 32 * sy);
       if (h.respawn && h.deathCause) {
         c.font = `${Math.round(16 * s)}px system-ui, sans-serif`;
         c.fillStyle = 'rgba(255,255,255,0.85)';
-        c.fillText(h.deathCause, W / 2, by + 78 * s);
+        c.fillText(h.deathCause, W / 2, by + 78 * sy);
       }
       const pct = t.total > 0 ? Math.max(0, Math.min(1, t.left / t.total)) : 0;
       c.fillStyle = 'rgba(255,255,255,0.18)';
-      c.fillRect(bx + 12 * s, by + bh - 16 * s, bw - 24 * s, 5);
+      c.fillRect(bx + 12 * s, by + bh - 16 * sy, bw - 24 * s, 5);
       c.fillStyle = h.outside ? '#ff7a52' : '#7fe8d8';
-      c.fillRect(bx + 12 * s, by + bh - 16 * s, (bw - 24 * s) * pct, 5);
+      c.fillRect(bx + 12 * s, by + bh - 16 * sy, (bw - 24 * s) * pct, 5);
     }
     // Aim: the real _aim.png crosshair (32x32), exactly like the DOM HUD.
     // Falls back to the drawn reticle until the icon loads.
@@ -294,7 +294,7 @@ export class HudOverlay {
         c.shadowColor = 'rgba(0,0,0,0.9)';
         c.shadowBlur = 4;
         c.font = `${Math.round(17 * s)}px system-ui, sans-serif`;
-        c.fillText(m.label, mx, my + Math.max(ihCss * s / 2, r) + 4 * s);
+        c.fillText(m.label, mx, my + Math.max(ihCss * sy / 2, r) + 4 * sy);
       }
     }
     // Pre-match countdown: big and centred, so the goggles can be put on.
@@ -305,7 +305,7 @@ export class HudOverlay {
       c.fillText(String(h.countdown), W / 2, H * 0.36);
       c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
       c.fillStyle = '#7fe8d8';
-      c.fillText('READY IN', W / 2, H * 0.36 - 52 * s);
+      c.fillText('READY IN', W / 2, H * 0.36 - 52 * sy);
     }
     // Missile-lock warning: blink a red banner under the top block.
     if (h.missileWarn) {
@@ -314,7 +314,7 @@ export class HudOverlay {
         c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
         c.fillStyle = '#ff4d3d';
         shadow(10);
-        c.fillText('MISSILE LOCK', W / 2, padY + 104 * s);
+        c.fillText('MISSILE LOCK', W / 2, padY + 104 * sy);
       }
     }
     // Speed, left of the life bars on the same line (world units per second).
@@ -324,7 +324,7 @@ export class HudOverlay {
       c.font = `700 ${Math.round(24 * s)}px system-ui, sans-serif`;
       c.fillStyle = 'rgba(255,255,255,0.92)';
       shadow(4);
-      c.fillText(`SPD ${Math.round(h.speed)}`, W / 2 - 150 * s, padY + 8 * s);
+      c.fillText(`SPD ${Math.round(h.speed)}`, W / 2 - 150 * s, padY + 8 * sy);
       c.textAlign = 'center';
       c.textBaseline = 'top';
     }
@@ -333,7 +333,7 @@ export class HudOverlay {
       const segs = h.life.length === 1
         ? [{ x: W / 2 - 75 * s, w: 150 * s, seg: h.life[0] }]
         : h.life.map((seg, i) => ({ x: W / 2 - 117 * s + i * 80 * s, w: 72 * s, seg }));
-      const y = padY + 8 * s, hh = 12 * s;
+      const y = padY + 8 * sy, hh = 12 * sy;
       for (const { x, w, seg } of segs) {
         c.fillStyle = 'rgba(0,0,0,0.5)';
         c.fillRect(x - 4, y - 4, w + 8, hh + 8);
@@ -346,7 +346,7 @@ export class HudOverlay {
     // ammo they carried sits next to the life bars instead (below).
     if (!store.vr) {
       const bw = 96 * s;
-      const bx = (h.canvasW - 96 - 128) * s - padX;
+      const bx = (h.canvasW - 96 - 128) * sx - padX;
       const items: { url: string; count: string; dim: boolean }[] = [
         { url: FIRE_URL, count: '', dim: false },
         { url: FIRE_HM_URL, count: String(h.homings), dim: h.homings === 0 },
@@ -354,7 +354,7 @@ export class HudOverlay {
       ];
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        const y = (h.canvasH - (96 + 32) * (i + 1)) * s - padY;
+        const y = (h.canvasH - (96 + 32) * (i + 1)) * sy - padY;
         c.globalAlpha = it.dim ? 0.2 : 1;
         const disc = icon(ACCEL_URL);
         if (disc) c.drawImage(disc, bx, y, bw, bw);
@@ -370,24 +370,24 @@ export class HudOverlay {
       }
       // Accelerator bar + knob (top right of the item stack).
       c.fillStyle = 'rgba(255,255,255,0.2)';
-      c.fillRect((h.canvasW - 96 + 40) * s - padX, (h.canvasH - 400 + 48) * s - padY, 16 * s, (400 - 96) * s);
+      c.fillRect((h.canvasW - 96 + 40) * sx - padX, (h.canvasH - 400 + 48) * sy - padY, 16 * s, (400 - 96) * s);
       const knob = icon(ACCEL_URL);
       if (knob) {
-        const ky = (h.canvasH - 400 + 48 + (400 - 96) * (1 - h.acel) - 48) * s - padY;
-        c.drawImage(knob, (h.canvasW - 96) * s - padX, ky, 96 * s, 96 * s);
+        const ky = (h.canvasH - 400 + 48 + (400 - 96) * (1 - h.acel) - 48) * sy - padY;
+        c.drawImage(knob, (h.canvasW - 96) * sx - padX, ky, 96 * s, 96 * s);
       }
       // Flight stick, when the level enables it.
       if (h.stickOn) {
         const back = icon(STICK_BACK_URL);
-        if (back) c.drawImage(back, h.backX * s + padX, h.backY * s - padY, 256 * s, 256 * s);
+        if (back) c.drawImage(back, h.backX * sx + padX, h.backY * sy - padY, 256 * s, 256 * s);
         const sk = icon(STICK_KNOB_URL);
-        if (sk) c.drawImage(sk, h.knobX * s + padX, h.knobY * s - padY, 96 * s, 96 * s);
+        if (sk) c.drawImage(sk, h.knobX * sx + padX, h.knobY * sy - padY, 96 * s, 96 * s);
       }
     } else {
       // VR: no touch controls - homing missiles and nitro as small icons with
       // their counts, right beside the ship's life bars.
       const iw = 40 * s;
-      const y = 74 * s + padY + 6 * s - 20 * s;
+      const y = 74 * sy + padY + 6 * sy - 20 * s;
       const x0 = W / 2 + 150 * s;
       c.textAlign = 'left';
       c.textBaseline = 'middle';

@@ -10,8 +10,8 @@ import type { store } from '../game/store';
 
 const W = 1024;
 const H = 512;
-const MENU_DISTANCE = 2;          // world units in front of the ship
-const MENU_WIDTH = 20;            // world units
+const MENU_DISTANCE = 6;          // world units in front of the ship
+const MENU_WIDTH = 8;             // world units
 const MENU_HEIGHT = MENU_WIDTH * (H / W);
 
 interface MenuItem { id: string; label: string; type: 'button' | 'checkbox' | 'slider'; value?: number; x: number; y: number; w: number; h: number }
@@ -53,7 +53,7 @@ export class VrMenu {
     if (!tex) throw new Error('menu texture failed');
     this.tex = tex;
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -136,7 +136,6 @@ export class VrMenu {
 
     // gaze: intersect the gaze ray with the plane
     const toP = vec3.subtract(vec3.create(), this.planePos, camPos);
-    const toP = vec3.subtract(vec3.create(), this.planePos, camPos);
     const denom = vec3.dot(gd, this.planeN);
     let idx = -1;
     let hitPx = -1;
@@ -146,8 +145,8 @@ export class VrMenu {
       if (t > 0) {
         const hit = vec3.scaleAndAdd(vec3.create(), camPos, gd, t);
         const local = vec3.subtract(vec3.create(), hit, this.planePos);
-        const u = vec3.dot(local, this.planeX) / MENU_WIDTH;
-        const v = vec3.dot(local, this.planeY) / MENU_HEIGHT;
+        const u = (vec3.dot(local, this.planeX) / MENU_WIDTH) + 0.5;
+        const v = (vec3.dot(local, this.planeY) / MENU_HEIGHT) + 0.5;
         if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
           hitPx = u * W;
           hitPy = v * H;
@@ -246,7 +245,7 @@ export class VrMenu {
     c.shadowBlur = 0;
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
