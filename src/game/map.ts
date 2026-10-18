@@ -54,6 +54,12 @@ export class GameMap {
   fragments: { obj: Fragment; elapsed: number; max: number }[] = [];
   path: Ark[] = [];
   visible: Abstract3D[] = [];
+  /**
+   * Every object currently inserted into the octree, in insertion order. The
+   * multiplayer host walks it to build snapshots (spawn/pose/removal diffs);
+   * the plain single-player game never reads it.
+   */
+  live: Abstract3D[] = [];
   /** King of the System: the sun at the arena centre (decor + landmark). */
   sun: { pos: vec3; radius: number } | null = null;
   /** King of the System: the scoring region (hexagon sphere, light green). */
@@ -70,6 +76,7 @@ export class GameMap {
     obj.update();
     this.octree.insert(obj as unknown as OctItem);
     obj.active = true;
+    this.live.push(obj);
   }
 
   /** Spawn one smoke particle (see SmokePuff / SMOKE_FRAG). */
@@ -84,6 +91,8 @@ export class GameMap {
   removeObject(obj: Abstract3D): void {
     this.octree.remove(obj as unknown as OctItem);
     obj.active = false;
+    const i = this.live.indexOf(obj);
+    if (i >= 0) this.live.splice(i, 1);
   }
 
   refreshObject(obj: Abstract3D): void {

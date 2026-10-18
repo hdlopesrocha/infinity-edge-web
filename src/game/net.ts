@@ -46,10 +46,13 @@ async function gunzip(data: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
   return ungzip(data) as Uint8Array<ArrayBuffer>;
 }
 
-export function encodeMessage(type: number, payload: Uint8Array, opts: { compress?: boolean } = {}): Uint8Array {
+export function encodeMessage(
+  type: number, payload: Uint8Array, opts: { compress?: boolean; threshold?: number } = {},
+): Uint8Array {
   let body = payload;
   let compressed = false;
-  if (opts.compress !== false && payload.length >= GZIP_THRESHOLD) {
+  const threshold = opts.threshold ?? GZIP_THRESHOLD;
+  if (opts.compress !== false && payload.length >= threshold) {
     try {
       const gz = gzip(payload);
       if (gz.length < payload.length) {

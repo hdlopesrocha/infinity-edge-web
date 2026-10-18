@@ -273,6 +273,14 @@ export class RC {
     return this.models.get(name) ?? null;
   }
 
+  /**
+   * Every loaded model alias, sorted (the multiplayer host's Scene table:
+   * the client indexes models by position in this list).
+   */
+  loadedAliases(): string[] {
+    return [...this.models.keys()].sort();
+  }
+
   tex(alias: string): TexEntry | null {
     const hit = this.texCache.get(alias);
     if (hit !== undefined) return hit;

@@ -1,13 +1,14 @@
 // GameInstance 37_T verbatim: build order, Update order, Draw order, HUD
 // (ToVisualIngame scoreboard, aim, DrawPointer/MyClamp), scores, ghost.
 
-import { mat4, vec3 } from '../engine/math';
+import { mat4, vec3, clamp } from '../engine/math';
 import { frustumContains } from '../engine/frustum';
 import type { Renderer } from '../engine/renderer';
 import type { TexEntry } from '../engine/texture';
 import { GameMap } from './map';
 import type { DrawCtx } from './objects';
 import { Ark, Asteroid, Base, Bullet, Flag, HomingMissile, SpaceObject, SpaceShip } from './objects';
+import { simHooks } from './mp/bridge';
 import {
   Team, GameScore, Reward, CondDestroyed, CondMoreTime, CondLessTime, CondMorePoints, CondNoPath,
   CondTopScore, parseTimeSpan,
@@ -78,10 +79,18 @@ export class GameInstance {
 
   /** Called by SpaceObject.destroyObject for every destroyed object. */
   recordDeath(victim: SpaceObject, attacker: SpaceObject | null): void {
-    if (victim !== this.selectedObject) return;
-    this.deathCause = this.nextDeathCause || killerText(attacker);
+    const cause = this.nextDeathCause || killerText(attacker);
     this.nextDeathCause = '';
+    this.deathCauses.set(victim, cause);
+    if (victim !== this.selectedObject) return;
+    this.deathCause = cause;
   }
+
+  /**
+   * How each ship died (the multiplayer host reports it per guest ship; the
+   * HUD only shows it while that ship's respawn timer runs).
+   */
+  deathCauses = new Map<SpaceObject, string>();
   aimedTarget: SpaceObject | null = null;
   result: { won: boolean; reward: RewardType; message: string | null } | null = null;
   skyGpu: import('../engine/model').GpuModel | null = null;
@@ -205,6 +214,57 @@ export class GameInstance {
   setNotification(voiceField: string): void {
     this.notificationText = this.rc.playVoice(voiceField);
     this.notificationTime = 3000;
+    // Multiplayer host: the same line is a wire voice event for the guests.
+    simHooks.host?.voice(voiceField);
+  }
+
+  /**
+   * Sfx heard by whoever flies `ship`: the local player plays it here, a
+   * remote guest's ship routes it to that guest's channel (no-op when there
+   * is no host, exactly like the original's player-only sounds).
+   */
+  shipSfx(ship: SpaceObject, name: string, volume = 1, pan = 0): void {
+    if (ship === this.selectedObject) {
+      this.rc.playSfx(name, volume, pan);
+      return;
+    }
+    simHooks.host?.shipSfx(ship, name, volume);
+  }
+
+  /** A voice line that belongs to whoever flies `ship` (HILocal warnings). */
+  shipNotification(ship: SpaceObject, field: string): void {
+    if (ship === this.selectedObject) {
+      this.setNotification(field);
+      return;
+    }
+    simHooks.host?.shipNotification(ship, field);
+  }
+
+  /**
+   * Distance sfx of a destroyed object: each viewpoint hears it from its own
+   * ship (the original's single player did exactly this for its one ship).
+   */
+  explosionSfx(obj: SpaceObject): void {
+    const emit = (ship: SpaceObject | null, play: (name: string, volume: number, pan: number) => void): void => {
+      if (ship && ship === obj) return;
+      if (ship) {
+        const vx = obj.pos[0] - ship.pos[0];
+        const vy = obj.pos[1] - ship.pos[1];
+        const vz = obj.pos[2] - ship.pos[2];
+        const dist = Math.hypot(vx, vy, vz) || 1;
+        const pan = clamp(-8 * (ship.side[0] * (vx / dist) + ship.side[1] * (vy / dist) + ship.side[2] * (vz / dist)), -1, 1);
+        const volume = clamp(1 - dist / this.rc.options.distance, 0, 1);
+        if (volume > 0) {
+          if (obj instanceof Ark) play('addonSound', 1, 0);
+          else if (dist < this.rc.options.distance / 2) play('closeExplosion', volume, pan);
+          else if (dist < this.rc.options.distance) play('farExplosion', volume, pan);
+        }
+        return;
+      }
+      if (obj instanceof Ark) play('addonSound', 1, 0);
+    };
+    emit(this.selectedObject, (n, v, p) => this.rc.playSfx(n, v, p));
+    simHooks.host?.explosionSfx(obj);
   }
 
   update(dtMs: number): void {

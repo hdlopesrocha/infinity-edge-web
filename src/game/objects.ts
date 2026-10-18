@@ -12,6 +12,7 @@ import { P, nextPosition, previewDirection } from './physics';
 import type { Physics } from './physics';
 import type { Team } from './team';
 import type { GameInstance } from './instance';
+import { simHooks } from './mp/bridge';
 import type { RC } from './resources';
 
 export interface Command {
@@ -240,7 +241,7 @@ export class SpaceObject extends Object3D {
         const t = obj.physics.objectType;
         if (t === ObKind.Uncollidable || obj instanceof Flag || obj instanceof Base) continue;
         if (obj instanceof Addon) {
-          if ((gi.selectedObject as SpaceObject | null) === this) gi.rc.playSfx('addonSound');
+          gi.shipSfx(this, 'addonSound');
           obj.doThings(this);
           obj.destroyObject(gi);
           continue;
@@ -278,7 +279,6 @@ export class SpaceObject extends Object3D {
   destroyObject(gi: GameInstance, attacker: SpaceObject | null = null): void {
     gi.recordDeath(this, attacker);
     const map = gi.map;
-    const rc = gi.rc;
     // Survival: whoever destroyed a *ship* scores for their team (ramming
     // counts, the other hull is passed as the attacker).
     if (attacker && attacker !== this && attacker.team !== this.team && this instanceof SpaceShip) {
@@ -304,24 +304,8 @@ export class SpaceObject extends Object3D {
       const exScale = this instanceof SpaceShip ? 4.0 : 3.0;
       spawnExplosion(map, vec3.clone(this.pos), exScale, { smoke: 12, debris: 6, launcher: this, life: 750 });
     }
-    const sel = gi.selectedObject;
-    if (sel && (this as SpaceObject) !== (sel as SpaceObject)) {
-      const vx = this.pos[0] - sel.pos[0];
-      const vy = this.pos[1] - sel.pos[1];
-      const vz = this.pos[2] - sel.pos[2];
-      const dist = Math.hypot(vx, vy, vz) || 1;
-      const pan = clamp(-8 * (sel.side[0] * (vx / dist) + sel.side[1] * (vy / dist) + sel.side[2] * (vz / dist)), -1, 1);
-      const volume = clamp(1 - dist / rc.options.distance, 0, 1);
-      if (volume > 0) {
-        if (this instanceof Ark) rc.playSfx('addonSound');
-        else if (dist < rc.options.distance / 2) rc.playSfx('closeExplosion', volume, pan);
-        else if (dist < rc.options.distance) rc.playSfx('farExplosion', volume, pan);
-      }
-    } else if (this instanceof Ark) {
-      rc.playSfx('addonSound');
-    }
+    gi.explosionSfx(this);
   }
-
   automaticAction(gi: GameInstance, dtMs: number): void {
     if (!this.active) return;
     if (this.intelligence) this.intelligence.execute();
@@ -425,7 +409,7 @@ export class SpaceShip extends SpaceObject {
     );
     this.launchs++;
     this.launchSpan %= 200;
-    if (this === gi.selectedObject) gi.rc.playSfx('bulletSound', 0.2, 0);
+    gi.shipSfx(this, 'bulletSound', 0.2);
   }
 
   override launchNitro(dtMs: number): void {
@@ -471,7 +455,7 @@ export class SpaceShip extends SpaceObject {
     this.launchs++;
     if (createAIHoming) missile.intelligence = createAIHoming(gi, target, missile);
     this.launchSpan %= 200;
-    if (this === gi.selectedObject) gi.rc.playSfx('missileSound');
+    gi.shipSfx(this, 'missileSound');
   }
 
   receiveDamage(gi: GameInstance, amount: number, direction: vec3, attacker: SpaceObject | null = null): void {
@@ -479,10 +463,10 @@ export class SpaceShip extends SpaceObject {
     this.hitAge = 0;
     if (this.shield <= 0) {
       this.life.receiveDamage(amount, direction, this.up, this.dir, () => this.destroyObject(gi, attacker));
-      if (this === gi.selectedObject) gi.rc.playSfx('hitSound');
+      gi.shipSfx(this, 'hitSound');
     } else {
       this.shield--;
-      if (this === gi.selectedObject) gi.rc.playSfx('absorbSound');
+      gi.shipSfx(this, 'absorbSound');
     }
   }
 
@@ -1380,6 +1364,16 @@ export function spawnExplosion(
       f.update();
     }
   }
+  // Multiplayer host: replay the same fireball on every client (the guests
+  // have no simulation, they rebuild it from the event's seed and counts).
+  simHooks.host?.explosion({
+    pos: [position[0], position[1], position[2]],
+    scale,
+    life: opts.life ?? 650,
+    smoke,
+    debris: opts.debris && opts.launcher ? opts.debris : 0,
+    model: opts.debris && opts.launcher ? opts.launcher.model : null,
+  });
   return ex;
 }
 

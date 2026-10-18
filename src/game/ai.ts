@@ -6,9 +6,25 @@ import type { Command, HomingMissile, SpaceObject, SpaceShip } from './objects';
 import { previewDirection } from './physics';
 import type { GameInstance } from './instance';
 import type { RC } from './resources';
-import type { Control } from './controls';
 
 export type { Command };
+
+/**
+ * The input read surface `HILocal` needs. The game's `Control` satisfies it
+ * structurally; the multiplayer host passes the same shape filled from a
+ * guest's input frames (src/game/mp/host.ts), so the ship flies identically
+ * whoever holds the stick.
+ */
+export interface ShipControl {
+  analogStick: { value: { x: number; y: number } };
+  analogAcel: { value: number };
+  fireButton: { value: boolean };
+  homingButton: { value: boolean };
+  /** Axis inversion of whoever holds the stick (falls back to the game's
+   *  options, which is what the local player uses). */
+  invertX?: boolean;
+  invertY?: boolean;
+}
 
 /**
  * Steer toward a world *point* (the original AIPoint did
@@ -256,6 +272,11 @@ export class AIHoming implements Command {
     private gi: GameInstance, private obj: SpaceObject, private target: SpaceObject | null,
   ) {}
 
+  /** The ship this missile is chasing (HUD missile-lock warning), or null. */
+  lockedTarget(): SpaceObject | null {
+    return this.target && this.target.active ? this.target : null;
+  }
+
   execute(): void {
     const o = this.obj;
     if (this.target && this.target.active) {
@@ -411,7 +432,7 @@ export class HILocal implements Command {
 
   constructor(
     private gi: GameInstance, private obj: SpaceObject,
-    private control: Control, private rc: RC,
+    private control: ShipControl, private rc: RC,
   ) {}
 
   execute(): void {
@@ -420,10 +441,12 @@ export class HILocal implements Command {
     const opts = this.rc.options;
     vec3.scale(o.accel, o.dir, o.physics.accelMax * c.analogAcel.value);
     const q = quat.create();
+    const invX = (c.invertX ?? opts.axisX) ? -1 : 1;
+    const invY = (c.invertY ?? opts.axisY) ? -1 : 1;
     ypr(
       q,
-      -c.analogStick.value.x * (opts.axisX ? -1 : 1) * (Math.PI / 2),
-      -c.analogStick.value.y * (opts.axisY ? -1 : 1) * (Math.PI / 2),
+      -c.analogStick.value.x * invX * (Math.PI / 2),
+      -c.analogStick.value.y * invY * (Math.PI / 2),
       0,
     );
     quat.multiply(q, o.rot, q);
@@ -434,14 +457,14 @@ export class HILocal implements Command {
     steerTo(o, o.pos[0] + want[0] * 100, o.pos[1] + want[1] * 100, o.pos[2] + want[2] * 100, o.physics.maxAngular * stickLen);
     o.update();
     if (!o.insideMap) {
-      if (!this.warning) this.gi.setNotification('leavingFieldOfBattle');
+      if (!this.warning) this.gi.shipNotification(o, 'leavingFieldOfBattle');
       this.warning = true;
     } else {
       this.warning = false;
     }
     if (o.teleported) {
       o.teleported = false;
-      this.gi.setNotification('youWereTeleported');
+      this.gi.shipNotification(o, 'youWereTeleported');
     }
     this.inside = o.insideMap;
     if (c.fireButton.value && o.canLaunchBullet()) {

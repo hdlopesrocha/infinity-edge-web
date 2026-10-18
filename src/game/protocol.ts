@@ -271,9 +271,23 @@ export class Writer {
     return this;
   }
 
+  i8(v: number): this {
+    this.need(1);
+    this.view.setInt8(this.len, v < -128 ? -128 : v > 127 ? 127 : Math.round(v));
+    this.len += 1;
+    return this;
+  }
+
   u16(v: number): this {
     this.need(2);
     this.view.setUint16(this.len, v & 0xffff, true);
+    this.len += 2;
+    return this;
+  }
+
+  i16(v: number): this {
+    this.need(2);
+    this.view.setInt16(this.len, v < -32768 ? -32768 : v > 32767 ? 32767 : Math.round(v), true);
     this.len += 2;
     return this;
   }
@@ -317,6 +331,38 @@ export function dequantRot(v: number): number {
 
 export function dequantScale(v: number): number {
   return v / 256;
+}
+
+/** Quantisers mirrored from server/src/session.cpp (truncate, clamp). */
+export function quantPos(v: number, half: number): number {
+  const s = 32767 / (half <= 0 ? 1 : half);
+  const q = v * s;
+  return Math.trunc(q < -32767 ? -32767 : q > 32767 ? 32767 : q);
+}
+
+export function quantRot(v: number): number {
+  const q = v * 32767;
+  return Math.trunc(q < -32767 ? -32767 : q > 32767 ? 32767 : q);
+}
+
+export function quantScale(v: number): number {
+  const c = v < 0 ? 0 : v > 255 ? 255 : v;
+  return Math.round(c * 256) & 0xffff;
+}
+
+function clampF(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+function writeTransform(w: Writer, t: NetTransform, half: number): void {
+  w.u16(quantScale(t.scale));
+  w.u16(quantPos(t.x, half) & 0xffff);
+  w.u16(quantPos(t.y, half) & 0xffff);
+  w.u16(quantPos(t.z, half) & 0xffff);
+  w.u16(quantRot(t.rx) & 0xffff);
+  w.u16(quantRot(t.ry) & 0xffff);
+  w.u16(quantRot(t.rz) & 0xffff);
+  w.u16(quantRot(t.rw) & 0xffff);
 }
 
 function readTransform(r: Reader, half: number): NetTransform {
@@ -378,6 +424,170 @@ export function encodePing(id: number): Uint8Array {
 
 export function encodeLeave(): Uint8Array {
   return new Uint8Array(0);
+}
+
+// ---------------------------------------------- outbound (browser game host)
+// The browser-hosted match (mp/host.ts) streams the exact frames the C++
+// session sends; these encoders mirror server/src/session.cpp.
+
+/** Game-type wire order (server GameType enum / netgame.ts mapping). */
+export const GAME_TYPE_ORDER: readonly string[] = ['CTF', 'TT', 'BACK', 'KOTS', 'SURV'];
+
+export function gameTypeIndex(name: string): number {
+  const i = GAME_TYPE_ORDER.indexOf(name);
+  return i >= 0 ? i : 2; // BACK
+}
+
+export function encodeScene(s: NetScene): Uint8Array {
+  const w = new Writer();
+  w.u8(s.gameType);
+  w.str(s.levelKey);
+  w.str(s.title);
+  w.str(s.text);
+  w.f32(s.mapSize);
+  w.str(s.sky);
+  w.f32(s.matchTimeMs);
+  w.u32(s.playerId);
+  w.u16(s.models.length);
+  for (const m of s.models) w.str(m);
+  w.u8(s.teams.length);
+  for (const t of s.teams) {
+    w.str(t.name);
+    w.f32(t.color[0]);
+    w.f32(t.color[1]);
+    w.f32(t.color[2]);
+    w.u8(t.enemies);
+  }
+  w.u16(s.decor.length);
+  for (const d of s.decor) {
+    w.f32(d.x);
+    w.f32(d.y);
+    w.f32(d.z);
+    w.f32(d.scale);
+  }
+  w.u8(s.sun ? 1 : 0);
+  if (s.sun) {
+    w.f32(s.sun.x);
+    w.f32(s.sun.y);
+    w.f32(s.sun.z);
+    w.f32(s.sun.radius);
+  }
+  w.u8(s.region ? 1 : 0);
+  if (s.region) {
+    w.f32(s.region.x);
+    w.f32(s.region.y);
+    w.f32(s.region.z);
+    w.f32(s.region.radius);
+  }
+  return w.data();
+}
+
+export function encodeSnapshot(s: NetSnapshot, half: number): Uint8Array {
+  const w = new Writer();
+  w.u32(s.tick);
+  w.u16(s.spawns.length);
+  for (const sp of s.spawns) {
+    w.u32(sp.id);
+    w.u8(sp.kind);
+    w.u8(sp.state);
+    w.u16(sp.modelIdx);
+    w.u16(sp.teamIdx);
+    writeTransform(w, sp, half);
+  }
+  w.u16(s.poses.length);
+  for (const p of s.poses) {
+    w.u32(p.id);
+    writeTransform(w, p, half);
+  }
+  w.u16(s.removals.length);
+  for (const id of s.removals) w.u32(id);
+  return w.data();
+}
+
+export function encodeEvents(events: NetEvent[], half: number): Uint8Array {
+  const w = new Writer();
+  w.u16(events.length);
+  for (const e of events) {
+    if (e.type === 'sound') {
+      w.u8(0);
+      w.u8(e.id);
+      w.u8(Math.round(clampF(e.volume, 0, 1) * 255));
+      w.i8(Math.round(clampF(e.pan, -1, 1) * 127));
+    } else if (e.type === 'voice') {
+      w.u8(1);
+      w.u8(e.id);
+    } else {
+      w.u8(2);
+      w.u16(quantPos(e.x, half) & 0xffff);
+      w.u16(quantPos(e.y, half) & 0xffff);
+      w.u16(quantPos(e.z, half) & 0xffff);
+      w.f32(e.scale);
+      w.u16(Math.max(0, Math.min(65535, Math.round(e.life))));
+      w.u8(Math.max(0, Math.min(255, e.smoke | 0)));
+      w.u8(Math.max(0, Math.min(255, e.debris | 0)));
+      w.u16(e.modelIdx);
+      w.u32(e.seed >>> 0);
+    }
+  }
+  return w.data();
+}
+
+export function encodeHud(h: NetHud): Uint8Array {
+  const w = new Writer();
+  w.u32(h.tick);
+  w.f32(h.matchLeft);
+  w.u8(h.countdownSec & 0xff);
+  w.str(h.deathCause);
+  w.u8(h.life.length);
+  for (const seg of h.life) {
+    w.f32(seg.value);
+    w.f32(seg.max);
+  }
+  w.u8(h.outside ? 1 : 0);
+  if (h.outside) {
+    w.f32(h.outside.left);
+    w.f32(h.outside.total);
+  }
+  w.u8(h.respawn ? 1 : 0);
+  if (h.respawn) {
+    w.f32(h.respawn.left);
+    w.f32(h.respawn.total);
+  }
+  w.f32(h.speed);
+  w.u8(h.missileWarn ? 1 : 0);
+  w.u8(h.lockOn ? 1 : 0);
+  w.u8(h.homings & 0xff);
+  w.u8(h.nitroPct & 0xff);
+  w.u8(h.teams.length);
+  for (const t of h.teams) {
+    w.str(t.name);
+    w.f32(t.points);
+    w.f32(t.kills);
+    w.f32(t.hillMs);
+    w.f32(t.timeMs);
+  }
+  w.u8(h.ships.length & 0xff);
+  for (const s of h.ships) {
+    w.u32(s.id);
+    w.u8(s.pct & 0xff);
+  }
+  w.u32(h.selectedId);
+  w.u8(h.finished ? 1 : 0);
+  return w.data();
+}
+
+export function encodeResult(res: NetResult): Uint8Array {
+  const w = new Writer();
+  w.u8(res.won ? 1 : 0);
+  w.str(res.reward);
+  w.str(res.message);
+  return w.data();
+}
+
+export function encodeError(message: string): Uint8Array {
+  const w = new Writer();
+  w.str(message);
+  return w.data();
 }
 
 // --------------------------------------------------------------- inbound
