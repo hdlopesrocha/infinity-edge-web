@@ -8,6 +8,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/engine', name: 'engine', component: () => import('../views/BootView.vue') },
   { path: '/start', name: 'start', component: () => import('../views/BootView.vue') },
   { path: '/menu', name: 'menu', component: () => import('../views/MainMenuView.vue') },
+  { path: '/multiplayer', name: 'multiplayer', component: () => import('../views/MultiplayerView.vue') },
   { path: '/single-player', name: 'single', component: () => import('../views/SinglePlayerView.vue') },
   { path: '/ctf', name: 'ctf', component: () => import('../views/CtfMenuView.vue') },
   { path: '/tt', name: 'tt', component: () => import('../views/TimeTrialMenuView.vue') },

@@ -79,20 +79,31 @@ function windowValue<T>(name: string): T | null {
   return (v ?? null) as T | null;
 }
 
+function listOf(value: string | string[] | null | undefined): string[] | null {
+  if (Array.isArray(value) && value.length > 0) return value.map(String);
+  if (typeof value === 'string' && value.trim()) return value.split(',').map((s) => s.trim()).filter(Boolean);
+  return null;
+}
+
+/** `?mp=` in the URL beats window/VITE config (handy behind firewalls). */
+function urlParam(name: string): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get(name);
+  } catch {
+    return null;
+  }
+}
+
 function envRelays(): string[] | null {
-  const w = windowValue<string | string[]>('__IE_MP_RELAYS');
-  if (Array.isArray(w) && w.length > 0) return w.map(String);
-  if (typeof w === 'string' && w.trim()) return w.split(',').map((s) => s.trim()).filter(Boolean);
-  const env = import.meta.env.VITE_IE_MP_RELAYS as string | undefined;
-  return env && env.trim() ? env.split(',').map((s) => s.trim()).filter(Boolean) : null;
+  return listOf(urlParam('mp'))
+    ?? listOf(windowValue<string | string[]>('__IE_MP_RELAYS'))
+    ?? listOf(import.meta.env.VITE_IE_MP_RELAYS as string | undefined);
 }
 
 function envIce(): string[] | null {
-  const w = windowValue<string | string[]>('__IE_MP_ICE');
-  if (Array.isArray(w) && w.length > 0) return w.map(String);
-  if (typeof w === 'string' && w.trim()) return w.split(',').map((s) => s.trim()).filter(Boolean);
-  const env = import.meta.env.VITE_IE_MP_ICE as string | undefined;
-  return env && env.trim() ? env.split(',').map((s) => s.trim()).filter(Boolean) : null;
+  return listOf(urlParam('mpIce'))
+    ?? listOf(windowValue<string | string[]>('__IE_MP_ICE'))
+    ?? listOf(import.meta.env.VITE_IE_MP_ICE as string | undefined);
 }
 
 function iceConfig(urls: string[]): RTCConfiguration {
@@ -173,6 +184,11 @@ export class Multiplayer {
 
   get npub(): string {
     return npubEncode(schnorrPubkey(this.sk));
+  }
+
+  /** Nickname shown in the lobby and sent with room/signalling events. */
+  identityName(): string {
+    return store.options.username || 'Pilot';
   }
 
   /** Test hook: point the client at a local relay / test ICE servers. */
@@ -387,11 +403,13 @@ export class Multiplayer {
   consumeHostIntent(): RoomInfo | null {
     const room = this.hostIntent;
     this.hostIntent = null;
+    trace('consumeHostIntent', !!room);
     return room;
   }
 
   /** GameCanvas: hooks the running local simulation up as the match host. */
   attachHost(gi: GameInstance): void {
+    trace('attachHost', !!this.hostingRoom);
     if (!this.hostingRoom) return;
     this.session = new HostSession(gi);
     this.session.onGuests = (list) => {
@@ -405,19 +423,51 @@ export class Multiplayer {
     this.emit();
   }
 
-  /** The hosted match is over (scene rebuilt, host left): drop everyone. */
-  endSession(): void {
+  /** Before the world steps: remote nitro burns and idle-input release. */
+  preTick(dtMs: number): void {
+    this.session?.preTick(dtMs);
+  }
+
+  /** After the world stepped: stream snapshots/events/hud to every guest. */
+  postTick(dtMs: number): void {
+    this.session?.postTick(dtMs);
+  }
+
+  /**
+   * The hosted match is over (scene rebuilt, host left): close the room. A
+   * short grace lets the Result frame reach the guests before the channels go.
+   */
+  endSession(graceMs = 0, keepRoom = false): void {
+    trace('endSession', { graceMs, keepRoom, hosting: !!this.hostingRoom, session: !!this.session });
     if (this.heartTimer) {
       clearInterval(this.heartTimer);
       this.heartTimer = 0;
     }
-    this.session?.dispose();
+    const session = this.session;
+    const peers = [...this.hostPeers.values()];
+    const pending = this.pendingChannels.splice(0);
     this.session = null;
-    for (const peer of this.hostPeers.values()) {
-      try { peer.pc.close(); } catch { /* already closed */ }
-    }
     this.hostPeers.clear();
-    this.pendingChannels.length = 0;
+    const closeAll = (): void => {
+      session?.dispose();
+      for (const peer of peers) {
+        try { peer.pc.close(); } catch { /* already closed */ }
+      }
+      for (const p of pending) {
+        try { p.transport.close(); } catch { /* already closed */ }
+      }
+    };
+    if (graceMs > 0 && (session || peers.length > 0)) setTimeout(closeAll, graceMs);
+    else closeAll();
+    if (keepRoom) {
+      // The room carries on (a match is being rebuilt for it): keep the
+      // signalling subscription, the heartbeat and the listing alive.
+      if (this.hostingRoom) {
+        this.heartTimer = setInterval(() => void this.heartbeat(), HEARTBEAT_MS);
+      }
+      this.emit();
+      return;
+    }
     this.sigSub?.();
     this.sigSub = null;
     const room = this.hostingRoom;
@@ -435,6 +485,16 @@ export class Multiplayer {
 
   guestCount(): number {
     return this.session?.guestCount ?? 0;
+  }
+
+  /** True while a hosted match is streaming to its guests. */
+  get sessionActive(): boolean {
+    return this.session !== null;
+  }
+
+  /** Diagnostics (console / e2e): the hosted session's guests. */
+  debugGuests(): Record<string, unknown>[] {
+    return this.session?.debugGuests() ?? [];
   }
 
   // ------------------------------------------------------------- signalling
@@ -476,6 +536,7 @@ export class Multiplayer {
   }
 
   private async acceptOffer(evt: NostrEvent, msg: SignalMessage): Promise<void> {
+    trace('acceptOffer', { from: evt.pubkey.slice(0, 8), hosting: !!this.hostingRoom });
     if (!this.hostingRoom || !this.pool) return;
     const pubkey = evt.pubkey;
     if (this.hostPeers.has(pubkey)) return; // one connection per guest
@@ -508,6 +569,7 @@ export class Multiplayer {
       if (!flushTimer) flushTimer = setTimeout(flush, 250);
     };
     peer.pc.ondatachannel = (e) => {
+      trace('host.dataChannel', { guest: pubkey.slice(0, 8) });
       peer.channel = e.channel;
       const transport = rtcTransport(e.channel);
       if (this.session) this.addGuestChannel(pubkey, peer.name, transport);
@@ -569,6 +631,7 @@ export class Multiplayer {
    * NetGame.openTransport).
    */
   async joinRoom(room: RoomInfo): Promise<JoinIntent> {
+    trace('joinRoom.start', { id: room.id, host: room.host });
     if (room.raw && !verifyEvent(room.raw)) throw new Error('room event failed verification');
     const ok = await this.connect();
     if (!ok) throw new Error(this.error || 'no relay reachable');
@@ -621,6 +684,7 @@ export class Multiplayer {
       this.sk,
     );
     await this.pool.publish(offerEvt);
+    trace('joinRoom.offerSent', { room: room.id });
 
     const result = await new Promise<GameTransport>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -636,6 +700,7 @@ export class Multiplayer {
         reject(e);
       };
       channel.onopen = () => {
+        trace('joinRoom.channelOpen', null);
         this.joinResolve?.(transport);
       };
       channel.onclose = () => {
@@ -647,6 +712,7 @@ export class Multiplayer {
       };
       if (channel.readyState === 'open') this.joinResolve?.(transport);
     }).catch((e: unknown) => {
+      trace('joinRoom.failed', String((e as Error).message));
       this.deadRooms.set(room.hostPubkey + ':' + room.id, Date.now());
       this.cancelJoin();
       this.status = '';
@@ -660,6 +726,7 @@ export class Multiplayer {
     this.status = '';
     const intent: JoinIntent = { room, transport: result };
     this.pendingJoin = intent;
+    trace('joinRoom.ready', { id: room.id });
     this.emit();
     return intent;
   }
@@ -695,4 +762,27 @@ export class Multiplayer {
   }
 }
 
+/** Debug trace of the manager's session state machine (tests/diagnostics). */
+type MpTraceEntry = [string, number, unknown];
+const mpTrace: MpTraceEntry[] = [];
+export function mpTraceEntries(): MpTraceEntry[] {
+  return mpTrace;
+}
+function trace(what: string, detail: unknown): void {
+  mpTrace.push([what, Date.now(), detail]);
+  if (mpTrace.length > 60) mpTrace.shift();
+}
+
+/** Same trace, from outside the manager (the lobby view's join button). */
+export function mpTraceMark(what: string, detail?: unknown): void {
+  trace(what, detail ?? null);
+}
+
 export const mp = new Multiplayer();
+
+// Debug hook (same pattern as __ieGame/__ieRenderer): the lobby and the
+// multiplayer e2e tooling inspect the manager through this.
+if (typeof window !== 'undefined') {
+  (window as unknown as { __ieMP?: Multiplayer }).__ieMP = mp;
+  (window as unknown as { __ieMPTrace?: () => MpTraceEntry[] }).__ieMPTrace = mpTraceEntries;
+}

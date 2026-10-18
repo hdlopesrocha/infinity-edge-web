@@ -7,6 +7,7 @@ import { ZOOM_BLUR } from '../engine/post';
 import { mat4, vec3 } from '../engine/math';
 import { GameInstance } from '../game/instance';
 import { NetGame, resolveGameWsUrl } from '../game/netgame';
+import { mp } from '../game/mp/manager';
 import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
@@ -62,11 +63,28 @@ async function rebuild(): Promise<void> {
   const gen = ++buildGen;
   try {
     const def = await loadLevel(key);
+    // A multiplayer match (browser host or guest) replaces whatever ran
+    // before: close the previous session, keeping the result frames flowing
+    // for a moment when the match just ended.
+    const previous = instance;
+    const grace = previous && (previous.finished || previous.result) ? 1200 : 0;
+    const joinIntent = mp.consumeJoin();
+    // A room this browser created and is opening right now: consume the intent
+    // before the old session is torn down (it must not clear the new room).
+    const hostIntent = store.route === 'game' ? mp.consumeHostIntent() : null;
+    mp.endSession(grace, !!hostIntent);
     // With a game server configured the C++ side owns the match: the client
     // renders its frames and streams the player's input. A missing or dead
     // server falls back to the local simulation on the same level.
     let gi: GameInstance | null = null;
-    const wsUrl = resolveGameWsUrl();
+    if (joinIntent) {
+      try {
+        gi = await NetGame.openTransport(renderer, rc, joinIntent.transport, def.key);
+      } catch (e) {
+        console.warn('[mp] joining the room failed, running the local simulation:', e);
+      }
+    }
+    const wsUrl = gi ? null : resolveGameWsUrl();
     if (wsUrl) {
       try {
         gi = await NetGame.open(renderer, rc, wsUrl, def.key);
@@ -75,6 +93,8 @@ async function rebuild(): Promise<void> {
       }
     }
     if (!gi) gi = await GameInstance.create(renderer, rc, def, store.levelText);
+    // A room this browser created and is now opening: become its host.
+    if (!(gi instanceof NetGame) && hostIntent) mp.attachHost(gi);
     // Stale-build drop: a newer rebuild started while we were loading.
     if (gen !== buildGen) {
       if (gi instanceof NetGame) gi.dispose();
@@ -176,6 +196,9 @@ function onPointerDown(e: PointerEvent): void {
   rc?.startMusic();
   if (!instance || !canvasRef.value) return;
   const p = canvasPos(e);
+  if (renderer?.uiOverlay) {
+    return; // a full-screen GL UI (multiplayer lobby) handles the pointer
+  }
   if (instance.gameType === 'BACK') {
     menuDrag = p;
   } else {
@@ -446,7 +469,9 @@ onMounted(() => {
       const look = store.vr ? vrLook() : { yaw: 0, pitch: 0, tracking: false };
       renderer.camera.vrYaw = look.tracking ? look.yaw : 0;
       renderer.camera.vrPitch = look.tracking ? look.pitch : 0;
+      mp.preTick(dtMs);
       instance.update(dtMs);
+      mp.postTick(dtMs);
       renderer.beginFrame();
       instance.draw();
       renderer.endFrame(null);
@@ -500,6 +525,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', onKeyUp);
   window.removeEventListener('blur', onWindowBlur);
   document.removeEventListener('visibilitychange', onVisibilityChange);
+  mp.endSession();
   if (instance instanceof NetGame) instance.dispose();
   renderer?.dispose();
   renderer = null;

@@ -15,6 +15,8 @@ import { createNoiseTexture } from './noise';
 import type { NoiseTexture } from './noise';
 import { Post } from './post';
 import { HudOverlay } from './hud3d';
+import { ScreenOverlay } from './overlay';
+import type { ScreenUi } from './overlay';
 import type { store } from '../game/store';
 
 type HudSnapshot = typeof store.hud;
@@ -68,6 +70,13 @@ export class Renderer {
   xrActive = false;
   /** Stage-5 overlay, drawn into the UI target ahead of the final pass. */
   private hudOverlay: HudOverlay | null = null;
+  private screenOverlay: ScreenOverlay | null = null;
+  /**
+   * Full-screen UI layer, composited over the HUD in the UI target. The
+   * multiplayer lobby sets this (no DOM UI on that route); null everywhere
+   * else. Repainted only when its version changes.
+   */
+  uiOverlay: ScreenUi | null = null;
   onStats: ((s: RenderStats) => void) | null = null;
   onRebuilt: (() => void) | null = null;
   private raf = 0;
@@ -184,21 +193,29 @@ export class Renderer {
 
   /** Stage 5: paint the GL HUD into this view's UI rect (null = skip). */
   drawUI(hud: HudSnapshot | null, uv: { x: number; y: number; w: number; h: number }): void {
-    if (!hud) return;
-    try {
-      if (!this.hudOverlay) this.hudOverlay = new HudOverlay(this.gl);
-      this.hudOverlay.update(hud);
-      const gl = this.gl;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.post.uiFbo);
-      gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
-      // The UI target is always canvas-sized: map the view's UV rect into it.
-      this.hudOverlay.draw(this.post.uiFbo, {
-        x: uv.x * this.post.w,
-        y: uv.y * this.post.h,
-        w: uv.w * this.post.w,
-        h: uv.h * this.post.h,
-      });
-    } catch { /* a failed overlay must never kill the frame */ }
+    const rect = {
+      x: uv.x * this.post.w,
+      y: uv.y * this.post.h,
+      w: uv.w * this.post.w,
+      h: uv.h * this.post.h,
+    };
+    if (hud) {
+      try {
+        if (!this.hudOverlay) this.hudOverlay = new HudOverlay(this.gl);
+        this.hudOverlay.update(hud);
+        const gl = this.gl;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.post.uiFbo);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+        // The UI target is always canvas-sized: map the view's UV rect into it.
+        this.hudOverlay.draw(this.post.uiFbo, rect);
+      } catch { /* a failed overlay must never kill the frame */ }
+    }
+    if (this.uiOverlay) {
+      try {
+        if (!this.screenOverlay) this.screenOverlay = new ScreenOverlay(this.gl);
+        this.screenOverlay.drawUi(this.post.uiFbo, rect, this.uiOverlay, this.post.w, this.post.h);
+      } catch { /* a failed overlay must never kill the frame */ }
+    }
   }
 
   /** Composite the targets (call after the scene draw and drawUI). */

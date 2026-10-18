@@ -1,0 +1,529 @@
+// Multiplayer lobby, painted entirely into the WebGL frame (no DOM UI).
+//
+// The lobby owns its own state (open dropdown, scroll, hover) and draws
+// through renderer.uiOverlay; the same computed regions are hit-tested from
+// the view's pointer events. Rooms come from mp/manager.ts (Nostr), matches
+// run in the browser that created the room (mp/host.ts).
+
+import { CTF_LEVELS, KOTS_LEVELS, SURV_LEVELS, TT_GROUPS } from '../levels';
+import { MAX_AGE_CHOICES, mp } from './manager';
+import type { Multiplayer } from './manager';
+import type { RoomInfo } from '../nostr/event';
+import type { ScreenUi } from '../../engine/overlay';
+
+export interface LobbyHooks {
+  /** The player picked CREATE ROOM: publish the room and start the match. */
+  startHost(level: string, type: string, title: string, maxPlayers: number): void;
+  /** The player picked JOIN on a listed room. */
+  join(room: RoomInfo): void;
+  /** The player deleted one of their own rooms. */
+  deleteRoom(room: RoomInfo): void;
+  /** Leave the multiplayer screen (LIFO back). */
+  back(): void;
+}
+
+interface Mode {
+  id: string;
+  label: string;
+  levels: { key: string; label: string }[];
+}
+
+function prettyLevel(key: string): string {
+  const parts = key.split('-');
+  const last = parts[parts.length - 1];
+  const cap = last.length === 2 && /^\d+$/.test(last) ? 'Track ' + last : last.charAt(0).toUpperCase() + last.slice(1);
+  if (key.startsWith('kots')) return 'King of the System · ' + (key.includes('solo') ? 'Solo · ' : 'Teams · ') + cap;
+  if (key.startsWith('surv')) return 'Survival · ' + (key.includes('solo') ? 'Solo · ' : 'Teams · ') + cap;
+  if (key.startsWith('tt')) return 'Time Trial · ' + (key.includes('easy') ? 'Easy · ' : key.includes('normal') ? 'Normal · ' : 'Hard · ') + cap;
+  if (key.startsWith('ctf')) return 'Capture the Flag · ' + cap;
+  return cap;
+}
+
+const MODES: Mode[] = [
+  { id: 'CTF', label: 'CAPTURE THE FLAG', levels: CTF_LEVELS.map((k) => ({ key: k, label: prettyLevel(k) })) },
+  {
+    id: 'TT',
+    label: 'TIME TRIAL',
+    levels: TT_GROUPS.flatMap((g) => g.tracks.map((k) => ({ key: k, label: prettyLevel(k) }))),
+  },
+  {
+    id: 'KOTS',
+    label: 'KING OF THE SYSTEM',
+    levels: [...KOTS_LEVELS.teams, ...KOTS_LEVELS.solo].map((k) => ({ key: k, label: prettyLevel(k) })),
+  },
+  {
+    id: 'SURV',
+    label: 'SURVIVAL',
+    levels: [...SURV_LEVELS.teams, ...SURV_LEVELS.solo].map((k) => ({ key: k, label: prettyLevel(k) })),
+  },
+];
+
+const MAX_PLAYERS = [2, 4, 6, 8, 12, 16];
+/** Design resolution the layout is authored in. */
+const DW = 1280;
+const DH = 720;
+
+interface Region {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export class LobbyUi implements ScreenUi {
+  version = 1;
+  /** Join progress, shown as a modal line (null = idle). */
+  joining: string | null = null;
+  /** Bumped from outside whenever the manager changes. */
+  private hooks: LobbyHooks;
+  private mp: Multiplayer;
+  private ctx2: CanvasRenderingContext2D | null = null;
+  private hover: string | null = null;
+  private pressed: string | null = null;
+  private openDropdown: string | null = null;
+  private scroll = 0;
+  private regions: Region[] = [];
+  private logical = { w: DW, h: DH };
+  /** Scroll-only region (the rooms list viewport). */
+  private listBox = { x: 0, y: 0, w: 0, h: 0 };
+  private typeIdx = 0;
+  private levelIdx = 0;
+  private maxIdx = 1;
+
+  constructor(hooks: LobbyHooks, manager: Multiplayer = mp) {
+    this.hooks = hooks;
+    this.mp = manager;
+  }
+
+  /** Called on any external state change (manager notify, hover, …). */
+  bump(): void {
+    this.version++;
+  }
+
+  // -------------------------------------------------------------- painting
+  paint(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    this.ctx2 = ctx;
+    this.logical = { w, h };
+    const s = Math.min(w / DW, h / DH);
+    const ox = (w - DW * s) / 2;
+    const oy = (h - DH * s) / 2;
+    const X = (x: number): number => ox + x * s;
+    const Y = (y: number): number => oy + y * s;
+    const U = (u: number): number => u * s;
+    this.regions = [];
+    ctx.clearRect(0, 0, w, h);
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+
+    // Full-view dim so the WebGL background stays visible but the UI reads.
+    ctx.fillStyle = 'rgba(4, 8, 14, 0.45)';
+    ctx.fillRect(0, 0, w, h);
+
+    // Title + identity/status strip.
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `700 ${U(34)}px ${FONT}`;
+    ctx.shadowColor = 'rgba(0,0,0,0.85)';
+    ctx.shadowBlur = U(8);
+    ctx.fillText('MULTIPLAYER', X(DW / 2), Y(32));
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(127,232,216,0.9)';
+    ctx.fillRect(X(DW / 2 - 90), Y(52), U(180), U(2));
+    const relays = this.mp.config.relays.length;
+    const open = this.mp.online ? relays : 0;
+    ctx.font = `${U(14)}px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.62)';
+    ctx.fillText(
+      `you are ${this.mp.identityName()} · ${short(this.mp.npub)} · relays ${open}/${relays}` +
+      (this.mp.guestCount() > 0 ? ` · ${this.mp.guestCount()} guest${this.mp.guestCount() === 1 ? '' : 's'}` : ''),
+      X(DW / 2), Y(72),
+    );
+    ctx.textAlign = 'left';
+
+    this.paintRooms(ctx, s, X, Y, U);
+    this.paintCreate(ctx, s, X, Y, U);
+
+    // Status line, bottom centre.
+    const status = this.joining ? `connecting to ${this.joining}…`
+      : this.mp.error ? this.mp.error
+        : this.mp.status ? this.mp.status
+          : 'rooms live on public Nostr relays: creating a room publishes it for everyone to see';
+    ctx.textAlign = 'center';
+    ctx.font = `${U(14)}px ${FONT}`;
+    ctx.fillStyle = this.mp.error ? '#ff8a76' : this.joining ? '#ffd479' : 'rgba(255,255,255,0.55)';
+    ctx.fillText(status, X(DW / 2), Y(DH - 26));
+    ctx.textAlign = 'left';
+
+    // Corner buttons: back (bottom left), refresh (bottom right).
+    this.button(ctx, X(0), Y(DH - 54), U(160), U(48), 'back', this.hover === 'back', s, 18, 'back');
+    this.button(ctx, X(DW - 160), Y(DH - 54), U(160), U(48), 'refresh', this.hover === 'refresh', s, 18, 'refresh');
+
+    // Open dropdown options last: they float above everything.
+    if (this.openDropdown) this.paintDropdown(ctx, s, X, Y, U);
+  }
+
+  private paintRooms(
+    ctx: CanvasRenderingContext2D, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  ): void {
+    const x0 = 50, y0 = 104, w = 560, h = 520;
+    this.panel(ctx, X(x0), Y(y0), U(w), U(h), s);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `700 ${U(19)}px ${FONT}`;
+    ctx.fillText('PUBLIC ROOMS', X(x0 + 20), Y(y0 + 26));
+    // Filter dropdown (age) + count.
+    const label = `younger than ${this.mp.config.maxAgeHours}h`;
+    const fw = Math.max(U(150), ctx.measureText(label).width + U(40));
+    this.button(ctx, X(x0 + w - 20) - fw, Y(y0 + 8), fw, U(30), `age · ${label}`, this.hover === 'dd:filter', s, 14, 'dd:filter');
+    ctx.font = `${U(13)}px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(`${this.mp.rooms.length} listed`, X(x0 + 20), Y(y0 + 48));
+
+    // List viewport.
+    const listY = y0 + 62;
+    const listH = h - 62 - 18;
+    this.listBox = { x: X(x0 + 12), y: Y(listY), w: U(w - 24), h: U(listH) };
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(this.listBox.x, this.listBox.y, this.listBox.w, this.listBox.h);
+    ctx.clip();
+    const rooms = this.mp.rooms;
+    const rowH = 62;
+    const content = Math.max(0, rooms.length * rowH + 8);
+    this.scroll = Math.max(0, Math.min(this.scroll, Math.max(0, content - listH)));
+    if (rooms.length === 0) {
+      ctx.font = `${U(15)}px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.fillText('no public rooms in this window —  press CREATE ROOM', X(x0 + 24), Y(listY + 30));
+    }
+    rooms.forEach((room, i) => {
+      const ry = listY + 8 + i * rowH - this.scroll;
+      if (ry > listY + listH || ry + rowH < listY) return;
+      const own = room.hostPubkey === this.mp.pubkey;
+      const dead = this.mp.deadRooms.has(room.hostPubkey + ':' + room.id);
+      const rowId = 'room:' + room.hostPubkey + ':' + room.id;
+      const hovered = this.hover === rowId;
+      ctx.fillStyle = hovered ? 'rgba(127,232,216,0.10)' : i % 2 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
+      ctx.fillRect(X(x0 + 16), Y(ry), U(w - 48) + U(16), U(rowH - 6));
+      if (own) {
+        ctx.fillStyle = 'rgba(127,232,216,0.6)';
+        ctx.fillRect(X(x0 + 16), Y(ry), U(3), U(rowH - 6));
+      }
+      this.regions.push({ id: rowId, x: X(x0 + 16), y: Y(ry), w: U(w - 48) + U(16), h: U(rowH - 6) });
+      ctx.font = `700 ${U(12)}px ${FONT}`;
+      ctx.fillStyle = own ? '#7fe8d8' : 'rgba(255,200,120,0.95)';
+      ctx.fillText(`${room.type || 'GAME'}${own ? ' · YOURS' : ''}${dead ? ' · OFFLINE?' : ''}`, X(x0 + 28), Y(ry + 15));
+      ctx.font = `700 ${U(16)}px ${FONT}`;
+      ctx.fillStyle = dead ? 'rgba(255,255,255,0.45)' : '#ffffff';
+      ctx.fillText(clip(ctx, room.title, U(w - 260)), X(x0 + 28), Y(ry + 34));
+      ctx.font = `${U(13)}px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(
+        `${room.host} · ${room.players}/${room.maxPlayers} pilots · ${age(room.created)}`,
+        X(x0 + 28), Y(ry + 51),
+      );
+      // Row buttons: DELETE for own rooms, JOIN for everyone else's.
+      // Their ids carry the room key (hostPubkey:roomId) directly.
+      const bw = 92, bh = 30;
+      const bx = x0 + w - bw - 22;
+      const key = room.hostPubkey + ':' + room.id;
+      if (own) {
+        this.button(ctx, X(bx - bw - 8), Y(ry + 12), U(bw), U(bh), 'DELETE', this.hover === 'del:' + key, s, 13, 'del:' + key);
+      }
+      this.button(ctx, X(bx), Y(ry + 12), U(bw), U(bh), dead ? 'RETRY' : 'JOIN', this.hover === 'join:' + key, s, 14, 'join:' + key);
+    });
+    ctx.restore();
+    // Scrollbar.
+    if (content > listH) {
+      const trackH = U(listH);
+      const knobH = Math.max(U(24), trackH * (listH / content));
+      const knobY = this.listBox.y + (trackH - knobH) * (this.scroll / Math.max(1, content - listH));
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      ctx.fillRect(this.listBox.x + this.listBox.w - U(6), this.listBox.y, U(4), trackH);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillRect(this.listBox.x + this.listBox.w - U(6), knobY, U(4), knobH);
+    }
+  }
+
+  private paintCreate(
+    ctx: CanvasRenderingContext2D, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  ): void {
+    const x0 = 670, y0 = 104, w = 560, h = 520;
+    this.panel(ctx, X(x0), Y(y0), U(w), U(h), s);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `700 ${U(19)}px ${FONT}`;
+    ctx.fillText('CREATE A ROOM', X(x0 + 20), Y(y0 + 26));
+
+    const mode = MODES[this.typeIdx];
+    const level = mode.levels[Math.min(this.levelIdx, mode.levels.length - 1)];
+    const row = (i: number, label: string, value: string, id: string): void => {
+      const ry = y0 + 68 + i * 62;
+      ctx.font = `${U(14)}px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(label, X(x0 + 22), Y(ry + 1));
+      const bw = w - 44;
+      this.button(ctx, X(x0 + 22), Y(ry + 14), U(bw), U(34), value, this.hover === id, s, 16, id, this.openDropdown === id);
+    };
+    row(0, 'Game type', mode.label, 'dd:type');
+    row(1, 'Level', level.label, 'dd:level');
+    row(2, 'Room size', `${MAX_PLAYERS[this.maxIdx]} pilots`, 'dd:max');
+
+    // Create button.
+    const cy = y0 + 68 + 3 * 62 + 8;
+    this.button(ctx, X(x0 + 22), Y(cy), U(w - 44), U(48), 'CREATE ROOM', this.hover === 'create', s, 18, 'create', false, true);
+
+    ctx.font = `${U(13)}px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    const hint = this.mp.hosting
+      ? `hosting "${this.mp.hosting.title}" — guests join your match and fly with you`
+      : 'the room is published on Nostr; guests connect to this browser over WebRTC';
+    wrap(ctx, hint, X(x0 + 22), Y(cy + 62), U(w - 44), U(18), ctx.fillStyle as string);
+
+    if (this.mp.hosting) {
+      this.button(ctx, X(x0 + 22), Y(y0 + h - 54), U(w - 44), U(36), 'CLOSE ROOM', this.hover === 'cancel-host', s, 15, 'cancel-host');
+    }
+  }
+
+  /** Floating option list for the open dropdown. */
+  private paintDropdown(
+    ctx: CanvasRenderingContext2D, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  ): void {
+    const id = this.openDropdown!;
+    const anchor = this.regions.find((r) => r.id === id);
+    if (!anchor) {
+      this.openDropdown = null;
+      return;
+    }
+    const options = this.dropdownOptions(id);
+    const rowH = Math.max(U(26), anchor.h);
+    const height = Math.min(options.length * rowH + U(8), U(360));
+    let y = anchor.y + anchor.h + U(4);
+    if (y + height > this.logical.h) y = Math.max(0, anchor.y - height - U(4));
+    ctx.fillStyle = 'rgba(6,10,16,0.94)';
+    ctx.strokeStyle = 'rgba(127,232,216,0.5)';
+    ctx.lineWidth = Math.max(1, U(1));
+    ctx.fillRect(anchor.x, y, anchor.w, height);
+    ctx.strokeRect(anchor.x, y, anchor.w, height);
+    options.forEach((opt, i) => {
+      const oy = y + U(4) + i * rowH;
+      const rid = 'opt:' + id + ':' + opt.value;
+      const hovered = this.hover === rid;
+      if (hovered) {
+        ctx.fillStyle = 'rgba(127,232,216,0.16)';
+        ctx.fillRect(anchor.x + U(2), oy, anchor.w - U(4), rowH - U(2));
+      }
+      ctx.font = `700 ${U(14)}px ${FONT}`;
+      ctx.fillStyle = opt.selected ? '#7fe8d8' : '#ffffff';
+      ctx.fillText(clip(ctx, opt.label, anchor.w - U(20)), anchor.x + U(10), oy + rowH / 2);
+      // Registered last: the dropdown wins hit testing over what it covers.
+      this.regions.push({ id: rid, x: anchor.x, y: oy, w: anchor.w, h: rowH });
+    });
+  }
+
+  private dropdownOptions(ddId: string): { label: string; value: string; selected: boolean }[] {
+    if (ddId === 'dd:type') {
+      return MODES.map((m, i) => ({ label: m.label, value: String(i), selected: i === this.typeIdx }));
+    }
+    if (ddId === 'dd:level') {
+      const mode = MODES[this.typeIdx];
+      return mode.levels.map((l, i) => ({ label: l.label, value: String(i), selected: i === this.levelIdx }));
+    }
+    if (ddId === 'dd:max') {
+      return MAX_PLAYERS.map((n, i) => ({ label: `${n} pilots`, value: String(i), selected: i === this.maxIdx }));
+    }
+    if (ddId === 'dd:filter') {
+      return MAX_AGE_CHOICES.map((h) => ({ label: `younger than ${h}h`, value: String(h), selected: h === this.mp.config.maxAgeHours }));
+    }
+    return [];
+  }
+
+  // --------------------------------------------------------------- drawing
+  private panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, s: number): void {
+    ctx.fillStyle = 'rgba(8,12,20,0.62)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = Math.max(1, s);
+    ctx.strokeRect(x, y, w, h);
+  }
+
+  private button(
+    ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
+    label: string, hovered: boolean, s: number, size: number, id?: string, open = false, accent = false,
+  ): void {
+    const pressed = id !== undefined && this.pressed === id;
+    ctx.fillStyle = accent
+      ? (hovered ? 'rgba(127,232,216,0.32)' : 'rgba(127,232,216,0.18)')
+      : open
+        ? 'rgba(127,232,216,0.16)'
+        : (hovered ? 'rgba(255,255,255,0.16)' : 'rgba(10,14,22,0.72)');
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = accent ? 'rgba(127,232,216,0.8)' : open ? 'rgba(127,232,216,0.6)' : 'rgba(255,255,255,0.16)';
+    ctx.lineWidth = Math.max(1, s);
+    ctx.strokeRect(x, y, w, h);
+    if (pressed) {
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(x, y, w, h);
+    }
+    ctx.font = `700 ${Math.round(size * s)}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = accent ? '#7fe8d8' : '#ffffff';
+    ctx.fillText(clip(ctx, label, w - 12 * s), x + w / 2, y + h / 2 + s);
+    ctx.textAlign = 'left';
+    if (id !== undefined) this.regions.push({ id, x, y, w, h });
+  }
+
+  // ---------------------------------------------------------------- input
+  /** Pointer in CSS px of the canvas element; returns true when consumed. */
+  pointer(kind: 'move' | 'down' | 'up', x: number, y: number, cssW: number, cssH: number): boolean {
+    const lx = x * (this.logical.w / Math.max(1, cssW));
+    const ly = y * (this.logical.h / Math.max(1, cssH));
+    const hit = this.hit(lx, ly);
+    const id = hit?.id ?? null;
+    if (kind === 'move') {
+      const overList = this.inBox(lx, ly);
+      if (id !== this.hover) {
+        this.hover = id;
+        this.bump();
+      }
+      return !!id || overList;
+    }
+    if (kind === 'down') {
+      this.pressed = id;
+      if (id) this.bump();
+      return !!id;
+    }
+    // up
+    const wasPressed = this.pressed;
+    this.pressed = null;
+    if (id && id === wasPressed) {
+      this.activate(id);
+      return true;
+    }
+    this.bump();
+    return !!id;
+  }
+
+  wheel(deltaY: number, x: number, y: number, cssW: number, cssH: number): boolean {
+    const lx = x * (this.logical.w / Math.max(1, cssW));
+    const ly = y * (this.logical.h / Math.max(1, cssH));
+    if (!this.inBox(lx, ly)) return false;
+    this.scroll = Math.max(0, this.scroll + (deltaY > 0 ? 48 : -48));
+    this.bump();
+    return true;
+  }
+
+  private inBox(x: number, y: number): boolean {
+    const b = this.listBox;
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
+  private hit(x: number, y: number): Region | null {
+    // Later regions (dropdown options, floating) win.
+    for (let i = this.regions.length - 1; i >= 0; i--) {
+      const r = this.regions[i];
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r;
+    }
+    return null;
+  }
+
+  private activate(id: string): void {
+    if (id.startsWith('dd:')) {
+      this.openDropdown = this.openDropdown === id ? null : id;
+      this.bump();
+      return;
+    }
+    if (id.startsWith('opt:dd:')) {
+      const rest = id.slice('opt:'.length);
+      const second = rest.indexOf(':', 'dd:'.length);
+      const ddId = rest.slice(0, second);
+      const value = rest.slice(second + 1);
+      if (ddId === 'dd:type') {
+        this.typeIdx = Number(value);
+        this.levelIdx = 0;
+      } else if (ddId === 'dd:level') {
+        this.levelIdx = Number(value);
+      } else if (ddId === 'dd:max') {
+        this.maxIdx = Number(value);
+      } else if (ddId === 'dd:filter') {
+        this.mp.setMaxAge(Number(value));
+      }
+      this.openDropdown = null;
+      this.bump();
+      return;
+    }
+    if (id.startsWith('room:') || id.startsWith('join:') || id.startsWith('del:')) {
+      const key = id.slice(id.indexOf(':') + 1).replace(/^room:/, '');
+      const room = this.mp.rooms.find((r) => r.hostPubkey + ':' + r.id === key);
+      if (!room) return;
+      if (id.startsWith('del:')) this.hooks.deleteRoom(room);
+      else this.hooks.join(room);
+      return;
+    }
+    if (id === 'create') {
+      const mode = MODES[this.typeIdx];
+      const level = mode.levels[Math.min(this.levelIdx, mode.levels.length - 1)];
+      this.hooks.startHost(level.key, mode.id, level.label, MAX_PLAYERS[this.maxIdx]);
+      this.bump();
+      return;
+    }
+    if (id === 'cancel-host') {
+      this.mp.endSession();
+      this.bump();
+      return;
+    }
+    if (id === 'refresh') {
+      this.mp.refreshRooms();
+      this.mp.connect();
+      this.bump();
+      return;
+    }
+    if (id === 'back') {
+      this.hooks.back();
+      return;
+    }
+  }
+}
+
+const FONT = "'DejaVu Sans','Segoe UI',Verdana,sans-serif";
+
+function clip(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+  return s + '…';
+}
+
+function wrap(
+  ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lineH: number, color: string,
+): void {
+  ctx.fillStyle = color;
+  const words = text.split(' ');
+  let line = '';
+  let ly = y;
+  for (const word of words) {
+    const next = line ? line + ' ' + word : word;
+    if (ctx.measureText(next).width > maxW && line) {
+      ctx.fillText(line, x, ly);
+      line = word;
+      ly += lineH;
+    } else {
+      line = next;
+    }
+  }
+  if (line) ctx.fillText(line, x, ly);
+}
+
+function age(created: number): string {
+  const secs = Math.max(0, Math.floor(Date.now() / 1000) - created);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
+function short(npub: string): string {
+  return npub.length > 16 ? npub.slice(0, 9) + '…' + npub.slice(-4) : npub;
+}

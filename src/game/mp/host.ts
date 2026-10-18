@@ -135,6 +135,21 @@ export class HostSession {
     return g?.ship ?? null;
   }
 
+  /** Diagnostics (console / e2e): per-guest control and ship state. */
+  debugGuests(): Record<string, unknown>[] {
+    return [...this.guests.values()].map((g) => ({
+      id: g.id, name: g.name, joined: g.joined, shipId: g.shipId,
+      throttle: g.control.analogAcel.value,
+      stickX: g.control.analogStick.value.x,
+      stickY: g.control.analogStick.value.y,
+      fire: g.control.fireButton.value,
+      active: g.ship ? g.ship.active : null,
+      speed: g.ship ? Math.round(Math.hypot(g.ship.vel[0], g.ship.vel[1], g.ship.vel[2])) : null,
+      pos: g.ship ? [g.ship.pos[0], g.ship.pos[1], g.ship.pos[2]].map((v) => Math.round(v)) : null,
+      sinceInput: g.lastInputAt ? Math.round(performance.now() - g.lastInputAt) : null,
+    }));
+  }
+
   guestList(): GuestSummary[] {
     return [...this.guests.values()].map((g) => ({ id: g.id, pubkey: g.pubkey, name: g.name }));
   }

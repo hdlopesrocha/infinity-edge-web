@@ -1,4 +1,6 @@
-<!-- MainMenu.xml: SINGLE PLAYER / OPTIONS / ABOUT, plus the web-only HANGAR. -->
+<!-- MainMenu.xml: SINGLE PLAYER / OPTIONS / ABOUT, plus the web-only HANGAR and
+     MULTIPLAYER. The multiplayer screen itself is painted into the WebGL frame
+     (src/game/mp/lobbyui.ts) - no HTML there. -->
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import MenuShell from '../components/MenuShell.vue';
@@ -35,6 +37,11 @@ function go(path: string): void {
           <span class="cap">ABOUT</span>
         </button>
       </div>
+      <button
+        class="track-btn menubtn-wide multi-btn"
+        :style="`background-image:url(${base}_menubtn.png);`"
+        @click="go('/multiplayer')"
+      >MULTIPLAYER</button>
     </template>
   </MenuShell>
 </template>
