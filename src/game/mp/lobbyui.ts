@@ -133,7 +133,7 @@ export class LobbyUi implements ScreenUi {
     const relays = this.mp.config.relays.length;
     const open = this.mp.online ? relays : 0;
     ctx.font = `${U(14)}px ${FONT}`;
-    ctx.fillStyle = 'rgba(255,255,255,0.62)';
+    ctx.fillStyle = 'rgba(255,255,255,0.78)';
     ctx.fillText(
       `you are ${this.mp.identityName()} · ${short(this.mp.npub)} · relays ${open}/${relays}` +
       (this.mp.guestCount() > 0 ? ` · ${this.mp.guestCount()} guest${this.mp.guestCount() === 1 ? '' : 's'}` : ''),

@@ -25,6 +25,12 @@ npm run server:test     # ctest (simulation unit tests)
 npm run build && npm run server:run   # serves dist/ + ws://127.0.0.1:8091/game
 # open http://127.0.0.1:8091/?game=/game#/menu
 
+# multiplayer (WebRTC + Nostr rooms; see docs/multiplayer.md)
+npm run mp:relay        # local Nostr relay on ws://127.0.0.1:7777
+npm run mp:e2e          # two headless Chrome tabs: host + guest, PASS/FAIL
+npm run mp:e2e -- --guests 2             # several data channels at once
+npm run mp:e2e -- --level ctf-easy --type CTF --level-idx 0
+
 # verification tooling (headless Chrome, no extra dependencies)
 npm run asset-server    # HTTP + WebSocket asset channel on :8090
 npm run shots           # screenshots of every route -> tools/shots/
@@ -58,7 +64,8 @@ composition; the compiled XNB is exact. It is kept only for reference.
 | URL | Original |
 |---|---|
 | `#/` → `#/engine` → `#/start` | EngineScreen (wheel + logo, 3 s) → StartScreen (logo, 3 s) → MainMenu. Both boot screens show the Floating-Gear loading bar while every model, texture and level is preloaded; the sequence only advances to the menu once that finishes |
-| `#/menu` | MainMenu (SINGLE PLAYER / OPTIONS / ABOUT) |
+| `#/menu` | MainMenu (SINGLE PLAYER / MULTIPLAYER / OPTIONS / ABOUT) |
+| `#/multiplayer` | Public rooms on Nostr + "create a room" — the whole view is painted into the WebGL frame (`src/game/mp/lobbyui.ts`), no HTML |
 | `#/single-player` | CTF / TIME TRIAL |
 | `#/ctf`, `#/tt`, `#/tt/{easy,normal,hard}` | Difficulty menus; TT lists Track 01.. / Demo Track |
 | `#/briefing/:level` | Level Menu.xml: scoreBoard (10 rows) + briefing textBox + "start" |
@@ -90,6 +97,32 @@ plain static host. The channel reconnects with exponential backoff, times out
 after 8 s, validates framing/sizes, counts malformed input, and falls back to
 HTTP per asset instead of stalling scene loading. Measured on CTF Easy: 108
 frames, 2 127 303 B of payload -> 811 495 B on the wire.
+
+## Multiplayer (WebRTC + Nostr)
+
+A browser-hosted multiplayer mode: one player creates a room, the room is
+published as a signed event on public **Nostr** relays, and other players
+connect straight to the creator's browser over **WebRTC data channels** (one
+per guest). The host runs the authoritative simulation — the same local
+simulation the offline game uses — and streams it with the same binary frames
+the C++ server sends, so guests run the same render-only `NetGame` client.
+
+- `#/multiplayer` lists rooms younger than a configurable age (default **6 h**,
+  dropdown 1/3/6/12/24 h, persisted), with JOIN buttons and DELETE on your own
+  rooms (NIP-09: only the creator's key can delete).
+- Creating a room uses dropdowns for game type, level and room size, publishes
+  the room and starts the match in this browser.
+- Guests fly with the host: they take over an AI ship of the host's team (the
+  AI resumes when they leave) or get a wingman on time trials.
+- Room events are addressable Nostr events (kind `30333`, 30-minute NIP-40
+  expiry refreshed by heartbeats); SDP/ICE travel as public ephemeral events
+  (kind `25050`), so the WebRTC candidates are visible on the relays exactly as
+  the rooms are.
+- The Nostr client (BIP-340 Schnorr signing, relay pool) is dependency-free:
+  `src/game/nostr/`. The lobby UI and the in-game HUD are painted into the GL
+  frame; the multiplayer view renders no DOM at all.
+- Room/IPC/signalling details, configuration and the e2e tooling are documented
+  in `docs/multiplayer.md`.
 
 ## Game server (authoritative, C++)
 
@@ -202,6 +235,11 @@ ancestry for cold deep links. Reload rebuilds the stack.
   and the asset fetch front-end used by the level and model loaders.
 - `src/game/protocol.ts`, `src/game/netgame.ts` — the game-channel codec and the
   server-driven `NetGame` renderer (Scene/Snapshot/Events/Hud + input).
+- `src/game/nostr/` — hand-rolled Nostr: BIP-340 Schnorr + SHA-256 + NIP-19
+  (`crypto.ts`, `bech32.ts`), events (`event.ts`), relay pool (`relay.ts`).
+- `src/game/mp/` — rooms/signalling/WebRTC (`manager.ts`), the browser match
+  host (`host.ts`, the wire mirror of `server/src/session.cpp`), the WebGL
+  lobby (`lobbyui.ts`) and the simulation hooks (`bridge.ts`).
 - `server/` — authoritative C++17 game server: WebSocket + zlib framing
   (`src/proto.h`), session codec (`src/session.cpp`), the ported simulation
   (`src/sim*.cpp`, `src/ai.cpp`) and its unit tests; `--root` serves the client.
@@ -271,8 +309,22 @@ ancestry for cold deep links. Reload rebuilds the stack.
   recovery (loop pauses, GL caches drop, scene rebuilds), 2x DPR backing store,
   no page errors. Run against both the dev server and the production build, over
   HTTP and over the WebSocket channel.
-- `npm test`: 41 unit tests (protocol framing/gzip/threshold/malformed input,
-  frustum + ocTree culling, converted model sidecars, physics and life pools).
+- `npm test`: 83 unit tests (protocol framing/gzip/threshold/malformed input,
+  frustum + ocTree culling, converted model sidecars, physics and life pools,
+  BIP-340/NIP-19 vectors, Nostr event signing, multiplayer rooms over a local
+  relay, and the browser host's frame production decoded by the client codec;
+  the live-relay test is opt-in).
+- Multiplayer (browser host): the `npm run mp:e2e` harness drives real headless
+  Chrome tabs through the WebGL lobby — creating a room, listing it, joining
+  over WebRTC, the RTC handshake, Scene/HUD delivery (life pools, RTT), guest
+  throttle reaching the host simulation (HUD speed 64) and two guests on
+  distinct data channels, with the host seeing both ships. Time Trial and CTF
+  (AI-ship takeover) both pass. The lobby, room list, age filter, dropdowns,
+  create/join/delete paths and the "creator only" deletion rule are exercised
+  in-browser as well (`tools/probe.mjs`); rooms are verified against the local
+  relay in `tests/mp-rooms.test.ts`, and signing against the official BIP-340
+  vectors plus a live relay publish (`tests/relay.integration.test.ts`,
+  opt-in).
 - Game channel (server authoritative): Node load client against the C++ server
   (CTF Easy 8000 asteroids/19 ships: 36 KiB/s wire, 43 % of payload; KOTS solo
   13 KiB/s), and a driven browser run with `?game=/game` — TT Easy flight

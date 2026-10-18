@@ -160,9 +160,13 @@ export class Multiplayer {
       if (typeof stored.maxAgeHours === 'number' && stored.maxAgeHours > 0) this.config.maxAgeHours = stored.maxAgeHours;
       if (Array.isArray(stored.iceServers) && stored.iceServers.length > 0) this.config.iceServers = stored.iceServers.map(String);
     }
-    const skHex = (() => {
-      try { return localStorage.getItem(IDENTITY_KEY); } catch { return null; }
-    })();
+    // Identity: `?mpKey=` (tests, several players on one machine who are not
+    // sharing the browser profile) beats the persisted per-browser key.
+    const keyParam = urlParam('mpKey');
+    const skHex = keyParam
+      ?? (() => {
+        try { return localStorage.getItem(IDENTITY_KEY); } catch { return null; }
+      })();
     let sk: Uint8Array | null = null;
     if (skHex && /^[0-9a-f]{64}$/i.test(skHex)) {
       const candidate = hexToBytes(skHex);
@@ -171,6 +175,8 @@ export class Multiplayer {
     if (!sk) {
       sk = randomBytes(32);
       while (!validSecretKey(sk)) sk = randomBytes(32);
+      try { localStorage.setItem(IDENTITY_KEY, bytesToHex(sk)); } catch { /* private mode */ }
+    } else if (!keyParam) {
       try { localStorage.setItem(IDENTITY_KEY, bytesToHex(sk)); } catch { /* private mode */ }
     }
     this.sk = sk;

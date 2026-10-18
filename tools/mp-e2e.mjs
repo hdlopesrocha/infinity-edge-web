@@ -15,7 +15,8 @@
 // spawn a wingman for the guest (no AI ship to adopt).
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -32,12 +33,15 @@ const TYPE = flag('--type', 'TT');
 /** Dropdown positions in the lobby's create-room form. */
 const TYPE_IDX = { CTF: 0, TT: 1, KOTS: 2, SURV: 3 }[TYPE] ?? 1;
 const LEVEL_IDX = Number(flag('--level-idx', '0'));
+const GUESTS = Math.max(1, Number(flag('--guests', '1')));
 const PORT = Number(flag('--port', '9334'));
 const profile = join(tmpdir(), `ie-mp-e2e-${process.pid}`);
 mkdirSync(profile, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const pageUrl = (hash) => `${APP}?mp=${encodeURIComponent(RELAY)}#/${hash}`;
+/** Distinct, deterministic identities: one Nostr key per page/participant. */
+const keyFor = (who) => createHash('sha256').update('ie-mp-e2e:' + who).digest('hex');
+const pageUrl = (hash, who) => `${APP}?mp=${encodeURIComponent(RELAY)}&mpKey=${keyFor(who)}#/${hash}`;
 const chrome = spawn(process.env.CHROME || 'google-chrome', [
   '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`,
   '--no-first-run', '--no-default-browser-check',
@@ -98,6 +102,14 @@ function connect(wsUrl) {
         throw new Error('page error: ' + (res.exceptionDetails.exception?.description ?? JSON.stringify(res.exceptionDetails)));
       }
       return res.result?.value;
+    },
+    /** Save a PNG of this page (visual evidence of the WebGL UI). */
+    async screenshot(path) {
+      const shot = await sent('Page.captureScreenshot', { format: 'png' });
+      const data = shot.result?.data;
+      if (!data) return false;
+      writeFileSync(path, Buffer.from(data, 'base64'));
+      return true;
     },
     async waitForUrl(fragment, timeout = 90000) {
       const t0 = Date.now();
@@ -165,6 +177,9 @@ const HELPERS = `
   };
 `;
 
+const SHOT_DIR = process.env.MP_E2E_SHOTS || '/tmp/opencode/shots';
+mkdirSync(SHOT_DIR, { recursive: true });
+
 const report = { steps: [] };
 function step(name, value) {
   report.steps.push([name, value]);
@@ -173,7 +188,7 @@ function step(name, value) {
 
 try {
   // ---------------------------------------------------------------- host
-  const host = await openPage(pageUrl('multiplayer'));
+  const host = await openPage(pageUrl('multiplayer', 'host'));
   const hostReady = await host.evaluate(`(async () => {
     ${HELPERS}
     await until(() => window.__ieMP && R());
@@ -185,6 +200,7 @@ try {
   })()`);
   step('host lobby ready', hostReady);
   if (!hostReady.online) throw new Error('host relay offline');
+  await host.screenshot(join(SHOT_DIR, 'mp-lobby-host.png'));
 
   const hostCreated = await host.evaluate(`(async () => {
     ${HELPERS}
@@ -227,49 +243,81 @@ try {
 
   await host.evaluate(`(async () => { ${HELPERS} pump(10); return true; })()`);
 
-  // ---------------------------------------------------------------- guest
-  const guest = await openPage('about:blank');
-  const guestUrl = pageUrl('multiplayer');
-  await guest.evaluate(`location.href = ${JSON.stringify(guestUrl)}`);
-  await guest.waitForUrl('#/multiplayer');
+  // --------------------------------------------------------------- guests
+  const guests = [];
+  for (let n = 1; n <= GUESTS; n++) {
+    const guest = await openPage('about:blank');
+    await guest.evaluate(`location.href = ${JSON.stringify(pageUrl('multiplayer', 'guest-' + n))}`);
+    await guest.waitForUrl('#/multiplayer');
+    const joined = await guest.evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const R = () => window.__ieRenderer;
+      const pump = (n) => { const r = R(); if (r) for (let i = 0; i < n; i++) r.onFrame(33); };
+      const until = async (fn, ms) => {
+        const t0 = Date.now();
+        for (;;) {
+          const v = fn();
+          if (v) return v;
+          if (Date.now() - t0 > ms) throw new Error('timeout: ' + fn.toString().slice(0, 60));
+          pump(1);
+          await sleep(40);
+        }
+      };
+      const click = (id) => {
+        const r = R();
+        const lobby = r.uiOverlay;
+        const reg = lobby.regions.find((x) => x.id === id);
+        if (!reg) return false;
+        const c = r.canvas;
+        const rect = c.getBoundingClientRect();
+        const cx = (reg.x + reg.w / 2) * (rect.width / lobby.logical.w);
+        const cy = (reg.y + reg.h / 2) * (rect.height / lobby.logical.h);
+        const opts = { bubbles: true, cancelable: true, clientX: rect.left + cx, clientY: rect.top + cy,
+          pointerId: 3, isPrimary: true, button: 0, buttons: 1 };
+        c.dispatchEvent(new PointerEvent('pointerdown', opts));
+        window.dispatchEvent(new PointerEvent('pointerup', { ...opts, buttons: 0 }));
+        pump(3);
+        return true;
+      };
+      await until(() => window.__ieMP && R(), 60000);
+      const mp = window.__ieMP;
+      await until(() => R().uiOverlay && R().uiOverlay.regions.length > 6, 60000);
+      await mp.connect();
+      const room = await until(() => mp.rooms.find((x) => x.id === ${JSON.stringify(hostCreated.roomId)}), 60000);
+      const key = room.hostPubkey + ':' + room.id;
+      await until(() => R().uiOverlay.regions.some((x) => x.id === 'join:' + key));
+      click('join:' + key);
+      try {
+        await until(() => location.hash.includes('/game/'), 90000);
+      } catch {
+        return { failed: 'navigate', error: mp.error, status: mp.status,
+          pending: !!mp.pendingJoin, joining: R().uiOverlay ? R().uiOverlay.joining : null,
+          trace: window.__ieMPTrace ? window.__ieMPTrace() : [] };
+      }
+      const g = await until(() => {
+        const inst = window.__ieGame;
+        return inst && typeof inst.rtt === 'number' && inst.selectedObject ? inst : null;
+      }, 120000);
+      return {
+        hash: location.hash, roomTitle: room.title, hostName: room.host,
+        isNet: typeof g.rtt === 'number',
+        ship: g.selectedObject ? [g.selectedObject.pos[0], g.selectedObject.pos[1], g.selectedObject.pos[2]] : null,
+        levelKey: g.levelKey,
+      };
+    })()`).catch(async (e) => ({ failed: String(e.message) }));
+    step('guest ' + n + ' joined over WebRTC', joined);
+    if (joined.failed) {
+      const hostTrace = await host.evaluate('window.__ieMPTrace ? window.__ieMPTrace() : []').catch(() => []);
+      throw new Error('guest ' + n + ' join failed: ' + JSON.stringify(joined) + ' hostTrace: ' + JSON.stringify(hostTrace));
+    }
+    if (!joined.isNet) throw new Error('guest ' + n + ' did not end up on a NetGame instance');
+    guests.push({ page: guest, info: joined });
+  }
 
-  const guestJoined = await guest.evaluate(`(async () => {
-    ${HELPERS}
-    await until(() => window.__ieMP && R(), 60000);
-    const mp = window.__ieMP;
-    await until(() => lobbyReady(), 60000);
-    await mp.connect();
-    const room = await until(() => mp.rooms.find((x) => x.id === ${JSON.stringify(hostCreated.roomId)}), 60000);
-    const key = room.hostPubkey + ':' + room.id;
-    await until(() => R().uiOverlay.regions.some((x) => x.id === 'join:' + key));
-    const clicked = clickRegion('join:' + key);
-    let navigated = false;
-    const state = () => ({ hash: location.hash, clicked, error: mp.error, status: mp.status,
-      pending: !!mp.pendingJoin, rooms: mp.rooms.length, dead: [...mp.deadRooms.keys()].length,
-      joining: R().uiOverlay ? R().uiOverlay.joining : null,
-      trace: window.__ieMPTrace ? window.__ieMPTrace() : [] });
-    try {
-      await until(() => location.hash.includes('/game/'), 60000);
-      navigated = true;
-    } catch { /* report below */ }
-    if (!navigated) return { navigated, state: state() };
-    // Built bundles mangle class names: NetGame is the only instance with an
-    // rtt getter (Ping/Pong) - and the guest's ship must have spawned.
-    const joined = await until(() => {
-      const g = window.__ieGame;
-      return g && typeof g.rtt === 'number' && g.selectedObject ? g : null;
-    }, 120000);
-    return {
-      hash: location.hash, roomTitle: room.title, hostName: room.host,
-      isNet: typeof joined.rtt === 'number', playerId: joined.selectedObject.id, levelKey: joined.levelKey,
-    };
-  })()`);
-  step('guest joined over WebRTC', guestJoined);
-  if (!guestJoined.isNet) throw new Error('guest did not end up on a NetGame instance');
-
-  // Stream both ways: host steps + sends, guest applies.
+  // Stream both ways: host steps + sends, guests apply.
   await host.evaluate(`(async () => { ${HELPERS} pump(16); return true; })()`);
-  await guest.evaluate(`(async () => { ${HELPERS} pump(10); return true; })()`);
+  for (const g of guests) await g.page.evaluate(`(async () => { ${HELPERS} pump(10); return true; })()`);
+  const guest = guests[0].page;
 
   const guestState = await guest.evaluate(`(async () => {
     ${HELPERS}
@@ -311,6 +359,9 @@ try {
   })()`);
   const rounds = [];
   for (let i = 0; i < 14; i++) {
+    for (const gg of guests.slice(1)) {
+      await gg.page.evaluate(`(async () => { ${HELPERS} pump(2); return true; })()`);
+    }
     const g = await guest.evaluate(`(async () => {
       ${HELPERS}
       pump(2);
@@ -346,8 +397,22 @@ try {
     const mp = window.__ieMP;
     return { guests: mp.guestCount(), session: mp.sessionActive, hosting: !!mp.hosting, detail: mp.debugGuests() };
   })()`);
-  step('host sees the guest', hostState);
-  if (hostState.guests !== 1) throw new Error('host did not see exactly one guest');
+  step('host sees the guests', hostState);
+  if (hostState.guests !== GUESTS) throw new Error('host saw ' + hostState.guests + ' guests, expected ' + GUESTS);
+  const ships = hostState.detail.map((g) => JSON.stringify(g.pos));
+  if (new Set(ships).size !== GUESTS) throw new Error('guests are not flying distinct ships: ' + ships.join(' | '));
+  await host.screenshot(join(SHOT_DIR, 'mp-host.png'));
+  await guest.screenshot(join(SHOT_DIR, 'mp-guest.png'));
+  console.log('screenshots written to', SHOT_DIR);
+
+  // Close the room (NIP-09) and let the relay see it before Chrome goes.
+  const closed = await host.evaluate(`(async () => {
+    const mp = window.__ieMP;
+    const id = mp.hosting && mp.hosting.id;
+    mp.endSession();
+    return { id, hosting: !!mp.hosting };
+  })()`).catch(() => false);
+  step('host closed the room', closed);
 
   console.log('\nmp-e2e: PASS');
 } catch (e) {

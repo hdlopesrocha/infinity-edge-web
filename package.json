@@ -21,6 +21,8 @@
     "server:build": "cmake -S server -B build/server && cmake --build build/server -j",
     "server:run": "build/server/ie-server --port 8091 --root dist",
     "server:test": "ctest --test-dir build/server --output-on-failure",
+    "mp:relay": "node tools/relay.mjs --port 7777",
+    "mp:e2e": "node tools/mp-e2e.mjs",
     "shots": "node tools/screenshots.mjs",
     "deploy": "node tools/deploy-gh-pages.mjs",
     "probe": "node tools/probe.mjs"

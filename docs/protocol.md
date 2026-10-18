@@ -89,7 +89,11 @@ the server resolves them under its root and refuses anything else.
 * `window.__ieNet.status()` exposes `{state, url, attempts, sent, received,
   errors}` for debugging; `?ws=` off means `state: "disabled"`.
 
-## Game channel (`server/`, `src/game/netgame.ts`, `src/game/protocol.ts`)
+## Game channel
+
+The same frames are also produced by the browser-hosted multiplayer match
+(`src/game/mp/host.ts`); the WebRTC/Nostr room and signalling layer around it
+is documented in [multiplayer.md](multiplayer.md). (`server/`, `src/game/netgame.ts`, `src/game/protocol.ts`)
 
 A second, independent channel on the same frame format. Here an **authoritative
 C++ server** (`server/`) owns the game logic and every model position; the web
