@@ -14,6 +14,9 @@ const APP = flag('--url', 'http://127.0.0.1:8091/');
 const RELAY = flag('--relay', 'ws://127.0.0.1:7777');
 const LEVEL = flag('--level', 'tt-easy-01');
 const TYPE = flag('--type', 'TT');
+/** Dropdown positions in the lobby's create-room form. */
+const TYPE_IDX = { CTF: 0, TT: 1, KOTS: 2, SURV: 3 }[TYPE] ?? 1;
+const LEVEL_IDX = Number(flag('--level-idx', '0'));
 const GUESTS = Math.max(1, Number(flag('--guests', '1')));
 const PORT = Number(flag('--port', '9334'));
 const SHOT_DIR = process.env.MP_E2E_SHOTS || '/tmp/opencode/shots';

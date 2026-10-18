@@ -329,11 +329,13 @@ ancestry for cold deep links. Reload rebuilds the stack.
   the live-relay test is opt-in).
 - Dedicated multiplayer server: `npm run mp:server-e2e` starts the C++ server
   (own Nostr room, WebRTC, no player of its own) and two browser guests —
-  joins, authoritative life pools/HUD, guest throttle moving the ship on the
-  server (HUD speed), `GET /mp/status` player counts, and a result/restart
-  round trip on the same room id. Passes under AddressSanitizer as well (which
-  caught and fixed two latent C++ bugs: an octree parent-walk use-after-free
-  and a guest-key reference into an erased map entry).
+  joins over the WebGL lobby, authoritative life pools/HUD, guest throttle
+  moving the ship on the server (HUD speed), `GET /mp/status` player counts,
+  and a result/restart round trip on the same room id. Time Trial (wingman
+  spawn) and CTF (AI-ship takeover, 19 ships, match clock) both pass. The
+  suite also passes under AddressSanitizer, which caught and fixed two latent
+  C++ bugs: an octree parent-walk use-after-free and a guest-key reference
+  into an erased map entry.
 - Multiplayer (browser host): the `npm run mp:e2e` harness drives real headless
   Chrome tabs through the WebGL lobby — creating a room, listing it, joining
   over WebRTC, the RTC handshake, Scene/HUD delivery (life pools, RTT), guest
