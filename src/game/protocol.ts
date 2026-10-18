@@ -23,6 +23,8 @@ export enum GameMsg {
   Input = 111,
   Leave = 112,
   Ping = 113,
+  /** Pre-join host authentication (multiplayer, JSON payload). */
+  Auth = 120,
   // Both.
   Error = 0xffff,
 }

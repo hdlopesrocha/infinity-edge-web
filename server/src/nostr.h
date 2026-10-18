@@ -48,6 +48,14 @@ Event signEvent(int kind, std::vector<std::vector<std::string>> tags, const std:
                 const Key32& sk, int64_t createdAt = 0);
 
 // ------------------------------------------------------------------ rooms
+/** Host certificate published with a room (mp/cert.ts on the client). */
+struct HostCert {
+  std::string key;  // base64 SPKI (P-256)
+  int64_t created = 0;
+  int64_t expires = 0;
+  std::string sig;  // BIP-340 by the room's Nostr key
+};
+
 struct RoomContent {
   int v = 1;
   std::string game;
@@ -58,10 +66,19 @@ struct RoomContent {
   int maxPlayers = 8;
   std::vector<std::string> ice;
   int64_t created = 0;
+  HostCert cert;
 };
 
 Event makeRoomEvent(const std::string& roomId, const RoomContent& content, int ttlSec,
                     const Key32& sk, int64_t now);
+
+/** Canonical strings the host signs (must match src/game/mp/cert.ts). */
+std::string certPayload(const std::string& roomId, const std::string& hostPubkey,
+                        const HostCert& cert);
+std::string answerPayload(const std::string& roomId, const std::string& from,
+                          const std::string& to, const std::string& sdp);
+std::string authPayload(const std::string& roomId, const std::string& hostPubkey,
+                        const std::string& guestPubkey, const std::string& nonce);
 Event makeDeletionEvent(const std::string& roomId, const Key32& sk, int64_t now);
 
 struct Candidate {
@@ -74,6 +91,8 @@ struct Signal {
   std::string kind;  // offer | answer | ice | bye
   std::string sdp;
   std::string name;
+  /** Certificate signature of the answer SDP (base64 ECDSA P-256). */
+  std::string sig;
   std::vector<Candidate> candidates;
   std::string room;
   std::string to;

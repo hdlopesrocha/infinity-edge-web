@@ -61,6 +61,7 @@ class DedicatedRoom {
 
  private:
   struct Guest {
+    bool authed = false;
     std::string pubkey;
     std::string name;
     std::shared_ptr<rtc::DataChannel> channel;
@@ -112,7 +113,7 @@ class DedicatedRoom {
   void releaseShip(Guest& guest);
   void flushCandidates(int64_t nowMs);
   void sendSignal(const std::string& to, const std::string& kind, const std::string& sdp,
-                  const std::vector<nostr::Candidate>& candidates);
+                  const std::vector<nostr::Candidate>& candidates, const std::string& sig = "");
 
   void tickMatch(int64_t nowMs);
   void fanOut();
@@ -127,6 +128,8 @@ class DedicatedRoom {
 
   nostr::Key32 key_{};
   std::string pubkeyHex_;
+  std::unique_ptr<nostr::P256> p256_;
+  nostr::HostCert cert_;
   std::unique_ptr<nostr::RelayPool> relay_;
   std::string roomId_;
   int64_t created_ = 0;

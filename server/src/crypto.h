@@ -21,4 +21,7 @@ inline std::string base64Encode(const std::vector<uint8_t>& v) {
   return base64Encode(v.data(), v.size());
 }
 
+/** Standard base64 decode (invalid input -> empty). */
+std::vector<uint8_t> base64Decode(const std::string& text);
+
 }  // namespace ie

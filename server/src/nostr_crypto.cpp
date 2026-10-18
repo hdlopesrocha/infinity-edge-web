@@ -1,12 +1,17 @@
 // SHA-256 + secp256k1/BIP-340 Schnorr (OpenSSL), see nostr_crypto.h.
 #include "nostr_crypto.h"
 
+#include "crypto.h"
+
 #include <openssl/bn.h>
 #include <openssl/ec.h>
+#include <openssl/ecdsa.h>
 #include <openssl/evp.h>
+#include <openssl/x509.h>
 #include <openssl/obj_mac.h>
 #include <openssl/rand.h>
 
+#include <algorithm>
 #include <cstring>
 #include <mutex>
 #include <stdexcept>
@@ -180,6 +185,107 @@ std::vector<uint8_t> hexDecode(const std::string& hex) {
     out.push_back(static_cast<uint8_t>((hi << 4) | lo));
   }
   return out;
+}
+
+std::string signHex(const Key32& sk, const uint8_t* msg, size_t len) {
+  Key32 aux{};
+  randomBytes(aux.data(), aux.size());
+  return hexEncode(schnorrSign(msg, len, sk, aux));
+}
+
+bool verifyHex(const Key32& pubkey, const uint8_t* msg, size_t len, const std::string& sigHex) {
+  const std::vector<uint8_t> raw = hexDecode(sigHex);
+  if (raw.size() != 64) return false;
+  Sig64 sig{};
+  std::copy(raw.begin(), raw.end(), sig.begin());
+  return schnorrVerify(msg, len, pubkey, sig);
+}
+
+P256::~P256() {
+  if (key_) EVP_PKEY_free(static_cast<EVP_PKEY*>(key_));
+}
+
+std::unique_ptr<P256> P256::generate() {
+  auto out = std::unique_ptr<P256>(new P256());
+  EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr);
+  if (!ctx) return nullptr;
+  EVP_PKEY* key = nullptr;
+  if (EVP_PKEY_keygen_init(ctx) <= 0) {
+    EVP_PKEY_CTX_free(ctx);
+    return nullptr;
+  }
+  EVP_PKEY_CTX_set_group_name(ctx, "prime256v1");
+  const int ok = EVP_PKEY_keygen(ctx, &key);
+  EVP_PKEY_CTX_free(ctx);
+  if (ok <= 0 || !key) return nullptr;
+  out->key_ = key;
+  return out;
+}
+
+std::string P256::spkiBase64() const {
+  if (!key_) return "";
+  unsigned char* der = nullptr;
+  const int len = i2d_PUBKEY(static_cast<EVP_PKEY*>(key_), &der);
+  if (len <= 0 || !der) return "";
+  std::string b64 = base64Encode(der, static_cast<size_t>(len));
+  OPENSSL_free(der);
+  return b64;
+}
+
+std::string P256::signBase64(const uint8_t* msg, size_t len) const {
+  if (!key_) return "";
+  EVP_MD_CTX* md = EVP_MD_CTX_new();
+  size_t sigLen = 0;
+  std::vector<uint8_t> der;
+  if (EVP_DigestSignInit(md, nullptr, EVP_sha256(), nullptr, static_cast<EVP_PKEY*>(key_)) <= 0 ||
+      EVP_DigestSign(md, nullptr, &sigLen, msg, len) <= 0) {
+    EVP_MD_CTX_free(md);
+    return "";
+  }
+  der.resize(sigLen);
+  if (EVP_DigestSign(md, der.data(), &sigLen, msg, len) <= 0) {
+    EVP_MD_CTX_free(md);
+    return "";
+  }
+  EVP_MD_CTX_free(md);
+  der.resize(sigLen);
+  // DER -> raw r||s (WebCrypto's ECDSA signature format).
+  const unsigned char* p = der.data();
+  ECDSA_SIG* es = d2i_ECDSA_SIG(nullptr, &p, static_cast<long>(der.size()));
+  if (!es) return "";
+  const BIGNUM* r = nullptr;
+  const BIGNUM* s = nullptr;
+  ECDSA_SIG_get0(es, &r, &s);
+  uint8_t raw[64];
+  BN_bn2binpad(r, raw, 32);
+  BN_bn2binpad(s, raw + 32, 32);
+  ECDSA_SIG_free(es);
+  return base64Encode(raw, sizeof(raw));
+}
+
+bool p256VerifySpki(const std::string& spkiDer, const uint8_t* msg, size_t len,
+                    const uint8_t rawSig[64]) {
+  const unsigned char* p = reinterpret_cast<const unsigned char*>(spkiDer.data());
+  EVP_PKEY* key = d2i_PUBKEY(nullptr, &p, static_cast<long>(spkiDer.size()));
+  if (!key) return false;
+  ECDSA_SIG* es = ECDSA_SIG_new();
+  BIGNUM* r = BN_bin2bn(rawSig, 32, nullptr);
+  BIGNUM* s = BN_bin2bn(rawSig + 32, 32, nullptr);
+  ECDSA_SIG_set0(es, r, s);
+  unsigned char* der = nullptr;
+  const int derLen = i2d_ECDSA_SIG(es, &der);
+  ECDSA_SIG_free(es);
+  bool ok = false;
+  if (derLen > 0) {
+    EVP_MD_CTX* md = EVP_MD_CTX_new();
+    if (EVP_DigestVerifyInit(md, nullptr, EVP_sha256(), nullptr, key) > 0) {
+      ok = EVP_DigestVerify(md, der, static_cast<size_t>(derLen), msg, len) == 1;
+    }
+    EVP_MD_CTX_free(md);
+    OPENSSL_free(der);
+  }
+  EVP_PKEY_free(key);
+  return ok;
 }
 
 bool validSecretKey(const Key32& sk) {

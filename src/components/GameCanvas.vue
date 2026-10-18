@@ -62,24 +62,20 @@ async function rebuild(): Promise<void> {
   building = token;
   const gen = ++buildGen;
   try {
-    const def = await loadLevel(key);
     // A multiplayer match (browser host or guest) replaces whatever ran
     // before: close the previous session, keeping the result frames flowing
     // for a moment when the match just ended.
     const previous = instance;
     const grace = previous && (previous.finished || previous.result) ? 1200 : 0;
     const joinIntent = mp.consumeJoin();
-    // A room this browser created and is opening right now: consume the intent
-    // before the old session is torn down (it must not clear the new room).
-    const hostIntent = store.route === 'game' ? mp.consumeHostIntent() : null;
-    mp.endSession(grace, !!hostIntent);
-    // With a game server configured the C++ side owns the match: the client
-    // renders its frames and streams the player's input. A missing or dead
-    // server falls back to the local simulation on the same level.
     let gi: GameInstance | null = null;
     if (joinIntent) {
+      // A guest loads nothing: the host's Scene frame carries the map, the
+      // model table, teams and decor, and the snapshots carry every object.
+      // The level file is never fetched on this page.
+      mp.endSession(grace, false);
       try {
-        gi = await NetGame.openTransport(renderer, rc, joinIntent.transport, def.key);
+        gi = await NetGame.openTransport(renderer, rc, joinIntent.transport, joinIntent.room.game);
       } catch (e) {
         // A guest whose room is gone must not silently fall back to a local
         // match: leave the dead connection and return to the room list.
@@ -89,18 +85,28 @@ async function rebuild(): Promise<void> {
         void router.replace('/multiplayer');
         return;
       }
-    }
-    const wsUrl = gi ? null : resolveGameWsUrl();
-    if (wsUrl) {
-      try {
-        gi = await NetGame.open(renderer, rc, wsUrl, def.key);
-      } catch (e) {
-        console.warn('[net] game server unavailable, running the local simulation:', e);
+    } else {
+      const def = await loadLevel(key);
+      // A room this browser created and is opening right now: consume the
+      // intent before the old session is torn down (it must not clear the
+      // new room).
+      const hostIntent = store.route === 'game' ? mp.consumeHostIntent() : null;
+      mp.endSession(grace, !!hostIntent);
+      // With a game server configured the C++ side owns the match: the client
+      // renders its frames and streams the player's input. A missing or dead
+      // server falls back to the local simulation on the same level.
+      const wsUrl = resolveGameWsUrl();
+      if (wsUrl) {
+        try {
+          gi = await NetGame.open(renderer, rc, wsUrl, def.key);
+        } catch (e) {
+          console.warn('[net] game server unavailable, running the local simulation:', e);
+        }
       }
+      if (!gi) gi = await GameInstance.create(renderer, rc, def, store.levelText);
+      // A room this browser created and is now opening: become its host.
+      if (!(gi instanceof NetGame) && hostIntent) mp.attachHost(gi);
     }
-    if (!gi) gi = await GameInstance.create(renderer, rc, def, store.levelText);
-    // A room this browser created and is now opening: become its host.
-    if (!(gi instanceof NetGame) && hostIntent) mp.attachHost(gi);
     // Stale-build drop: a newer rebuild started while we were loading.
     if (gen !== buildGen) {
       if (gi instanceof NetGame) gi.dispose();

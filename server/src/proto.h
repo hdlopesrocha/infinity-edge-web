@@ -37,6 +37,7 @@ enum MsgType : uint16_t {
   Input = 111,
   Leave = 112,
   Ping = 113,
+  Auth = 120,  // pre-join host authentication (multiplayer, JSON payload)
   // Both.
   Error = 0xffff,
 };

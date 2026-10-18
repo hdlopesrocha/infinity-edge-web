@@ -3,27 +3,31 @@ import type { RouteRecordRaw } from 'vue-router';
 import { syncSceneState } from '../game/store';
 import { restoreTrail } from '../game/trail';
 
+// Every menu route renders through MenuView (the WebGL menu host); the match
+// keeps GameView (HUD) and the lobby keeps MultiplayerView.
+const menu = () => import('../views/MenuView.vue');
+
 const routes: RouteRecordRaw[] = [
-  { path: '/', name: 'boot', component: () => import('../views/BootView.vue') },
-  { path: '/engine', name: 'engine', component: () => import('../views/BootView.vue') },
-  { path: '/start', name: 'start', component: () => import('../views/BootView.vue') },
-  { path: '/menu', name: 'menu', component: () => import('../views/MainMenuView.vue') },
+  { path: '/', name: 'boot', component: menu },
+  { path: '/engine', name: 'engine', component: menu },
+  { path: '/start', name: 'start', component: menu },
+  { path: '/menu', name: 'menu', component: menu },
   { path: '/multiplayer', name: 'multiplayer', component: () => import('../views/MultiplayerView.vue') },
-  { path: '/single-player', name: 'single', component: () => import('../views/SinglePlayerView.vue') },
-  { path: '/ctf', name: 'ctf', component: () => import('../views/CtfMenuView.vue') },
-  { path: '/tt', name: 'tt', component: () => import('../views/TimeTrialMenuView.vue') },
-  { path: '/kots', name: 'kots', component: () => import('../views/ModeMenuView.vue') },
-  { path: '/survival', name: 'survival', component: () => import('../views/ModeMenuView.vue') },
-  { path: '/tt/:diff', name: 'tracks', component: () => import('../views/TracksView.vue') },
-  { path: '/briefing/:level', name: 'briefing', component: () => import('../views/BriefingView.vue') },
+  { path: '/single-player', name: 'single', component: menu },
+  { path: '/ctf', name: 'ctf', component: menu },
+  { path: '/tt', name: 'tt', component: menu },
+  { path: '/kots', name: 'kots', component: menu },
+  { path: '/survival', name: 'survival', component: menu },
+  { path: '/tt/:diff', name: 'tracks', component: menu },
+  { path: '/briefing/:level', name: 'briefing', component: menu },
   { path: '/game/:level', name: 'game', component: () => import('../views/GameView.vue') },
-  { path: '/hangar', name: 'hangar', component: () => import('../views/HangarView.vue') },
-  { path: '/options', name: 'options', component: () => import('../views/OptionsView.vue') },
+  { path: '/hangar', name: 'hangar', component: menu },
+  { path: '/options', name: 'options', component: menu },
   { path: '/settings', redirect: '/options' },
-  { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
-  { path: '/victory/:level', name: 'victory', component: () => import('../views/ResultView.vue') },
-  { path: '/defeat/:level', name: 'defeat', component: () => import('../views/ResultView.vue') },
-  { path: '/:pathMatch(.*)*', name: 'notfound', component: () => import('../views/NotFoundView.vue') },
+  { path: '/about', name: 'about', component: menu },
+  { path: '/victory/:level', name: 'victory', component: menu },
+  { path: '/defeat/:level', name: 'defeat', component: menu },
+  { path: '/:pathMatch(.*)*', name: 'notfound', component: menu },
 ];
 
 export const router = createRouter({

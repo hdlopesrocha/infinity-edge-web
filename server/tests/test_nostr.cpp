@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "../src/crypto.h"
 #include "../src/nostr.h"
 #include "../src/nostr_crypto.h"
 
@@ -234,6 +235,41 @@ int main() {
       if (t.size() >= 2 && t[0] == "a") aTag = t[1];
     }
     check(aTag == "30333:" + pub + ":0123456789abcdef01234567", "deletion a tag");
+
+    // Host certificate + answer/auth payloads (must match mp/cert.ts).
+    auto p256 = ie::nostr::P256::generate();
+    check(p256 != nullptr, "p256 keygen");
+    ie::nostr::HostCert cert;
+    cert.key = p256->spkiBase64();
+    cert.created = now;
+    cert.expires = now + 3600;
+    check(cert.key.size() > 100, "cert spki");
+    const std::string certMsg = ie::nostr::certPayload("0123456789abcdef01234567", pub, cert);
+    cert.sig = ie::nostr::signHex(sk, reinterpret_cast<const uint8_t*>(certMsg.data()), certMsg.size());
+    check(ie::nostr::verifyHex(ie::nostr::pubkeyOf(sk), reinterpret_cast<const uint8_t*>(certMsg.data()),
+                               certMsg.size(), cert.sig), "cert signature");
+    const std::string answerMsg = ie::nostr::answerPayload(
+        "0123456789abcdef01234567", pub, "guestpub", "v=0\r\n");
+    const std::string answerSig = p256->signBase64(
+        reinterpret_cast<const uint8_t*>(answerMsg.data()), answerMsg.size());
+    auto verifyP256 = [&](const std::string& msg, const std::string& sigB64) {
+      const std::vector<uint8_t> raw = ie::base64Decode(sigB64);
+      const std::vector<uint8_t> spki = ie::base64Decode(cert.key);
+      if (raw.size() != 64 || spki.empty()) return false;
+      const std::string der(spki.begin(), spki.end());
+      return ie::nostr::p256VerifySpki(
+          der, reinterpret_cast<const uint8_t*>(msg.data()), msg.size(), raw.data());
+    };
+    check(verifyP256(answerMsg, answerSig), "answer signature verifies");
+    std::string tamperedAnswer = answerMsg;
+    tamperedAnswer[0] ^= 1;
+    check(!verifyP256(tamperedAnswer, answerSig), "tampered answer rejected");
+    const std::string authMsg = ie::nostr::authPayload(
+        "0123456789abcdef01234567", pub, "guestpub", "0123456789abcdef0123456789abcdef");
+    const std::string authSig = ie::nostr::signHex(sk, reinterpret_cast<const uint8_t*>(authMsg.data()),
+                                                   authMsg.size());
+    check(ie::nostr::verifyHex(ie::nostr::pubkeyOf(sk), reinterpret_cast<const uint8_t*>(authMsg.data()),
+                               authMsg.size(), authSig), "channel auth signature");
 
     // Signalling: addressed to the host, parsed only by the host.
     ie::nostr::Signal sig;

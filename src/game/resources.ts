@@ -25,6 +25,29 @@ export interface Options {
   axisY: boolean;
 }
 
+/**
+ * `?username=<name>` (in the search string or the hash query) sets the player
+ * name and saves it, so a link can pre-configure the pilot.
+ */
+export function parseUsernameParam(search: string, hash: string): string | null {
+  try {
+    const q = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+    const fromSearch = new URLSearchParams(search).get('username');
+    const fromHash = q ? new URLSearchParams(q).get('username') : null;
+    const raw = (fromSearch ?? fromHash ?? '').trim();
+    if (!raw) return null;
+    const clean = raw.slice(0, 12).replace(/[\r\n"<>]/g, '');
+    return clean || null;
+  } catch {
+    return null;
+  }
+}
+
+function urlUsername(): string | null {
+  if (typeof window === 'undefined') return null;
+  return parseUsernameParam(window.location.search, window.location.hash);
+}
+
 export function defaultOptions(): Options {
   return {
     username: 'Infinity Fan', wireframe: false, detail: 2, distance: 192,
@@ -45,6 +68,16 @@ const OPTIONS_KEY = 'options.ie3d';
 const OPTIONS_VERSION = '1.0.1';
 
 export function loadOptions(): Options {
+  const o = loadOptionsStored();
+  const fromUrl = urlUsername();
+  if (fromUrl && fromUrl !== o.username) {
+    o.username = fromUrl;
+    saveOptions(o);
+  }
+  return o;
+}
+
+function loadOptionsStored(): Options {
   const d = defaultOptions();
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);

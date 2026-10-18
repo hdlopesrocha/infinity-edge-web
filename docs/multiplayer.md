@@ -153,6 +153,41 @@ Testing hooks: `POST /mp/finish` ends the current round immediately (used by
 the e2e); `--auto-finish <seconds>` does the same on a timer. Both are safe to
 leave unused in production.
 
+## Host identity and channel authentication
+
+A room is signed by its creator's Nostr key, so relays cannot forge or alter
+it. On top of that the client enforces two bindings before it even sends a
+`Join`:
+
+1. **Room certificate.** When creating a room the host generates an ephemeral
+   **P-256** key pair and publishes a certificate with the room: the SPKI
+   public key, `created`/`expires`, and a **BIP-340 signature by the room's
+   Nostr key** over `ie3d-mp-cert-v1|room|host|created|expires|key`. The host
+   signs every **answer SDP** (which carries the DTLS fingerprint) with the
+   certificate key:
+   `ie3d-mp-answer-v1|room|from|to|sha256(sdp)`. A guest refuses to negotiate
+   with an answer whose certificate signature does not verify — another client
+   or a relay cannot substitute its own WebRTC endpoint. This is implemented
+   identically in the browser host (`src/game/mp/cert.ts`) and in the C++
+   server (`server/src/nostr_crypto.*`, `server/src/dedicated.cpp`), so the
+   same guest checks work against both.
+2. **Channel challenge.** Immediately after the data channel opens, the guest
+   sends a random 16-byte nonce (`GameMsg.Auth`). Only a peer holding the
+   room's Nostr secret key can answer with a valid signature over
+   `ie3d-mp-auth-v1|room|hostPubkey|guestPubkey|nonce`. The guest verifies it
+   with the room author's public key; on failure the transport is closed and
+   the lobby shows "host authentication failed". Game traffic (Join, Input)
+   is refused until this succeeds, and the host binds the challenge to the
+   pubkey that sent the signed offer.
+
+Together: the room key authenticates the *control plane* (rooms, signalling)
+and the certificate authenticates the *media endpoint* (the SDP/DTLS
+fingerprint), while the challenge proves the peer actually holds the room key.
+A client that does not know the host's key cannot answer the challenge or
+produce a room certificate — attempts are rejected in `verifyHostCert`,
+`verifyAnswer` and `verifyAuth` (see `tests/mp-cert.test.ts`, including forged
+certificates, a swapped DTLS fingerprint and a rogue-key auth signature).
+
 ## Configuration
 
 - Relays: `?mp=wss://relay.example` (comma separated), then

@@ -21,6 +21,9 @@ class Json {
   explicit Json(bool b) : type_(Type::Bool), bool_(b) {}
   explicit Json(double n) : type_(Type::Number), num_(n) {}
   explicit Json(const std::string& s) : type_(Type::String), str_(s) {}
+  // String literals must build strings, not bools (a const char* converts to
+  // bool by a standard conversion, which would win over std::string).
+  explicit Json(const char* s) : type_(Type::String), str_(s ? s : "") {}
   explicit Json(std::vector<Json> a) : type_(Type::Array), arr_(std::move(a)) {}
 
   static Json object() {

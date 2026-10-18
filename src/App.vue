@@ -32,7 +32,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', onFullscr
       <RouterView :key="route.fullPath" />
     </div>
     <button
-      v-if="route.name !== 'multiplayer'"
+      v-if="route.name === 'game'"
       class="fs-btn"
       type="button"
       :aria-label="fullscreen ? 'exit fullscreen' : 'fullscreen'"

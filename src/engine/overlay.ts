@@ -9,6 +9,18 @@
 const MAX_W = 2560;
 const MAX_H = 1600;
 
+let uiVersionCounter = 0;
+
+/**
+ * Monotonic UI version. The overlay repaints only when it changes, and the
+ * counter is global: a freshly mounted screen (a new MenuUi/LobbyUi instance)
+ * must be strictly newer than whatever the overlay painted last, otherwise its
+ * first paint would be skipped and the screen would stay blank.
+ */
+export function nextUiVersion(): number {
+  return ++uiVersionCounter;
+}
+
 /** A full-screen UI layer painted into the frame (the multiplayer lobby). */
 export interface ScreenUi {
   /** Bump whenever the content changes: only then is it repainted/uploaded. */

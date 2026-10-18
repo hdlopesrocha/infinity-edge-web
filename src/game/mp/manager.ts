@@ -18,6 +18,13 @@ import type { NostrEvent, RoomContent, RoomInfo, SignalCandidate, SignalMessage 
 import { RelayPool } from '../nostr/relay';
 import { bytesToHex, hexToBytes, randomBytes, schnorrPubkey, validSecretKey } from '../nostr/crypto';
 import { npubEncode } from '../nostr/bech32';
+import { decodeMessage, encodeMessage, textDecoder, textEncoder } from '../net';
+import { GameMsg } from '../protocol';
+import {
+  createHostCert, importCertKey, newNonce, signAnswer, signAuth, verifyAnswer, verifyAuth,
+  verifyHostCert,
+} from './cert';
+import type { HostCert } from '../nostr/event';
 import { rtcTransport } from './transport';
 import type { GameTransport } from './transport';
 import { HostSession } from './host';
@@ -339,6 +346,9 @@ export class Multiplayer {
     if (!ok) throw new Error(this.error || 'no relay reachable');
     this.endSession();
     const id = newRoomId();
+    const bundle = await createHostCert(id, this.pubkey, this.sk);
+    this.hostCert = bundle.cert;
+    this.hostCertKey = bundle.privateKey;
     const content: RoomContent = {
       v: 1,
       game: opts.game,
@@ -349,6 +359,7 @@ export class Multiplayer {
       max: Math.max(2, Math.min(16, opts.maxPlayers)),
       ice: this.config.iceServers,
       created: Math.floor(Date.now() / 1000),
+      cert: bundle.cert,
     };
     const room = await this.publishRoom(id, content);
     this.hostingRoom = room;
@@ -384,6 +395,7 @@ export class Multiplayer {
         max: this.hostingRoom.maxPlayers,
         ice: this.config.iceServers,
         created: this.hostingRoom.created,
+        cert: this.hostCert ?? undefined,
       };
       this.hostingRoom = await this.publishRoom(this.hostingRoom.id, content);
       this.emit();
@@ -424,7 +436,7 @@ export class Multiplayer {
       this.emit();
     };
     for (const pending of this.pendingChannels.splice(0)) {
-      this.addGuestChannel(pending.pubkey, pending.name, pending.transport);
+      this.attachGuest(pending.pubkey, pending.name, pending.transport);
     }
     this.emit();
   }
@@ -474,8 +486,11 @@ export class Multiplayer {
       this.emit();
       return;
     }
+    this.links.clear();
     this.sigSub?.();
     this.sigSub = null;
+    this.hostCert = null;
+    this.hostCertKey = null;
     const room = this.hostingRoom;
     this.hostingRoom = null;
     this.hostIntent = null;
@@ -497,6 +512,12 @@ export class Multiplayer {
   get sessionActive(): boolean {
     return this.session !== null;
   }
+
+  /** The room certificate published with our room (null when not hosting). */
+  hostCert: HostCert | null = null;
+  private hostCertKey: CryptoKey | null = null;
+  /** Per-peer links until the channel challenge is answered. */
+  private links = new Map<string, { name: string; transport: GameTransport; authed: boolean }>();
 
   /** Diagnostics (console / e2e): the hosted session's guests. */
   debugGuests(): Record<string, unknown>[] {
@@ -602,8 +623,15 @@ export class Multiplayer {
         try { await peer.pc.addIceCandidate(cand as RTCIceCandidateInit); } catch { /* ignore */ }
       }
       peer.answerSent = true;
+      const answerSdp = peer.pc.localDescription?.sdp ?? '';
+      // Sign the answer SDP (it carries the DTLS fingerprint) with the room
+      // certificate's key: the guest refuses answers it cannot verify.
+      const answerSig = this.hostCert && this.hostCertKey
+        ? await signAnswer(this.hostCertKey, roomId, this.pubkey, pubkey, answerSdp)
+        : undefined;
+      trace('host.answerSigned', { len: answerSig?.length ?? 0 });
       const out = finalizeEvent(
-        signalTemplate(roomId, pubkey, { kind: 'answer', sdp: peer.pc.localDescription?.sdp ?? '' }),
+        signalTemplate(roomId, pubkey, { kind: 'answer', sdp: answerSdp, sig: answerSig }),
         this.sk,
       );
       await this.pool.publish(out);
@@ -613,16 +641,56 @@ export class Multiplayer {
   }
 
   private addGuestChannel(pubkey: string, name: string, transport: GameTransport): void {
+    // The channel stays closed to game traffic until it answers the host
+    // challenge: only then is it a guest the session may talk to.
+    this.links.set(pubkey, { name, transport, authed: false });
+    transport.onclose = () => this.dropPeer(pubkey);
+    transport.onmessage = (data) => void this.onGuestFrame(pubkey, data);
+  }
+
+  private async onGuestFrame(pubkey: string, data: ArrayBuffer | Uint8Array): Promise<void> {
+    const link = this.links.get(pubkey);
+    if (!link) return;
+    let frame;
+    try {
+      frame = await decodeMessage(data);
+    } catch {
+      return;
+    }
+    if (!link.authed) {
+      if (frame.type !== GameMsg.Auth) return;
+      try {
+        const req = JSON.parse(textDecoder.decode(frame.payload)) as {
+          t?: string; pubkey?: string; nonce?: string;
+        };
+        if (req.t !== 'auth-request' || req.pubkey !== pubkey || !req.nonce) return;
+        if (!this.hostingRoom) return;
+        const sig = signAuth(this.sk, this.hostingRoom.id, this.pubkey, pubkey, req.nonce);
+        const ack = textEncoder.encode(JSON.stringify({
+          t: 'auth-ok', host: this.pubkey, nonce: req.nonce, sig,
+        }));
+        link.transport.send(encodeMessage(GameMsg.Auth, ack));
+        link.authed = true;
+        trace('host.authOk', { guest: pubkey.slice(0, 8) });
+        this.attachGuest(pubkey, link.name, link.transport);
+      } catch { /* malformed request: leave the link unauthenticated */ }
+      return;
+    }
+  }
+
+  private attachGuest(pubkey: string, name: string, transport: GameTransport): void {
     if (!this.session) {
       this.pendingChannels.push({ pubkey, name, transport });
       return;
     }
     const id = this.session.addGuest({ pubkey, name, transport });
+    this.links.set(pubkey, { name, transport, authed: true });
     transport.onmessage = (data) => void this.session?.handleFrame(id, data);
     transport.onclose = () => this.dropPeer(pubkey);
   }
 
   private dropPeer(pubkey: string): void {
+    this.links.delete(pubkey);
     const peer = this.hostPeers.get(pubkey);
     if (peer) {
       try { peer.pc.close(); } catch { /* already closed */ }
@@ -652,6 +720,18 @@ export class Multiplayer {
     if (!this.pool) throw new Error('no relay');
     this.cancelJoin();
     this.error = '';
+    // Host certificate: the room key must vouch for the WebRTC identity.
+    let certKey: CryptoKey | null = null;
+    if (room.cert) {
+      if (!(await verifyHostCert(room.id, room.hostPubkey, room.cert))) {
+        throw new Error('room certificate does not verify');
+      }
+      try {
+        certKey = await importCertKey(room.cert);
+      } catch {
+        throw new Error('room certificate key is invalid');
+      }
+    }
     this.status = 'connecting to ' + room.host + '…';
     this.emit();
     const pc = new RTCPeerConnection(iceConfig(room.ice.length ? room.ice : this.config.iceServers));
@@ -666,7 +746,13 @@ export class Multiplayer {
       const msg = signalFromEvent(evt, this.pubkey, roomId);
       if (!msg) return;
       if (msg.kind === 'answer' && msg.sdp) {
-        void pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp }).catch(() => undefined);
+        void (async () => {
+          if (certKey && !(await verifyAnswer(certKey, roomId, room.hostPubkey, this.pubkey, msg.sdp!, msg.sig ?? ''))) {
+            trace('joinRoom.answerRejected', 'certificate signature');
+            return; // unsigned/forged answer: never negotiate with it
+          }
+          await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp }).catch(() => undefined);
+        })();
       } else if (msg.kind === 'ice') {
         for (const cand of msg.candidates ?? []) {
           void pc.addIceCandidate(cand as RTCIceCandidateInit).catch(() => undefined);
@@ -713,9 +799,39 @@ export class Multiplayer {
         clearTimeout(timer);
         reject(e);
       };
+      // Host authentication: prove the peer holds the room's Nostr key before
+      // any game data flows. Only the host can sign our nonce.
+      let nonce = '';
+      const sendAuthRequest = (): void => {
+        nonce = newNonce();
+        const payload = textEncoder.encode(JSON.stringify({ t: 'auth-request', pubkey: this.pubkey, nonce }));
+        transport.send(encodeMessage(GameMsg.Auth, payload));
+      };
+      transport.onmessage = (data) => {
+        void (async () => {
+          try {
+            const frame = await decodeMessage(data);
+            if (frame.type !== GameMsg.Auth) return;
+            const msg = JSON.parse(textDecoder.decode(frame.payload)) as {
+              t?: string; host?: string; nonce?: string; sig?: string; reason?: string;
+            };
+            if (msg.t !== 'auth-ok' || msg.nonce !== nonce
+                || !verifyAuth(room.hostPubkey, roomId, this.pubkey, nonce, msg.sig ?? '')) {
+              trace('joinRoom.authFailed', msg.reason ?? 'bad signature');
+              this.joinReject?.(new Error('host authentication failed'));
+              return;
+            }
+            trace('joinRoom.authOk', null);
+            transport.onmessage = null;
+            this.joinResolve?.(transport);
+          } catch {
+            this.joinReject?.(new Error('host authentication failed'));
+          }
+        })();
+      };
       channel.onopen = () => {
         trace('joinRoom.channelOpen', null);
-        this.joinResolve?.(transport);
+        sendAuthRequest();
       };
       channel.onclose = () => {
         this.joinReject?.(new Error('connection closed'));
@@ -724,7 +840,7 @@ export class Multiplayer {
         const st = pc.connectionState;
         if (st === 'failed') this.joinReject?.(new Error('connection failed'));
       };
-      if (channel.readyState === 'open') this.joinResolve?.(transport);
+      if (channel.readyState === 'open') sendAuthRequest();
     }).catch((e: unknown) => {
       trace('joinRoom.failed', String((e as Error).message));
       this.deadRooms.set(room.hostPubkey + ':' + room.id, Date.now());

@@ -108,10 +108,23 @@ export interface RoomInfo {
   updated: number;
   /** ICE servers the host wants guests to use. */
   ice: string[];
+  /** The host's pinned WebRTC certificate (absent on legacy hosts). */
+  cert: HostCert | null;
   /** Event id of the current revision (deletion reference). */
   eventId: string;
   /** The signed event this record came from (kept for verification). */
   raw?: NostrEvent;
+}
+
+/** Host WebRTC certificate: an ephemeral P-256 key bound to the room's Nostr
+ *  identity (see mp/cert.ts). Guests pin it for the room's lifetime. */
+export interface HostCert {
+  /** Base64 SPKI of the host's P-256 public key. */
+  key: string;
+  created: number;
+  expires: number;
+  /** BIP-340 signature by the room's Nostr key over the certificate payload. */
+  sig: string;
 }
 
 export interface RoomContent {
@@ -124,6 +137,7 @@ export interface RoomContent {
   max: number;
   ice: string[];
   created: number;
+  cert?: HostCert;
 }
 
 /** Random room id (96 bits, lowercase hex). */
@@ -190,6 +204,14 @@ export function roomFromEvent(evt: NostrEvent): RoomInfo | null {
     created: Number(content.created) || evt.created_at,
     updated: evt.created_at,
     ice: Array.isArray(content.ice) && content.ice.length > 0 ? content.ice.map(String) : [],
+    cert: content.cert && typeof content.cert === 'object' && typeof content.cert.key === 'string'
+      ? {
+          key: content.cert.key,
+          created: Number(content.cert.created) || 0,
+          expires: Number(content.cert.expires) || 0,
+          sig: String(content.cert.sig ?? ''),
+        }
+      : null,
     eventId: evt.id,
     raw: evt,
   };
@@ -213,6 +235,8 @@ export interface SignalMessage {
   candidates?: SignalCandidate[];
   /** Guest nickname, on offers (the host shows it in its guest list). */
   name?: string;
+  /** Host certificate signature, on answers (mp/cert.ts). */
+  sig?: string;
 }
 
 export function signalTemplate(roomId: string, toPubkey: string, msg: Omit<SignalMessage, 'v' | 'room' | 'to'>): EventTemplate {

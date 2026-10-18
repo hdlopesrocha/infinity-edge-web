@@ -76,4 +76,26 @@ std::string base64Encode(const uint8_t* data, size_t len) {
   return out;
 }
 
+std::vector<uint8_t> base64Decode(const std::string& text) {
+  static const char* kTable = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  int map[256];
+  for (int i = 0; i < 256; i++) map[i] = -1;
+  for (int i = 0; i < 64; i++) map[static_cast<unsigned char>(kTable[i])] = i;
+  std::vector<uint8_t> out;
+  int acc = 0;
+  int bits = 0;
+  for (char c : text) {
+    if (c == '=' || c == '\n' || c == '\r') continue;
+    const int v = map[static_cast<unsigned char>(c)];
+    if (v < 0) return {};
+    acc = (acc << 6) | v;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push_back(static_cast<uint8_t>((acc >> bits) & 0xff));
+    }
+  }
+  return out;
+}
+
 }  // namespace ie

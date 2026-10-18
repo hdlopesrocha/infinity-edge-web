@@ -66,8 +66,9 @@ composition; the compiled XNB is exact. It is kept only for reference.
 | URL | Original |
 |---|---|
 | `#/` → `#/engine` → `#/start` | EngineScreen (wheel + logo, 3 s) → StartScreen (logo, 3 s) → MainMenu. Both boot screens show the Floating-Gear loading bar while every model, texture and level is preloaded; the sequence only advances to the menu once that finishes |
-| `#/menu` | MainMenu (SINGLE PLAYER / MULTIPLAYER / OPTIONS / ABOUT) |
+| `#/menu` | MainMenu (SINGLE PLAYER / HANGAR / OPTIONS / ABOUT / MULTIPLAYER) |
 | `#/multiplayer` | Public rooms on Nostr + "create a room" — the whole view is painted into the WebGL frame (`src/game/mp/lobbyui.ts`), no HTML |
+| `?username=<name>` | sets and saves the pilot name (search string or hash query), e.g. `#/menu?username=Bob` |
 | `#/single-player` | CTF / TIME TRIAL |
 | `#/ctf`, `#/tt`, `#/tt/{easy,normal,hard}` | Difficulty menus; TT lists Track 01.. / Demo Track |
 | `#/briefing/:level` | Level Menu.xml: scoreBoard (10 rows) + briefing textBox + "start" |
@@ -79,6 +80,13 @@ composition; the compiled XNB is exact. It is kept only for reference.
 
 Back/forward and deep links work; the WebGL context persists across routes —
 only the scene description swaps (menus share the Background.xml scene).
+
+**Every menu screen is WebGL UI** (`src/game/ui/menuui.ts` + `screens.ts`): the
+routes above render no DOM at all — panels, the original icon/button art,
+sliders, checkboxes, text fields, score tables, the breadcrumb and the corner
+buttons are painted into the frame (the same overlay the multiplayer lobby
+uses), with a `_menubtn`-plated list, watermarked track menus and the
+Floating-Gear boot splash. Only the in-match HUD stays DOM-based.
 
 ## WebSocket asset channel (optional)
 
@@ -129,6 +137,11 @@ the C++ server sends, so guests run the same render-only `NetGame` client.
   player of its own; guests only send input and render the frames. libdatachannel
   is fetched at configure time; `/mp/status` reports the room, and the same
   guest client works against a browser host or the dedicated server.
+- **Host identity**: a room certificate (ephemeral P-256 key signed by the
+  room's Nostr key) signs every WebRTC answer SDP, and the data channel starts
+  with a signed challenge-response — a guest refuses to negotiate or join a
+  peer that cannot prove it holds the room key, so other clients cannot
+  impersonate the host (browser and C++ server implement the same checks).
 - Room/IPC/signalling details, configuration and the e2e tooling are documented
   in `docs/multiplayer.md`.
 
@@ -162,6 +175,14 @@ join times out (15 s) — the page falls back to the original local
 single-player simulation. `ie-server` also serves a directory over HTTP
 (`--root`, default `public`), so a single port carries both the client and the
 game channel. `npm run server:test` runs the simulation unit tests.
+
+## Music
+
+Options → CONTROLS & DATA → **Music File** opens a file picker (`*.mp3`, and
+audio files generally) and the chosen track becomes the looping soundtrack;
+the pick is stored in IndexedDB and survives reloads, and **Reset Music**
+returns to the shipped `sound.mp3`. The default soundtrack starts immediately
+while the stored file loads in the background.
 
 ## Controls
 
@@ -233,11 +254,13 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - `src/game/hud.ts` — shared HUD snapshot (frame loop and WebXR session).
 - `src/game/xr.ts` — WebXR immersive session driver.
 - `src/game/vr.ts` — VR state, gyro + drag-look fallback, calibration.
-- `src/components/`, `src/views/`, `src/router/` — canvas host, GenericMenu
-  shell (from Import/GenericMenu.xml values), HUD (scoreboard, aim, pointers,
-  life bar, touch controls), 12 views, hash router.
-- `src/ui/scene-xml.ts` — scene XML parser producing UI trees + refs
-  (background/body/buttonSkin/font/textures/models/scoreBoard/options/about).
+- `src/components/`, `src/views/`, `src/router/` — canvas host, the in-match
+  HUD (scoreboard, aim, pointers, life bar, touch controls), the WebGL menu
+  host (`MenuView.vue`), the multiplayer lobby view, and the hash router.
+- `src/ui/scene-xml.ts` — the original scene-XML parser (background/body/
+  buttonSkin/font/scoreBoard/… trees). The menus are WebGL UI now
+  (`src/game/ui/`), so it is kept as the reference parser for the converted
+  37_T XML rather than driving the rendered screens.
 - `src/game/net.ts`, `src/game/netclient.ts`, `src/game/assetfetch.ts` — binary
   framing + gzip, the optional WebSocket channel (reconnect/timeout/fallback),
   and the asset fetch front-end used by the level and model loaders.
@@ -312,6 +335,11 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - CTF Easy: 12v11 objects (10v9 ships + bases/flags), 8000 asteroids,
   30 s of AI combat without errors, respawns, doors closed.
 - Menus, briefing text, options, about, tracks all render from converted data.
+- All menus are WebGL UI: a driven browser run through `#/menu` →
+  single player → CTF → briefing → options (checkbox toggles, slider drag,
+  save → localStorage) → about reports **one canvas, zero DOM controls**, the
+  original icon/`_menubtn` art drawn into the frame, `?username=` setting and
+  saving the pilot name, and breadcrumb/back/primary corners.
 - Options screen matches SS8: right-aligned labels with a shared right edge,
   192 px black `_pixel` bars with `_ball` knobs and value text, black square
   checks with a white ball when set, `Clear All` at 90 % of the right list.

@@ -113,11 +113,24 @@ try {
       const key = room.hostPubkey + ':' + room.id;
       await until(() => R().uiOverlay.regions.some((x) => x.id === 'join:' + key));
       clickRegion('join:' + key);
-      await until(() => location.hash.includes('/game/'), 90000);
-      const g = await until(() => {
-        const inst = window.__ieGame;
-        return inst && typeof inst.rtt === 'number' && inst.selectedObject ? inst : null;
-      }, 120000);
+      try {
+        await until(() => location.hash.includes('/game/'), 90000);
+      } catch {
+        return { failed: 'navigate', error: mp.error, status: mp.status,
+          pending: !!mp.pendingJoin, joining: R().uiOverlay ? R().uiOverlay.joining : null,
+          trace: window.__ieMPTrace ? window.__ieMPTrace() : [] };
+      }
+      let g = null;
+      try {
+        g = await until(() => {
+          const inst = window.__ieGame;
+          return inst && typeof inst.rtt === 'number' && inst.selectedObject ? inst : null;
+        }, 120000);
+      } catch {
+        return { failed: 'netgame', hash: location.hash,
+          game: window.__ieGame ? window.__ieGame.constructor.name + ':' + window.__ieGame.gameType : null,
+          trace: window.__ieMPTrace ? window.__ieMPTrace() : [] };
+      }
       return {
         hash: location.hash, host: room.host, roomTitle: room.title,
         isNet: typeof g.rtt === 'number', levelKey: g.levelKey,

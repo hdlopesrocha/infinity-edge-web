@@ -9,6 +9,7 @@ import { CTF_LEVELS, KOTS_LEVELS, SURV_LEVELS, TT_GROUPS } from '../levels';
 import { MAX_AGE_CHOICES, mp } from './manager';
 import type { Multiplayer } from './manager';
 import type { RoomInfo } from '../nostr/event';
+import { nextUiVersion } from '../../engine/overlay';
 import type { ScreenUi } from '../../engine/overlay';
 
 export interface LobbyHooks {
@@ -72,7 +73,7 @@ interface Region {
 }
 
 export class LobbyUi implements ScreenUi {
-  version = 1;
+  version = nextUiVersion();
   /** Join progress, shown as a modal line (null = idle). */
   joining: string | null = null;
   /** Bumped from outside whenever the manager changes. */
@@ -98,7 +99,7 @@ export class LobbyUi implements ScreenUi {
 
   /** Called on any external state change (manager notify, hover, …). */
   bump(): void {
-    this.version++;
+    this.version = nextUiVersion();
   }
 
   // -------------------------------------------------------------- painting

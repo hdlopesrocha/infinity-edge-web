@@ -51,12 +51,6 @@ std::string tagValue(const Event& evt, const std::string& name) {
   return "";
 }
 
-std::string jsonNumber(double v) {
-  char buf[40];
-  std::snprintf(buf, sizeof(buf), "%.10g", v);
-  return buf;
-}
-
 }  // namespace
 
 std::string Event::toJson() const {
@@ -116,6 +110,23 @@ Event signEvent(int kind, std::vector<std::vector<std::string>> tags, const std:
   return evt;
 }
 
+std::string certPayload(const std::string& roomId, const std::string& hostPubkey,
+                        const HostCert& cert) {
+  return "ie3d-mp-cert-v1|" + roomId + "|" + hostPubkey + "|" + std::to_string(cert.created) + "|" +
+         std::to_string(cert.expires) + "|" + cert.key;
+}
+
+std::string answerPayload(const std::string& roomId, const std::string& from,
+                          const std::string& to, const std::string& sdp) {
+  return "ie3d-mp-answer-v1|" + roomId + "|" + from + "|" + to + "|" +
+         hexEncode(sha256(sdp));
+}
+
+std::string authPayload(const std::string& roomId, const std::string& hostPubkey,
+                        const std::string& guestPubkey, const std::string& nonce) {
+  return "ie3d-mp-auth-v1|" + roomId + "|" + hostPubkey + "|" + guestPubkey + "|" + nonce;
+}
+
 Event makeRoomEvent(const std::string& roomId, const RoomContent& content, int ttlSec,
                     const Key32& sk, int64_t now) {
   Json c = Json::object();
@@ -171,6 +182,7 @@ Event makeSignalEvent(const std::string& roomId, const std::string& toPubkey, co
     c.set("candidates", Json(std::move(items)));
   }
   if (!signal.name.empty()) c.set("name", Json(signal.name));
+  if (!signal.sig.empty()) c.set("sig", Json(signal.sig));
   std::vector<std::vector<std::string>> tags = {
       {"d", roomId},
       {"p", toPubkey},

@@ -151,6 +151,7 @@ void DedicatedRoom::publishRoom() {
   content.maxPlayers = cfg_.maxPlayers;
   content.ice = cfg_.iceServers;
   content.created = created_;
+  content.cert = cert_;
   const nostr::Event evt = nostr::makeRoomEvent(roomId_, content, kRoomTtlSec, key_, 0);
   relay_->publish(evt);
   std::printf("[mp] room %s \"%s\" (%s) published as %s\n", roomId_.c_str(),
@@ -183,10 +184,21 @@ bool DedicatedRoom::start(std::string* err) {
   created_ = std::chrono::duration_cast<std::chrono::seconds>(
                  std::chrono::system_clock::now().time_since_epoch())
                  .count();
+  roomId_ = hex12();
   // Warm the curve statics before any RTC thread can sign concurrently.
   (void)nostr::pubkeyOf(key_);
+  // Room certificate: an ephemeral P-256 key vouched for by the room's Nostr
+  // key (guests pin it and verify every answer SDP against it).
+  p256_ = nostr::P256::generate();
+  if (p256_) {
+    cert_.key = p256_->spkiBase64();
+    cert_.created = created_;
+    cert_.expires = created_ + 24 * 3600;
+    cert_.sig = nostr::signHex(
+        key_, reinterpret_cast<const uint8_t*>(nostr::certPayload(roomId_, pubkeyHex_, cert_).data()),
+        nostr::certPayload(roomId_, pubkeyHex_, cert_).size());
+  }
   if (!createMatch(err)) return false;
-  roomId_ = hex12();
   relay_ = std::make_unique<nostr::RelayPool>(cfg_.relays);
   relay_->start();
   // Wait (bounded) for at least one relay.
@@ -313,7 +325,14 @@ void DedicatedRoom::drainRtc(int64_t nowMs) {
         // The answer SDP (libdatachannel fired it on an RTC thread).
         const size_t nl = ev.text.find('\n');
         if (nl != std::string::npos && ev.text.substr(0, nl) == "answer") {
-          sendSignal(ev.pubkey, "answer", ev.text.substr(nl + 1), {});
+          const std::string sdp = ev.text.substr(nl + 1);
+          std::string signature;
+          if (p256_) {
+            const std::string payload = nostr::answerPayload(roomId_, pubkeyHex_, ev.pubkey, sdp);
+            signature = p256_->signBase64(reinterpret_cast<const uint8_t*>(payload.data()),
+                                          payload.size());
+          }
+          sendSignal(ev.pubkey, "answer", sdp, {}, signature);
           auto peer = peers_.find(ev.pubkey);
           if (peer != peers_.end()) peer->second.answered = true;
         }
@@ -337,11 +356,13 @@ void DedicatedRoom::drainRtc(int64_t nowMs) {
 
 void DedicatedRoom::sendSignal(const std::string& to, const std::string& kind,
                                const std::string& sdp,
-                               const std::vector<nostr::Candidate>& candidates) {
+                               const std::vector<nostr::Candidate>& candidates,
+                               const std::string& signature) {
   if (!relay_) return;
   nostr::Signal sig;
   sig.kind = kind;
   sig.sdp = sdp;
+  sig.sig = signature;
   sig.candidates = candidates;
   relay_->publish(nostr::makeSignalEvent(roomId_, to, sig, key_, 0));
 }
@@ -521,6 +542,41 @@ void DedicatedRoom::handleFrame(Guest& guest, const std::vector<uint8_t>& data) 
   }
   proto::Reader r(frame.payload.data(), frame.payload.size());
   try {
+    if (frame.type == proto::Auth) {
+      // Channel challenge: answer with a BIP-340 signature by the room key so
+      // only this host (never another client) can complete the handshake.
+      if (guest.authed) return;
+      std::string text(frame.payload.begin(), frame.payload.end());
+      Json req;
+      try {
+        req = Json::parse(text);
+      } catch (...) {
+        return;
+      }
+      if (req["t"].asString() != "auth-request") return;
+      if (req["pubkey"].asString() != guest.pubkey) return;
+      const std::string nonce = req["nonce"].asString();
+      if (nonce.empty()) return;
+      const std::string payload = nostr::authPayload(roomId_, pubkeyHex_, guest.pubkey, nonce);
+      const std::string sig = nostr::signHex(
+          key_, reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+      Json ack = Json::object();
+      ack.set("t", Json("auth-ok"));
+      ack.set("host", Json(pubkeyHex_));
+      ack.set("nonce", Json(nonce));
+      ack.set("sig", Json(sig));
+      const std::string body = ack.dump();
+      // Raw JSON payload (the client sends/reads the same, no str prefix).
+      sendFrame(guest, proto::Auth, std::vector<uint8_t>(body.begin(), body.end()));
+      guest.authed = true;
+      std::printf("[mp] guest %s authenticated\n", guest.pubkey.c_str());
+      std::fflush(stdout);
+      return;
+    }
+    if (frame.type == proto::Join && !guest.authed) {
+      sendError(guest, "authenticate first");
+      return;
+    }
     switch (frame.type) {
       case proto::Join: handleJoin(guest, r); break;
       case proto::Input: {
