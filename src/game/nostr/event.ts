@@ -110,6 +110,8 @@ export interface RoomInfo {
   ice: string[];
   /** Event id of the current revision (deletion reference). */
   eventId: string;
+  /** The signed event this record came from (kept for verification). */
+  raw?: NostrEvent;
 }
 
 export interface RoomContent {
@@ -152,6 +154,7 @@ export function deletionTemplate(room: { id: string; hostPubkey: string }): Even
     tags: [
       ['a', `${KIND_ROOM}:${room.hostPubkey}:${room.id}`],
       ['k', String(KIND_ROOM)],
+      ['t', TAG_ROOM],
     ],
     content: 'room closed',
   };
@@ -188,6 +191,7 @@ export function roomFromEvent(evt: NostrEvent): RoomInfo | null {
     updated: evt.created_at,
     ice: Array.isArray(content.ice) && content.ice.length > 0 ? content.ice.map(String) : [],
     eventId: evt.id,
+    raw: evt,
   };
 }
 
@@ -207,6 +211,8 @@ export interface SignalMessage {
   kind: 'offer' | 'answer' | 'ice' | 'bye';
   sdp?: string;
   candidates?: SignalCandidate[];
+  /** Guest nickname, on offers (the host shows it in its guest list). */
+  name?: string;
 }
 
 export function signalTemplate(roomId: string, toPubkey: string, msg: Omit<SignalMessage, 'v' | 'room' | 'to'>): EventTemplate {

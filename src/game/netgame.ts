@@ -30,14 +30,15 @@ import type { RewardType } from './team';
 import { SKY_HSB } from './config';
 import { smartAIRequested } from './ai';
 import { decodeMessage, encodeMessage } from './net';
+import { webSocketTransport } from './mp/transport';
+import type { GameTransport } from './mp/transport';
 import {
   decodeError, decodeEvents, decodeHud, decodePong, decodeResult, decodeScene, decodeSnapshot,
-  encodeInput, encodeJoin, encodeLeave, encodePing, GameMsg, NO_INDEX, SFX_NAMES, TICK_MS,
-  VOICE_FIELDS, WireAddon, WireFlag, WireKind, Reader,
+  encodeInput, encodeJoin, encodeLeave, encodePing, GAME_TYPE_ORDER, GameMsg, NO_INDEX, SFX_NAMES,
+  TICK_MS, VOICE_FIELDS, WireAddon, WireFlag, WireKind, Reader,
 } from './protocol';
 import type { InputState, NetEvent, NetHud, NetPose, NetScene, NetSnapshot, NetSpawn } from './protocol';
 
-const GAME_TYPES: GameType[] = ['CTF', 'TT', 'BACK', 'KOTS', 'SURV'];
 /** Scene models/textures the client needs besides the server's model table. */
 const SCENE_TEXTURES = [
   'flare1', 'flare2', 'hexagon', 'aim', 'over',
@@ -111,7 +112,7 @@ class Track {
 }
 
 export class NetGame extends GameInstance {
-  private ws: WebSocket | null = null;
+  private transport: GameTransport | null = null;
   /** Frames are processed strictly in arrival order (gunzip is async). */
   private chain: Promise<void> = Promise.resolve();
   private pendingReady: { resolve: () => void; reject: (e: Error) => void } | null = null;
@@ -145,10 +146,29 @@ export class NetGame extends GameInstance {
     super(renderer, rc);
   }
 
-  /** Connects, joins `levelKey` and resolves once the Scene frame is applied. */
+  /** Connects to a WebSocket server, joins `levelKey`, resolves on Scene. */
   static async open(renderer: Renderer, rc: RC, url: string, levelKey: string): Promise<NetGame> {
     const gi = new NetGame(renderer, rc);
-    await gi.connect(url, levelKey);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      throw e as Error;
+    }
+    await gi.connect(webSocketTransport(ws), levelKey);
+    return gi;
+  }
+
+  /**
+   * Same, over any prepared transport - the multiplayer mode hands in an open
+   * RTC data channel to the browser host instead of a WebSocket to the C++
+   * server. The wire frames are identical.
+   */
+  static async openTransport(
+    renderer: Renderer, rc: RC, transport: GameTransport, levelKey: string,
+  ): Promise<NetGame> {
+    const gi = new NetGame(renderer, rc);
+    await gi.connect(transport, levelKey);
     return gi;
   }
 
@@ -158,17 +178,17 @@ export class NetGame extends GameInstance {
   }
 
   // ------------------------------------------------------------ connection
-  private connect(url: string, levelKey: string): Promise<void> {
+  private connect(transport: GameTransport, levelKey: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      let ws: WebSocket;
-      try {
-        ws = new WebSocket(url);
-      } catch (e) {
-        reject(e as Error);
-        return;
-      }
-      ws.binaryType = 'arraybuffer';
-      this.ws = ws;
+      this.transport = transport;
+      const sendJoin = (): void => {
+        this.send(GameMsg.Join, encodeJoin(levelKey, {
+          smartAI: smartAIRequested(),
+          distance: this.rc.options.distance,
+          axisX: this.rc.options.axisX,
+          axisY: this.rc.options.axisY,
+        }));
+      };
       const timer = window.setTimeout(() => {
         this.failPending(new Error('timeout waiting for the Scene frame'));
         this.closeSocket();
@@ -187,16 +207,8 @@ export class NetGame extends GameInstance {
           reject(e);
         },
       };
-      ws.onopen = () => {
-        this.send(GameMsg.Join, encodeJoin(levelKey, {
-          smartAI: smartAIRequested(),
-          distance: this.rc.options.distance,
-          axisX: this.rc.options.axisX,
-          axisY: this.rc.options.axisY,
-        }));
-      };
-      ws.onmessage = (ev) => {
-        const data = ev.data as ArrayBuffer;
+      transport.onopen = () => sendJoin();
+      transport.onmessage = (data) => {
         this.chain = this.chain
           .then(() => this.onRaw(data))
           .catch((e: unknown) => {
@@ -204,25 +216,24 @@ export class NetGame extends GameInstance {
             this.failPending(e as Error);
           });
       };
-      ws.onclose = () => this.onClose();
+      transport.onclose = () => this.onClose();
+      if (transport.open) sendJoin();
     });
   }
 
-  /** Leaves the match and closes the socket (scene switches, unmount). */
+  /** Leaves the match and closes the link (scene switches, unmount). */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     window.clearInterval(this.beatTimer);
-    const ws = this.ws;
-    this.ws = null;
-    if (ws) {
+    const t = this.transport;
+    this.transport = null;
+    if (t) {
       try {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(encodeMessage(GameMsg.Leave, encodeLeave()));
-        }
+        if (t.open) t.send(encodeMessage(GameMsg.Leave, encodeLeave()));
       } catch { /* already closing */ }
       try {
-        ws.close();
+        t.close();
       } catch { /* already closed */ }
     }
     this.failPending(new Error('disposed'));
@@ -231,11 +242,11 @@ export class NetGame extends GameInstance {
   }
 
   private closeSocket(): void {
-    const ws = this.ws;
-    this.ws = null;
-    if (ws) {
+    const t = this.transport;
+    this.transport = null;
+    if (t) {
       try {
-        ws.close();
+        t.close();
       } catch { /* already closed */ }
     }
   }
@@ -248,7 +259,7 @@ export class NetGame extends GameInstance {
 
   private onClose(): void {
     window.clearInterval(this.beatTimer);
-    this.ws = null;
+    this.transport = null;
     if (this.pendingReady) {
       this.failPending(new Error('game server closed the connection'));
       return;
@@ -261,10 +272,10 @@ export class NetGame extends GameInstance {
   }
 
   private send(type: number, payload: Uint8Array): void {
-    const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const t = this.transport;
+    if (!t || !t.open) return;
     try {
-      ws.send(encodeMessage(type, payload));
+      t.send(encodeMessage(type, payload));
     } catch { /* closing */ }
   }
 
@@ -287,7 +298,7 @@ export class NetGame extends GameInstance {
   }
 
   // -------------------------------------------------------------- inbound
-  private async onRaw(data: ArrayBuffer): Promise<void> {
+  private async onRaw(data: ArrayBuffer | Uint8Array): Promise<void> {
     const frame = await decodeMessage(data);
     const r = new Reader(frame.payload);
     switch (frame.type) {
@@ -348,7 +359,7 @@ export class NetGame extends GameInstance {
     this.levelKey = s.levelKey;
     this.levelTitle = s.title;
     this.levelText = s.text;
-    this.gameType = GAME_TYPES[s.gameType] ?? 'BACK';
+    this.gameType = (GAME_TYPE_ORDER[s.gameType] as GameType | undefined) ?? 'BACK';
     this.matchTimeMs = s.matchTimeMs;
     this.playerId = s.playerId;
     // The server owns the simulation; the client's map is a render container.
