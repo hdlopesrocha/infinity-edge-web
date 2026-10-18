@@ -53,7 +53,7 @@ function ccwAgreement(
 }
 
 const files = existsSync(MODELS)
-  ? readdirSync(MODELS).filter((f) => f.endsWith('.json') && f !== 'MANIFEST.json')
+  ? readdirSync(MODELS).filter((f) => f.endsWith('.json') && f !== 'MANIFEST.json' && f !== 'SIM.json')
   : [];
 
 describe('converted model assets', () => {
