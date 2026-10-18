@@ -1,0 +1,676 @@
+{
+  "generator": "tools/convert-xnb.mjs",
+  "models": {
+    "AddonHomingMissile.json": {
+      "source": "Objects/AddonHomingMissile/model0.xnb",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "red"
+      ],
+      "bytes": {
+        "json": 7990
+      },
+      "bounds": {
+        "center": [
+          -0.03,
+          -0.02,
+          0.05
+        ],
+        "radius": 2.47
+      },
+      "zRange": [
+        -1.97,
+        1.97
+      ]
+    },
+    "AddonNitro.json": {
+      "source": "Objects/AddonNitro/model0.xnb",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "orange"
+      ],
+      "bytes": {
+        "json": 8016
+      },
+      "bounds": {
+        "center": [
+          -0.03,
+          -0.02,
+          0.05
+        ],
+        "radius": 2.47
+      },
+      "zRange": [
+        -1.97,
+        1.97
+      ]
+    },
+    "AddonRepair.json": {
+      "source": "Objects/AddonRepair/model0.xnb",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "green"
+      ],
+      "bytes": {
+        "json": 7995
+      },
+      "bounds": {
+        "center": [
+          -0.03,
+          -0.02,
+          0.05
+        ],
+        "radius": 2.47
+      },
+      "zRange": [
+        -1.97,
+        1.97
+      ]
+    },
+    "AddonShield.json": {
+      "source": "Objects/AddonShield/model0.xnb",
+      "meshes": 1,
+      "triangles": 192,
+      "materials": [
+        "blue"
+      ],
+      "bytes": {
+        "json": 8011
+      },
+      "bounds": {
+        "center": [
+          -0.03,
+          -0.02,
+          0.05
+        ],
+        "radius": 2.47
+      },
+      "zRange": [
+        -1.97,
+        1.97
+      ]
+    },
+    "Ark.json": {
+      "source": "Objects/Ark/model0.xnb",
+      "meshes": 1,
+      "triangles": 1000,
+      "materials": [
+        "obj1_0"
+      ],
+      "bytes": {
+        "json": 38826
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 16.75
+      },
+      "zRange": [
+        -2.67,
+        2.67
+      ]
+    },
+    "Asteroid1.json": {
+      "source": "Objects/Asteroid1/model0.xnb",
+      "meshes": 1,
+      "triangles": 4000,
+      "materials": [
+        "Asteroid Strike"
+      ],
+      "bytes": {
+        "json": 157757
+      },
+      "bounds": {
+        "center": [
+          0,
+          -1.37,
+          -0.45
+        ],
+        "radius": 5.91
+      },
+      "zRange": [
+        -4.72,
+        5.23
+      ]
+    },
+    "Asteroid1_lod1.json": {
+      "source": "Objects/Asteroid1/model1.xnb",
+      "meshes": 1,
+      "triangles": 1024,
+      "materials": [
+        "Asteroid Strike"
+      ],
+      "bytes": {
+        "json": 39612
+      },
+      "bounds": {
+        "center": [
+          0.14,
+          -1.4,
+          -0.5
+        ],
+        "radius": 5.97
+      },
+      "zRange": [
+        -4.72,
+        5.22
+      ]
+    },
+    "Asteroid1_lod2.json": {
+      "source": "Objects/Asteroid1/model2.xnb",
+      "meshes": 1,
+      "triangles": 256,
+      "materials": [
+        "Asteroid Strike"
+      ],
+      "bytes": {
+        "json": 10387
+      },
+      "bounds": {
+        "center": [
+          0.14,
+          -1.4,
+          -0.5
+        ],
+        "radius": 5.97
+      },
+      "zRange": [
+        -4.72,
+        5.22
+      ]
+    },
+    "Asteroid1_lod3.json": {
+      "source": "Objects/Asteroid1/model3.xnb",
+      "meshes": 1,
+      "triangles": 64,
+      "materials": [
+        "Asteroid Strike"
+      ],
+      "bytes": {
+        "json": 3205
+      },
+      "bounds": {
+        "center": [
+          0.69,
+          -1.64,
+          -0.61
+        ],
+        "radius": 5.97
+      },
+      "zRange": [
+        -4.72,
+        4.96
+      ]
+    },
+    "Asteroid2.json": {
+      "source": "Objects/Asteroid2/model0.xnb",
+      "meshes": 1,
+      "triangles": 4000,
+      "materials": [
+        "Asteroid Strike2"
+      ],
+      "bytes": {
+        "json": 252237
+      },
+      "bounds": {
+        "center": [
+          -0.42,
+          0.98,
+          -3.02
+        ],
+        "radius": 8.63
+      },
+      "zRange": [
+        -9.62,
+        3.95
+      ]
+    },
+    "Asteroid2_lod1.json": {
+      "source": "Objects/Asteroid2/model1.xnb",
+      "meshes": 1,
+      "triangles": 1024,
+      "materials": [
+        "Asteroid Strike2"
+      ],
+      "bytes": {
+        "json": 81237
+      },
+      "bounds": {
+        "center": [
+          -0.29,
+          0.94,
+          -3.12
+        ],
+        "radius": 8.7
+      },
+      "zRange": [
+        -9.62,
+        3.89
+      ]
+    },
+    "Asteroid2_lod2.json": {
+      "source": "Objects/Asteroid2/model2.xnb",
+      "meshes": 1,
+      "triangles": 256,
+      "materials": [
+        "Asteroid Strike2"
+      ],
+      "bytes": {
+        "json": 27891
+      },
+      "bounds": {
+        "center": [
+          -0.03,
+          1.18,
+          -3.35
+        ],
+        "radius": 8.97
+      },
+      "zRange": [
+        -9.52,
+        3.6
+      ]
+    },
+    "Asteroid2_lod3.json": {
+      "source": "Objects/Asteroid2/model3.xnb",
+      "meshes": 1,
+      "triangles": 64,
+      "materials": [
+        "Asteroid Strike2"
+      ],
+      "bytes": {
+        "json": 9007
+      },
+      "bounds": {
+        "center": [
+          -0.19,
+          1.21,
+          -2.84
+        ],
+        "radius": 8.14
+      },
+      "zRange": [
+        -9.14,
+        3.6
+      ]
+    },
+    "Asteroid3.json": {
+      "source": "Objects/Asteroid3/model0.xnb",
+      "meshes": 1,
+      "triangles": 4000,
+      "materials": [
+        "Ice Texture"
+      ],
+      "bytes": {
+        "json": 657199
+      },
+      "bounds": {
+        "center": [
+          0.41,
+          1.33,
+          2.46
+        ],
+        "radius": 6.82
+      },
+      "zRange": [
+        -3.81,
+        7.26
+      ]
+    },
+    "Asteroid3_lod1.json": {
+      "source": "Objects/Asteroid3/model1.xnb",
+      "meshes": 1,
+      "triangles": 1024,
+      "materials": [
+        "Ice Texture"
+      ],
+      "bytes": {
+        "json": 167499
+      },
+      "bounds": {
+        "center": [
+          1.01,
+          1.08,
+          2.08
+        ],
+        "radius": 7.27
+      },
+      "zRange": [
+        -3.81,
+        7.26
+      ]
+    },
+    "Asteroid3_lod2.json": {
+      "source": "Objects/Asteroid3/model2.xnb",
+      "meshes": 1,
+      "triangles": 256,
+      "materials": [
+        "Ice Texture"
+      ],
+      "bytes": {
+        "json": 41773
+      },
+      "bounds": {
+        "center": [
+          1.2,
+          1.21,
+          1.99
+        ],
+        "radius": 7.03
+      },
+      "zRange": [
+        -3.81,
+        7.26
+      ]
+    },
+    "Asteroid3_lod3.json": {
+      "source": "Objects/Asteroid3/model3.xnb",
+      "meshes": 1,
+      "triangles": 64,
+      "materials": [
+        "Ice Texture"
+      ],
+      "bytes": {
+        "json": 10841
+      },
+      "bounds": {
+        "center": [
+          -0.13,
+          3.35,
+          1.45
+        ],
+        "radius": 6.42
+      },
+      "zRange": [
+        -3.81,
+        6.47
+      ]
+    },
+    "Asteroid4.json": {
+      "source": "Objects/Asteroid4/model0.xnb",
+      "meshes": 1,
+      "triangles": 1024,
+      "materials": [
+        "Lava Texture"
+      ],
+      "bytes": {
+        "json": 109070
+      },
+      "bounds": {
+        "center": [
+          0.01,
+          0.25,
+          -0.15
+        ],
+        "radius": 8.83
+      },
+      "zRange": [
+        -8.13,
+        7.49
+      ]
+    },
+    "Asteroid4_lod1.json": {
+      "source": "Objects/Asteroid4/model1.xnb",
+      "meshes": 1,
+      "triangles": 512,
+      "materials": [
+        "Lava Texture"
+      ],
+      "bytes": {
+        "json": 60189
+      },
+      "bounds": {
+        "center": [
+          0.01,
+          0.25,
+          -0.15
+        ],
+        "radius": 8.83
+      },
+      "zRange": [
+        -7.99,
+        7.49
+      ]
+    },
+    "Asteroid4_lod2.json": {
+      "source": "Objects/Asteroid4/model2.xnb",
+      "meshes": 1,
+      "triangles": 256,
+      "materials": [
+        "Lava Texture"
+      ],
+      "bytes": {
+        "json": 33057
+      },
+      "bounds": {
+        "center": [
+          0.01,
+          0.25,
+          -0.15
+        ],
+        "radius": 8.83
+      },
+      "zRange": [
+        -7.99,
+        7.49
+      ]
+    },
+    "Asteroid4_lod3.json": {
+      "source": "Objects/Asteroid4/model3.xnb",
+      "meshes": 1,
+      "triangles": 128,
+      "materials": [
+        "Lava Texture"
+      ],
+      "bytes": {
+        "json": 18157
+      },
+      "bounds": {
+        "center": [
+          0.28,
+          -0.03,
+          -0.26
+        ],
+        "radius": 9
+      },
+      "zRange": [
+        -7.98,
+        7.49
+      ]
+    },
+    "Base_color.json": {
+      "source": "Objects/Base/color0.xnb",
+      "meshes": 1,
+      "triangles": 2556,
+      "materials": [
+        "hexagon"
+      ],
+      "bytes": {
+        "json": 376321
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 12.7
+      },
+      "zRange": [
+        -12.59,
+        12.59
+      ]
+    },
+    "Bullet.json": {
+      "source": "Objects/Bullet/model0.xnb",
+      "meshes": 1,
+      "triangles": 128,
+      "materials": [
+        "Capsule01_0"
+      ],
+      "bytes": {
+        "json": 10634
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 0.27
+      },
+      "zRange": [
+        -0.27,
+        0.27
+      ]
+    },
+    "Fighter3.json": {
+      "source": "Objects/Fighter3/model0.xnb",
+      "meshes": 16,
+      "triangles": 934,
+      "materials": [
+        "metal2",
+        "ID188_0",
+        "ID158_1",
+        "glass",
+        "metal"
+      ],
+      "bytes": {
+        "json": 73072
+      },
+      "bounds": {
+        "center": [
+          0.02,
+          -0.06,
+          -0.38
+        ],
+        "radius": 1.45
+      },
+      "zRange": [
+        -1.03,
+        1.03
+      ]
+    },
+    "Flag.json": {
+      "source": "Objects/Flag/model0.xnb",
+      "meshes": 8,
+      "triangles": 208,
+      "materials": [
+        "metal"
+      ],
+      "bytes": {
+        "json": 19463
+      },
+      "bounds": {
+        "center": [
+          0.25,
+          -0.08,
+          -0.63
+        ],
+        "radius": 3.25
+      },
+      "zRange": [
+        -1.5,
+        1.5
+      ]
+    },
+    "Flag_color.json": {
+      "source": "Objects/Flag/color0.xnb",
+      "meshes": 1,
+      "triangles": 238,
+      "materials": [
+        "Sphere01_0"
+      ],
+      "bytes": {
+        "json": 10100
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 1.3
+      },
+      "zRange": [
+        -1.29,
+        1.27
+      ]
+    },
+    "HomingMissile2.json": {
+      "source": "Objects/HomingMissile2/model0.xnb",
+      "meshes": 1,
+      "triangles": 109,
+      "materials": [
+        "homing"
+      ],
+      "bytes": {
+        "json": 4981
+      },
+      "bounds": {
+        "center": [
+          0.09,
+          0.01,
+          -0.14
+        ],
+        "radius": 1.2
+      },
+      "zRange": [
+        -0.96,
+        0.96
+      ]
+    },
+    "Sky1.json": {
+      "source": "Objects/Sky1/model0.xnb",
+      "meshes": 1,
+      "triangles": 224,
+      "materials": [
+        "sphere"
+      ],
+      "bytes": {
+        "json": 9351
+      },
+      "bounds": {
+        "center": [
+          0,
+          0,
+          0
+        ],
+        "radius": 76.46
+      },
+      "zRange": [
+        -76.46,
+        76.46
+      ]
+    },
+    "Wheel.json": {
+      "source": "Objects/Wheel/model0.xnb",
+      "meshes": 2,
+      "triangles": 288,
+      "materials": [
+        "metal"
+      ],
+      "bytes": {
+        "json": 27442
+      },
+      "bounds": {
+        "center": [
+          0,
+          0.05,
+          0
+        ],
+        "radius": 0.51
+      },
+      "zRange": [
+        -0.49,
+        0.49
+      ]
+    }
+  }
+}

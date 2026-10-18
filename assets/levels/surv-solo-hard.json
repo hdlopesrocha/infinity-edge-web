@@ -1,0 +1,193 @@
+{
+ "source": "Web/Survival/Solo/Hard/Level.xml",
+ "description": {
+  "type": "SURV",
+  "name": "Survival \u2014 Solo",
+  "save": "SURV_S_H.svg",
+  "sky": "Sky3",
+  "size": 2048,
+  "text": ""
+ },
+ "imports": [],
+ "objects": [
+  {
+   "team": "ambient",
+   "type": "asteroid",
+   "model": "Asteroid2",
+   "position": "400|200|-500",
+   "name": "A1"
+  },
+  {
+   "team": "ambient",
+   "type": "asteroid",
+   "model": "Asteroid3",
+   "position": "-500|-300|400",
+   "name": "A2"
+  },
+  {
+   "team": "ambient",
+   "type": "asteroid",
+   "model": "Asteroid1",
+   "position": "600|-600|-200",
+   "name": "A3"
+  },
+  {
+   "team": "ambient",
+   "type": "miniStar",
+   "model": "",
+   "position": "random",
+   "amount": 6000
+  },
+  {
+   "team": "ambient",
+   "type": "cloud",
+   "model": "",
+   "position": "random",
+   "amount": 700
+  },
+  {
+   "team": "human",
+   "type": "base",
+   "model": "Base",
+   "position": "400|400|400"
+  },
+  {
+   "team": "human",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "HS1",
+   "life": "100|100|100"
+  },
+  {
+   "team": "falcon",
+   "type": "base",
+   "model": "Base",
+   "position": "-400|400|-400"
+  },
+  {
+   "team": "falcon",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "FA1",
+   "life": "100|100|100"
+  },
+  {
+   "team": "viper",
+   "type": "base",
+   "model": "Base",
+   "position": "400|-400|-400"
+  },
+  {
+   "team": "viper",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "VI1",
+   "life": "100|100|100"
+  },
+  {
+   "team": "raptor",
+   "type": "base",
+   "model": "Base",
+   "position": "-400|-400|400"
+  },
+  {
+   "team": "raptor",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "RA1",
+   "life": "100|100|100"
+  },
+  {
+   "team": "comet",
+   "type": "base",
+   "model": "Base",
+   "position": "400|-400|400"
+  },
+  {
+   "team": "comet",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "CO1",
+   "life": "100|100|100"
+  },
+  {
+   "team": "nova",
+   "type": "base",
+   "model": "Base",
+   "position": "-400|400|400"
+  },
+  {
+   "team": "nova",
+   "type": "spaceShipRespawn",
+   "model": "Fighter3",
+   "position": "around",
+   "name": "NO1",
+   "life": "100|100|100"
+  }
+ ],
+ "camara": {
+  "name": "LookAtObject",
+  "value": "HS1"
+ },
+ "actions": [
+  {
+   "name": "HILocal",
+   "from": "HS1"
+  },
+  {
+   "name": "AIHunt",
+   "from": "FA1"
+  },
+  {
+   "name": "AIGoRandomOffensive",
+   "from": "VI1"
+  },
+  {
+   "name": "AIHunt",
+   "from": "RA1"
+  },
+  {
+   "name": "AIGoRandomOffensive",
+   "from": "CO1"
+  },
+  {
+   "name": "AIHunt",
+   "from": "NO1"
+  }
+ ],
+ "goals": [
+  {
+   "reward": "Victory",
+   "message": "You are the last one standing!",
+   "goals": [
+    {
+     "name": "MoreTime",
+     "value": "00:05:00"
+    },
+    {
+     "name": "MoreKills"
+    }
+   ]
+  },
+  {
+   "reward": "Defeat",
+   "message": "Outgunned.",
+   "goals": [
+    {
+     "name": "MoreTime",
+     "value": "00:05:00"
+    }
+   ]
+  }
+ ],
+ "menuText": "Five minutes of free fire: destroy as many ships as you can. Your ship respawns, your score does not. Team or solo.",
+ "scoreBoard": {
+  "type": "SURV",
+  "save": "SURV_S_H.svg"
+ }
+}
