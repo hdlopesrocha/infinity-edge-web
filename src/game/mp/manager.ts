@@ -549,6 +549,9 @@ export class Multiplayer {
     if ((this.session?.guestCount ?? 0) >= this.hostingRoom.maxPlayers - 1) {
       return; // room is full: no answer, the guest times out
     }
+    if (this.hostPeers.size >= this.hostingRoom.maxPlayers) {
+      return; // hardening: cap half-open handshakes as well
+    }
     const peer: HostPeer = {
       pc: new RTCPeerConnection(iceConfig(this.hostingRoom.ice.length ? this.hostingRoom.ice : this.config.iceServers)),
       name: msg.name || 'Pilot',
@@ -586,6 +589,11 @@ export class Multiplayer {
       const st = peer.pc.connectionState;
       if (st === 'failed' || st === 'closed') this.dropPeer(pubkey);
     };
+    // A handshake that never opens a channel must not linger forever.
+    setTimeout(() => {
+      const current = this.hostPeers.get(pubkey);
+      if (current === peer && !current.channel) this.dropPeer(pubkey);
+    }, 30000);
     try {
       await peer.pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
       const answer = await peer.pc.createAnswer();

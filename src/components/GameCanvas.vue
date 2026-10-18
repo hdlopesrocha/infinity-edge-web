@@ -81,7 +81,13 @@ async function rebuild(): Promise<void> {
       try {
         gi = await NetGame.openTransport(renderer, rc, joinIntent.transport, def.key);
       } catch (e) {
-        console.warn('[mp] joining the room failed, running the local simulation:', e);
+        // A guest whose room is gone must not silently fall back to a local
+        // match: leave the dead connection and return to the room list.
+        console.warn('[mp] joining the room failed:', e);
+        mp.leaveGuest();
+        try { joinIntent.transport.close(); } catch { /* already closed */ }
+        void router.replace('/multiplayer');
+        return;
       }
     }
     const wsUrl = gi ? null : resolveGameWsUrl();
