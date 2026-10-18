@@ -39,6 +39,10 @@ bool readFile(const std::string& path, std::vector<uint8_t>* out, std::string* e
 
 }  // namespace
 
+std::atomic<bool> GameServer::stopFlag_{false};
+
+void GameServer::requestStop() { stopFlag_ = true; }
+
 GameServer::GameServer(ServerConfig cfg) : cfg_(std::move(cfg)) {}
 
 GameServer::~GameServer() = default;
@@ -57,6 +61,20 @@ void GameServer::logLine(const std::string& line) {
 }
 
 bool GameServer::serveStatic(WsServer::ConnId conn, const HttpRequest& req) {
+  if (req.path == "/mp/finish" && req.method == "POST") {
+    const std::string body = room_ ? "{\"ok\":true}" : "{\"ok\":false}";
+    if (room_) room_->requestFinish();
+    ws_.sendHttp(conn, 200, "OK", "application/json",
+                 std::vector<uint8_t>(body.begin(), body.end()));
+    return true;
+  }
+  if (req.path == "/mp/status") {
+    // Diagnostics for the dedicated room (ops/e2e): room id, players, relays.
+    const std::string body = room_ ? room_->statusJson() : "{\"room\":null}";
+    ws_.sendHttp(conn, 200, "OK", "application/json",
+                 std::vector<uint8_t>(body.begin(), body.end()));
+    return true;
+  }
   if (req.method != "GET" && req.method != "HEAD") {
     const std::string body = "405 method not allowed\n";
     ws_.sendHttp(conn, 405, "Method Not Allowed", "text/plain; charset=utf-8",
@@ -125,9 +143,35 @@ bool GameServer::run(std::string* err) {
   if (!ws_.listen(cfg_.host, cfg_.port, err)) return false;
   logLine("listening on http://" + cfg_.host + ":" + std::to_string(cfg_.port) +
           "  (websocket: ws://" + cfg_.host + ":" + std::to_string(cfg_.port) + cfg_.wsPath + ")");
+  if (cfg_.dedicated) {
+    DedicatedConfig dc;
+    dc.levelKey = cfg_.roomLevel;
+    dc.name = cfg_.roomName;
+    dc.maxPlayers = cfg_.roomMax;
+    dc.relays = cfg_.nostrRelays;
+    dc.iceServers = cfg_.iceServers;
+    dc.keyFile = cfg_.nostrKeyFile;
+    dc.keyHex = cfg_.nostrKeyHex;
+    dc.seed = cfg_.seed;
+    dc.autoFinishSec = cfg_.roomAutoFinishSec;
+    room_ = std::make_unique<DedicatedRoom>(std::move(dc), &models_, &levels_);
+    if (!room_->start(err)) {
+      std::string message = *err;
+      room_.reset();
+      *err = "dedicated room: " + message;
+      return false;
+    }
+    logLine("dedicated room: " + room_->roomId() + "  (status: /mp/status)");
+  }
   ws_.run(kTickMs, [this](int64_t nowMs) {
     for (auto& kv : sessions_) kv.second->tick(nowMs);
+    if (room_) room_->tick(nowMs);
+    if (stopFlag_) {
+      if (room_) room_->shutdown();
+      ws_.stop();
+    }
   });
+  if (room_) room_->shutdown();
   return true;
 }
 

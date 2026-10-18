@@ -1,5 +1,6 @@
 // One match, one WebSocket connection: decodes Join/Input/Ping, drives the
-// server Game at a fixed tick and encodes Scene/Snapshot/Events/Hud/Result.
+// server Game at a fixed tick and streams it through MatchStream (the same
+// encoder the dedicated multiplayer room uses for its guests).
 //
 // Wire layouts are documented in docs/protocol.md ("Game channel") and mirrored
 // by src/game/protocol.ts on the client. Everything is binary; proto::encodeFrame
@@ -7,12 +8,11 @@
 #pragma once
 
 #include <cstdint>
-#include <map>
 #include <memory>
-#include <set>
 #include <string>
 #include <vector>
 
+#include "match.h"
 #include "proto.h"
 #include "sim.h"
 #include "ws.h"
@@ -51,22 +51,9 @@ class Session {
   void handleJoin(proto::Reader& r);
   void handleInput(proto::Reader& r);
   void sendError(const std::string& message);
-  void sendFrame(uint16_t type, const proto::Writer& w);
-
-  void sendScene();
-  void sendSnapshot();
-  void sendEvents();
-  void sendHud();
-  void sendResult();
+  void sendFrame(uint16_t type, const std::vector<uint8_t>& payload);
   void sendPong(uint32_t id);
-
-  uint32_t idOf(Abstract3D* obj);
-  bool isDynamic(Abstract3D* obj) const;
-  uint16_t modelIndexOf(const ModelData* m) const;
-  uint16_t teamIndexOf(Team* t) const;
-  void writeSpawn(proto::Writer& w, Abstract3D* obj);
-  void writePose(proto::Writer& w, Abstract3D* obj);
-  void writeTransform(proto::Writer& w, const Vec3& pos, const Quat& rot, float scale);
+  void sendEvents();
 
   WsServer::ConnId conn_;
   WsServer* srv_;
@@ -75,20 +62,13 @@ class Session {
   uint32_t seed_;
 
   std::unique_ptr<Game> game_;
+  std::unique_ptr<MatchStream> stream_;
+  PlayerView view_;
+  TickEvents tickEvents_;
   SessionOptions options_;
 
-  uint32_t nextId_ = 1;
-  uint32_t tick_ = 0;
-  uint32_t explosionSeed_ = 0;
-  bool sceneSent_ = false;
   bool resultSent_ = false;
   bool leaving_ = false;
-
-  std::map<const Abstract3D*, uint32_t> ids_;
-  std::set<uint32_t> liveIds_;
-  std::map<const ModelData*, uint16_t> modelIndex_;
-  std::vector<const ModelData*> modelList_;
-  std::vector<Team*> teamList_;
 };
 
 }  // namespace ie

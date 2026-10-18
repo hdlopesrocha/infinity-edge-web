@@ -535,6 +535,18 @@ struct ExplosionOpts {
 };
 void spawnExplosion(Game& gi, const Vec3& pos, float scale, const ExplosionOpts& opts = {});
 
+/**
+ * Dedicated multiplayer hooks: when installed, player-scoped sounds and voices
+ * are routed per ship instead of the single-player queues (the room maps a
+ * ship to its guest's stream). With no hooks the single-player behaviour is
+ * exactly the original one.
+ */
+struct PlayerHooks {
+  std::function<void(SpaceObject*, const std::string&, float volume, float pan)> shipSfx;
+  std::function<void(SpaceObject*, const std::string&)> shipNotification;
+  std::function<void(SpaceObject*)> explosionSfx;
+};
+
 /** Player input (mirror of the client Control fields the simulation reads). */
 struct PlayerInput {
   float stickX = 0;
@@ -630,6 +642,8 @@ class Game {
   float startCountdownMs = 5000;
   std::string deathCause;
   std::string nextDeathCause;
+  /** How each ship died (the dedicated room reports it per guest ship). */
+  std::map<SpaceObject*, std::string> deathCauses;
   bool resultSet = false;
   bool resultWon = false;
   std::string resultReward;
@@ -648,11 +662,20 @@ class Game {
   bool axisY = false;
   /** `?ai=smart` (Join flag): upgrade AI ships before the match starts. */
   bool smartAI = false;
+  /** Dedicated room hooks (null in the single-player WebSocket session). */
+  PlayerHooks* hooks = nullptr;
 
   bool create(const Level& def);
   void update(float dtMs);
   void updateRegion(float dtMs);
   void setNotification(const std::string& voiceField);
+  /** Sfx heard by whoever flies `ship` (local player or a remote guest). */
+  void shipSfx(SpaceObject* ship, const std::string& name, float volume = 1, float pan = 0);
+  /** A voice line that belongs to whoever flies `ship` (HILocal warnings). */
+  void shipNotification(SpaceObject* ship, const std::string& field);
+  /** Distance sfx of a destroyed object, per viewpoint (hooks) or the
+   *  single selected player. */
+  void explosionSfx(SpaceObject* obj);
   void recordDeath(SpaceObject* victim, SpaceObject* attacker);
   Team* team(const std::string& name);
   SpaceObject* object(const std::string& name) const;

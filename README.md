@@ -27,9 +27,11 @@ npm run build && npm run server:run   # serves dist/ + ws://127.0.0.1:8091/game
 
 # multiplayer (WebRTC + Nostr rooms; see docs/multiplayer.md)
 npm run mp:relay        # local Nostr relay on ws://127.0.0.1:7777
-npm run mp:e2e          # two headless Chrome tabs: host + guest, PASS/FAIL
+npm run mp:e2e          # browser host + guest tabs, PASS/FAIL
 npm run mp:e2e -- --guests 2             # several data channels at once
 npm run mp:e2e -- --level ctf-easy --type CTF --level-idx 0
+npm run mp:server       # dedicated C++ room (server hosts, does not play)
+npm run mp:server-e2e   # real server + two browser guests, PASS/FAIL
 
 # verification tooling (headless Chrome, no extra dependencies)
 npm run asset-server    # HTTP + WebSocket asset channel on :8090
@@ -121,6 +123,12 @@ the C++ server sends, so guests run the same render-only `NetGame` client.
 - The Nostr client (BIP-340 Schnorr signing, relay pool) is dependency-free:
   `src/game/nostr/`. The lobby UI and the in-game HUD are painted into the GL
   frame; the multiplayer view renders no DOM at all.
+- **Dedicated server**: the C++ server can host a room itself
+  (`ie-server --room ctf-easy`). It publishes the room, accepts WebRTC guests
+  and runs the whole match — physics, collision detection, AI, goals — with no
+  player of its own; guests only send input and render the frames. libdatachannel
+  is fetched at configure time; `/mp/status` reports the room, and the same
+  guest client works against a browser host or the dedicated server.
 - Room/IPC/signalling details, configuration and the e2e tooling are documented
   in `docs/multiplayer.md`.
 
@@ -240,9 +248,14 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - `src/game/mp/` — rooms/signalling/WebRTC (`manager.ts`), the browser match
   host (`host.ts`, the wire mirror of `server/src/session.cpp`), the WebGL
   lobby (`lobbyui.ts`) and the simulation hooks (`bridge.ts`).
+- `server/src/match.*` — the shared per-viewer frame encoder (single-player
+  sessions and the dedicated room both stream through it);
+  `server/src/nostr*`, `wsc.*` — BIP-340 events, rooms/signalling and the relay
+  WebSocket client; `dedicated.*` — Nostr room + WebRTC guests + the match.
 - `server/` — authoritative C++17 game server: WebSocket + zlib framing
-  (`src/proto.h`), session codec (`src/session.cpp`), the ported simulation
-  (`src/sim*.cpp`, `src/ai.cpp`) and its unit tests; `--root` serves the client.
+  (`src/proto.h`), the ported simulation (`src/sim*.cpp`, `src/ai.cpp`), the
+  single-player session and the dedicated WebRTC room; `--root` serves the
+  client. Unit tests: simulation + BIP-340/events (`server/tests/`).
 - `tools/`, `public/assets/` — conversion scripts, verification tooling
   (screenshots/verify/probe/hangprobe), the asset server, converted content.
 - `docs/protocol.md`, `docs/asset-formats.md` — protocol and converted asset
@@ -314,6 +327,13 @@ ancestry for cold deep links. Reload rebuilds the stack.
   BIP-340/NIP-19 vectors, Nostr event signing, multiplayer rooms over a local
   relay, and the browser host's frame production decoded by the client codec;
   the live-relay test is opt-in).
+- Dedicated multiplayer server: `npm run mp:server-e2e` starts the C++ server
+  (own Nostr room, WebRTC, no player of its own) and two browser guests —
+  joins, authoritative life pools/HUD, guest throttle moving the ship on the
+  server (HUD speed), `GET /mp/status` player counts, and a result/restart
+  round trip on the same room id. Passes under AddressSanitizer as well (which
+  caught and fixed two latent C++ bugs: an octree parent-walk use-after-free
+  and a guest-key reference into an erased map entry).
 - Multiplayer (browser host): the `npm run mp:e2e` harness drives real headless
   Chrome tabs through the WebGL lobby — creating a room, listing it, joining
   over WebRTC, the RTC handshake, Scene/HUD delivery (life pools, RTT), guest

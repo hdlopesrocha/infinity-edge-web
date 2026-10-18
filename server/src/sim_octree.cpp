@@ -158,10 +158,12 @@ void OctNode::remove(OctItem* obj) {
   obj->octNode = nullptr;
   OctNode* p = ptr;
   while (p) {
+    // Read the parent *before* the node may be freed by the reset below.
+    OctNode* parent = p->parent_;
     p->count_--;
     if (obj->kind == ObKind::Interactive) p->interactiveCount_--;
-    if (p->count_ == 0 && p->parent_) p->parent_->childs_[p->index_].reset();
-    p = p->parent_;
+    if (p->count_ == 0 && parent) parent->childs_[p->index_].reset();
+    p = parent;
   }
 }
 
@@ -179,10 +181,12 @@ void OctNode::refresh(OctItem* obj) {
     } else {
       OctNode* p = ptr;
       while (p && !nodeContains(*p, obj->sx, obj->sy, obj->sz, obj->sradius)) {
+        // Read the parent before the reset below may free this node.
+        OctNode* parent = p->parent_;
         p->count_--;
         if (obj->kind == ObKind::Interactive) p->interactiveCount_--;
-        if (p->count_ == 0 && p->parent_) p->parent_->childs_[p->index_].reset();
-        p = p->parent_;
+        if (p->count_ == 0 && parent) parent->childs_[p->index_].reset();
+        p = parent;
       }
       if (!p) {
         this->insert(obj);

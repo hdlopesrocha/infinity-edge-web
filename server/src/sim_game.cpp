@@ -371,10 +371,49 @@ SpaceObject* Game::object(const std::string& name) const {
 
 void Game::setNotification(const std::string& voiceField) { voices.push_back(voiceField); }
 
+void Game::shipSfx(SpaceObject* ship, const std::string& name, float volume, float pan) {
+  if (hooks) {
+    if (hooks->shipSfx) hooks->shipSfx(ship, name, volume, pan);
+    return;
+  }
+  if (ship == selected) sfx.push_back(SfxEvent{name, volume, pan});
+}
+
+void Game::shipNotification(SpaceObject* ship, const std::string& field) {
+  if (hooks) {
+    if (hooks->shipNotification) hooks->shipNotification(ship, field);
+    return;
+  }
+  if (ship == selected || !selected) setNotification(field);
+}
+
+void Game::explosionSfx(SpaceObject* obj) {
+  if (hooks) {
+    if (hooks->explosionSfx) hooks->explosionSfx(obj);
+    return;
+  }
+  SpaceShip* sel = selected;
+  if (sel && static_cast<SpaceObject*>(obj) != static_cast<SpaceObject*>(sel)) {
+    const Vec3 v = vsub(obj->pos, sel->pos);
+    const float dist = vlen(v) == 0 ? 1 : vlen(v);
+    const float pan = clampf(-8 * vdot(sel->side, vscale(v, 1.0f / dist)), -1, 1);
+    const float volume = clampf(1 - dist / playerDistance, 0, 1);
+    if (volume > 0) {
+      if (dynamic_cast<Ark*>(obj)) sfx.push_back(SfxEvent{"addonSound", 1, 0});
+      else if (dist < playerDistance / 2) sfx.push_back(SfxEvent{"closeExplosion", volume, pan});
+      else if (dist < playerDistance) sfx.push_back(SfxEvent{"farExplosion", volume, pan});
+    }
+  } else if (dynamic_cast<Ark*>(obj)) {
+    sfx.push_back(SfxEvent{"addonSound", 1, 0});
+  }
+}
+
 void Game::recordDeath(SpaceObject* victim, SpaceObject* attacker) {
-  if (victim != selected) return;
-  deathCause = nextDeathCause.empty() ? killerText(attacker) : nextDeathCause;
+  const std::string cause = nextDeathCause.empty() ? killerText(attacker) : nextDeathCause;
   nextDeathCause.clear();
+  deathCauses[victim] = cause;
+  if (victim != selected) return;
+  deathCause = cause;
 }
 
 bool Game::create(const Level& def) {

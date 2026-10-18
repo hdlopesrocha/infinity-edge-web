@@ -92,6 +92,67 @@ shim, so remote ships fly exactly like the local player's. Explosions replay on
 every client from the event's seed; sounds are evaluated per viewpoint (each
 guest hears distance/pan from its own ship).
 
+## Dedicated server (no player, all computation on the server)
+
+The C++ server can host a room itself: it publishes the room on Nostr, answers
+the guests' WebRTC offers and runs the authoritative match. It has **no player
+of its own** — every ship belongs to a guest, and all physics, collision
+detection, AI and goals run on the server. Clients only send input and render
+the frames they receive.
+
+The server needs OpenSSL and libusrsctp development headers
+(`libssl-dev`, `libusrsctp-dev`); the first CMake configure also fetches
+libdatachannel (MIT) and libjuice/plog, then keeps them in the build directory.
+
+```sh
+npm run server:build          # first configure fetches libdatachannel
+npm run build                 # the server also serves the client from dist/
+npm run mp:server             # or: build/server/ie-server --room ctf-easy ...
+
+# a local relay instead of the public ones:
+node tools/relay.mjs --port 7777 &
+build/server/ie-server --port 8097 --root dist --room ctf-easy \
+  --nostr-relay ws://127.0.0.1:7777
+# open http://127.0.0.1:8097/?mp=ws://127.0.0.1:7777#/multiplayer
+```
+
+| flag | meaning |
+|---|---|
+| `--room <level>` | host this level (`ctf-easy`, `tt-easy-01`, `kots-solo-easy`, …) |
+| `--room-name <s>` | host name shown in the lobby (default "Infinity Edge Server") |
+| `--room-max <n>` | maximum guests (2–32, default 8) |
+| `--nostr-relay <urls>` | comma-separated relays (default `wss://nos.lol,wss://relay.snort.social`) |
+| `--nostr-key-file <path>` | room identity key, persisted (default `ie-server-nostr.key`) |
+| `--nostr-key <hex>` | fixed identity key instead of the file |
+| `--stun <urls>` | ICE servers advertised in the room (default Google STUN) |
+
+The server keeps the same room id across rounds: when the match ends it sends
+`Result`, closes the guest channels after 1.5 s, and starts a fresh round 8 s
+later (the room stays listed). `/mp/status` returns the room id, level, guest
+count, relay count and the server's public key as JSON — handy for monitoring
+and used by the e2e. SIGINT/SIGTERM close the room politely (NIP-09 deletion).
+
+Guest ships use the same rule as the browser host: the first guest takes over
+the level's player ship, further guests take free AI ships of the same team,
+and if none is left a wingman is spawned next to it (the AI brain resumes when
+a guest leaves). Each guest gets its own `RTCPeerConnection`, data channel,
+Scene/Snapshot/Events/Hud stream and personal HUD (life pools, respawn timer,
+speed, lock warning).
+
+The end-to-end test runs the real server against the local relay and two
+browser tabs (join, authoritative HUD, throttle moving the ship on the server,
+`/mp/status` player count, and the result/restart round trip):
+
+```sh
+npm run mp:server-e2e                      # 2 guests, PASS/FAIL
+npm run mp:server-e2e -- --level ctf-easy --guests 2
+npm run mp:server-e2e -- --server /path/to/ie-server --app-port 8097
+```
+
+Testing hooks: `POST /mp/finish` ends the current round immediately (used by
+the e2e); `--auto-finish <seconds>` does the same on a timer. Both are safe to
+leave unused in production.
+
 ## Configuration
 
 - Relays: `?mp=wss://relay.example` (comma separated), then

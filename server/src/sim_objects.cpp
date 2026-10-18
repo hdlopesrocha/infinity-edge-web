@@ -162,7 +162,7 @@ void SpaceObject::move(Game& gi, float dtMs) {
       const ObKind t = obj->physics->objectType;
       if (t == ObKind::Uncollidable || dynamic_cast<Flag*>(obj) || dynamic_cast<Base*>(obj)) continue;
       if (Addon* addon = dynamic_cast<Addon*>(obj)) {
-        if (gi.selected == this) gi.sfx.push_back(SfxEvent{"addonSound", 1, 0});
+        gi.shipSfx(this, "addonSound", 1, 0);
         addon->doThings(*this);
         addon->destroyObject(gi);
         continue;
@@ -209,20 +209,7 @@ void SpaceObject::destroyObject(Game& gi, SpaceObject* attacker) {
     const float exScale = isShip() ? 4.0f : 3.0f;
     spawnExplosion(gi, pos, exScale, ExplosionOpts{12, 6, model, scale, 750});
   }
-  SpaceShip* sel = gi.selected;
-  if (sel && static_cast<SpaceObject*>(this) != static_cast<SpaceObject*>(sel)) {
-    const Vec3 v = vsub(pos, sel->pos);
-    const float dist = vlen(v) == 0 ? 1 : vlen(v);
-    const float pan = clampf(-8 * vdot(sel->side, vscale(v, 1.0f / dist)), -1, 1);
-    const float volume = clampf(1 - dist / gi.playerDistance, 0, 1);
-    if (volume > 0) {
-      if (dynamic_cast<Ark*>(this)) gi.sfx.push_back(SfxEvent{"addonSound", 1, 0});
-      else if (dist < gi.playerDistance / 2) gi.sfx.push_back(SfxEvent{"closeExplosion", volume, pan});
-      else if (dist < gi.playerDistance) gi.sfx.push_back(SfxEvent{"farExplosion", volume, pan});
-    }
-  } else if (dynamic_cast<Ark*>(this)) {
-    gi.sfx.push_back(SfxEvent{"addonSound", 1, 0});
-  }
+  gi.explosionSfx(this);
 }
 
 void SpaceObject::automaticAction(Game& gi, float dtMs) {
@@ -285,7 +272,7 @@ void SpaceShip::launchBullet(Game& gi, const Vec3& direction) {
   gi.own(b);
   launchs++;
   launchSpan = std::fmod(launchSpan, 200.0f);
-  if (this == gi.selected) gi.sfx.push_back(SfxEvent{"bulletSound", 0.2f, 0});
+  gi.shipSfx(this, "bulletSound", 0.2f, 0);
 }
 
 void SpaceShip::launchNitro(float dtMs) {
@@ -328,7 +315,7 @@ void SpaceShip::launchHoming(Game& gi) {
   launchs++;
   missile->intelligence = makeAIHoming(gi, target, missile);
   launchSpan = std::fmod(launchSpan, 200.0f);
-  if (this == gi.selected) gi.sfx.push_back(SfxEvent{"missileSound", 1, 0});
+  gi.shipSfx(this, "missileSound", 1, 0);
 }
 
 void SpaceShip::receiveDamage(Game& gi, float amount, const Vec3& direction, SpaceObject* attacker) {
@@ -336,10 +323,10 @@ void SpaceShip::receiveDamage(Game& gi, float amount, const Vec3& direction, Spa
   hitAge = 0;
   if (shield <= 0) {
     life->receiveDamage(amount, direction, up, dir, [this, &gi, attacker]() { destroyObject(gi, attacker); });
-    if (this == gi.selected) gi.sfx.push_back(SfxEvent{"hitSound", 1, 0});
+    gi.shipSfx(this, "hitSound", 1, 0);
   } else {
     shield--;
-    if (this == gi.selected) gi.sfx.push_back(SfxEvent{"absorbSound", 1, 0});
+    gi.shipSfx(this, "absorbSound", 1, 0);
   }
 }
 

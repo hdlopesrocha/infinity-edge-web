@@ -6,10 +6,13 @@
 //                           `public/`, so the C++ server can host the app)
 #pragma once
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
+#include "dedicated.h"
 #include "session.h"
 #include "sim.h"
 #include "ws.h"
@@ -23,6 +26,20 @@ struct ServerConfig {
   std::string wsPath = "/game";
   uint32_t seed = 123456789u;
   bool quiet = false;
+
+  // Dedicated multiplayer room (Nostr + WebRTC). `--room <level>` enables it:
+  // the server publishes the room, accepts guests and runs the whole match
+  // itself; it has no player of its own.
+  bool dedicated = false;
+  std::string roomLevel;
+  std::string roomName = "Infinity Edge Server";
+  int roomMax = 8;
+  std::string nostrKeyFile = "ie-server-nostr.key";
+  std::string nostrKeyHex;
+  std::vector<std::string> nostrRelays;
+  std::vector<std::string> iceServers;
+  /** Testing hook: end each round after N seconds (0 = level goals). */
+  int roomAutoFinishSec = 0;
 };
 
 class GameServer {
@@ -35,6 +52,8 @@ class GameServer {
   /** Blocking accept loop at ~30 Hz; returns when stop() was called. */
   bool run(std::string* err);
   void stop();
+  /** Async-signal-safe: asks the run loop to wind down (SIGINT/SIGTERM). */
+  static void requestStop();
 
  private:
   bool serveStatic(WsServer::ConnId conn, const HttpRequest& req);
@@ -47,6 +66,8 @@ class GameServer {
   LevelTable levels_;
   WsServer ws_;
   std::map<WsServer::ConnId, std::unique_ptr<Session>> sessions_;
+  std::unique_ptr<DedicatedRoom> room_;
+  static std::atomic<bool> stopFlag_;
 };
 
 }  // namespace ie

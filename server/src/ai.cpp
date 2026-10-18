@@ -412,27 +412,32 @@ class HILocal : public Command {
  public:
   bool warning = false;
   bool inside = true;
-  HILocal(Game& gi, SpaceObject* obj) : gi(gi), obj(obj) {}
+  explicit HILocal(Game& gi, SpaceObject* obj)
+      : gi(gi), obj(obj), input(nullptr), invertX(false), invertY(false) {}
+  HILocal(Game& gi, SpaceObject* obj, const PlayerInput* input, bool invertX, bool invertY)
+      : gi(gi), obj(obj), input(input), invertX(invertX), invertY(invertY) {}
   void execute(Game&) override {
     SpaceObject* o = obj;
-    const PlayerInput& c = gi.input;
+    const PlayerInput& c = input ? *input : gi.input;
+    const bool ax = input ? invertX : gi.axisX;
+    const bool ay = input ? invertY : gi.axisY;
     o->accel = vscale(o->dir, o->physics->accelMax * c.throttle);
-    const Quat q = ypr(-c.stickX * (gi.axisX ? -1.0f : 1.0f) * 1.57079632679489661923f,
-                       -c.stickY * (gi.axisY ? -1.0f : 1.0f) * 1.57079632679489661923f, 0);
+    const Quat q = ypr(-c.stickX * (ax ? -1.0f : 1.0f) * 1.57079632679489661923f,
+                       -c.stickY * (ay ? -1.0f : 1.0f) * 1.57079632679489661923f, 0);
     const Quat qq = qmul(o->rot, q);
     const Vec3 want = vnormalize(vtransformQuat(v3(0, 0, 1), qq));
     const float stickLen = std::hypot(c.stickX, c.stickY);
     steerTo(o, vadd(o->pos, vscale(want, 100)), o->physics->maxAngular * stickLen);
     o->update();
     if (!o->insideMap) {
-      if (!warning) gi.setNotification("leavingFieldOfBattle");
+      if (!warning) gi.shipNotification(o, "leavingFieldOfBattle");
       warning = true;
     } else {
       warning = false;
     }
     if (o->teleported) {
       o->teleported = false;
-      gi.setNotification("youWereTeleported");
+      gi.shipNotification(o, "youWereTeleported");
     }
     inside = o->insideMap;
     if (c.fire && o->canLaunchBullet()) {
@@ -457,6 +462,9 @@ class HILocal : public Command {
  private:
   Game& gi;
   SpaceObject* obj;
+  const PlayerInput* input;
+  bool invertX;
+  bool invertY;
 };
 
 // ---------------------------------------------------------------- AISmart
@@ -628,6 +636,11 @@ void applyAction(Game& gi, const std::string& name, const std::string& fromId, c
   } else if (name == "AITimeTrial") {
     from->intelligence = std::make_unique<AITimeTrial>(gi, from);
   }
+}
+
+std::unique_ptr<Command> makeHILocal(Game& gi, SpaceObject* obj, const PlayerInput* input,
+                                     bool invertX, bool invertY) {
+  return std::make_unique<HILocal>(gi, obj, input, invertX, invertY);
 }
 
 void upgradeAIShips(Game& gi, bool smart) {
