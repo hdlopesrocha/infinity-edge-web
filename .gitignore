@@ -9,3 +9,6 @@ build/
 # verification output
 shot*.png
 tools/shots/
+
+# dedicated multiplayer server identity
+ie-server-nostr.key
