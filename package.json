@@ -18,6 +18,9 @@
     "copy:assets": "node tools/copy-assets.mjs",
     "assets:manifest": "node tools/asset-manifest.mjs",
     "asset-server": "node tools/asset-server.mjs --port 8090",
+    "server:build": "cmake -S server -B build/server && cmake --build build/server -j",
+    "server:run": "build/server/ie-server --port 8091 --root dist",
+    "server:test": "ctest --test-dir build/server --output-on-failure",
     "shots": "node tools/screenshots.mjs",
     "deploy": "node tools/deploy-gh-pages.mjs",
     "probe": "node tools/probe.mjs"

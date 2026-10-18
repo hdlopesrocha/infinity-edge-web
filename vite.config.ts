@@ -18,6 +18,22 @@ const https = existsSync(certFile) && existsSync(keyFile)
 export default defineConfig({
   base: './',
   plugins: [vue()],
-  server: { host: true, port: 5173, strictPort: true, https },
+  server: {
+    host: true,
+    port: 5173,
+    strictPort: true,
+    https,
+    // The game server speaks plain ws:// and the dev page is https://, which
+    // blocks it as mixed content: tunnel it through Vite instead. Point the
+    // client at it with `?game=/game` (or `?game=wss://<host>:5173/game`).
+    // IE_GAME_PROXY overrides the backend, e.g. ws://127.0.0.1:8095.
+    proxy: {
+      '/game': {
+        target: process.env.IE_GAME_PROXY || 'ws://127.0.0.1:8091',
+        ws: true,
+        changeOrigin: true,
+      },
+    },
+  },
   build: { target: 'es2022', assetsInlineLimit: 0, chunkSizeWarningLimit: 2000 },
 })

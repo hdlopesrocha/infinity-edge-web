@@ -19,6 +19,12 @@ npm run deploy          # build + publish to GitHub Pages (gh-pages)
 npm run typecheck       # vue-tsc only
 npm test                # unit tests (protocol+gzip, frustum/ocTree, models, physics)
 
+# authoritative game server (C++17, CMake + zlib)
+npm run server:build    # cmake configure + build -> build/server/ie-server
+npm run server:test     # ctest (simulation unit tests)
+npm run build && npm run server:run   # serves dist/ + ws://127.0.0.1:8091/game
+# open http://127.0.0.1:8091/?game=/game#/menu
+
 # verification tooling (headless Chrome, no extra dependencies)
 npm run asset-server    # HTTP + WebSocket asset channel on :8090
 npm run shots           # screenshots of every route -> tools/shots/
@@ -84,6 +90,37 @@ plain static host. The channel reconnects with exponential backoff, times out
 after 8 s, validates framing/sizes, counts malformed input, and falls back to
 HTTP per asset instead of stalling scene loading. Measured on CTF Easy: 108
 frames, 2 127 303 B of payload -> 811 495 B on the wire.
+
+## Game server (authoritative, C++)
+
+`server/` is a second, independent WebSocket service: a hand-rolled C++17
+server (zlib only, no Boost) that **owns the game logic and every model
+position**. The web client turns into a renderer — `src/game/netgame.ts`
+applies Scene/Snapshot/Events/Hud frames and streams the player's input back —
+while the local simulation stays as the offline fallback. The wire protocol
+(binary payloads, gzipped with the same 8-byte framed header, 30 Hz snapshots,
+one-tick interpolation gutter on the client) is documented in
+`docs/protocol.md`, "Game channel"; `src/game/protocol.ts` is the client codec.
+
+```sh
+npm run server:build                     # CMake + build -> build/server/ie-server
+npm run build
+npm run server:run                       # static dist/ + ws://127.0.0.1:8091/game
+# open http://127.0.0.1:8091/?game=/game#/menu
+
+# dev server (https) instead: Vite proxies /game to the C++ server
+npm run server:run                       # or: --port 8095, then IE_GAME_PROXY=ws://127.0.0.1:8095
+npm run dev
+# open https://localhost:5173/?game=/game#/menu
+```
+
+The URL comes from `?game=` (`/game`, `host:port`, a full `ws://`/`wss://` URL,
+or `1` for the default port), then `VITE_IE_GAME_WS`, then
+`window.__IE_GAME_WS`; with none of them — or when the server is down or the
+join times out (15 s) — the page falls back to the original local
+single-player simulation. `ie-server` also serves a directory over HTTP
+(`--root`, default `public`), so a single port carries both the client and the
+game channel. `npm run server:test` runs the simulation unit tests.
 
 ## Controls
 
@@ -163,6 +200,11 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - `src/game/net.ts`, `src/game/netclient.ts`, `src/game/assetfetch.ts` — binary
   framing + gzip, the optional WebSocket channel (reconnect/timeout/fallback),
   and the asset fetch front-end used by the level and model loaders.
+- `src/game/protocol.ts`, `src/game/netgame.ts` — the game-channel codec and the
+  server-driven `NetGame` renderer (Scene/Snapshot/Events/Hud + input).
+- `server/` — authoritative C++17 game server: WebSocket + zlib framing
+  (`src/proto.h`), session codec (`src/session.cpp`), the ported simulation
+  (`src/sim*.cpp`, `src/ai.cpp`) and its unit tests; `--root` serves the client.
 - `tools/`, `public/assets/` — conversion scripts, verification tooling
   (screenshots/verify/probe/hangprobe), the asset server, converted content.
 - `docs/protocol.md`, `docs/asset-formats.md` — protocol and converted asset
@@ -202,7 +244,9 @@ ancestry for cold deep links. Reload rebuilds the stack.
   `router.replace()` for finished matches.
 - **No context menu / long-press callout / image saving** anywhere in the UI.
 - **HTTPS dev server**: self-signed cert with SAN (localhost, 127.0.0.1, LAN
-  IP), served only when `certs/dev.{crt,key}` exist.
+  IP), served only when `certs/dev.{crt,key}` exist; `/game` is proxied to the
+  C++ game server (`IE_GAME_PROXY` overrides the backend), because a `ws://`
+  socket cannot be opened from an `https://` page.
 
 ## Verified behaviors (browser)
 
@@ -229,3 +273,11 @@ ancestry for cold deep links. Reload rebuilds the stack.
   HTTP and over the WebSocket channel.
 - `npm test`: 41 unit tests (protocol framing/gzip/threshold/malformed input,
   frustum + ocTree culling, converted model sidecars, physics and life pools).
+- Game channel (server authoritative): Node load client against the C++ server
+  (CTF Easy 8000 asteroids/19 ships: 36 KiB/s wire, 43 % of payload; KOTS solo
+  13 KiB/s), and a driven browser run with `?game=/game` — TT Easy flight
+  (hudSpeed 64, smooth ~1.2 u/frame interpolation, bullets/smoke/debris, 392
+  draws/frame), CTF Easy (8038 wire objects, flags owned by their bases,
+  per-ship HUD life), events replay (explosion seed, voice notification),
+  dispose on unmount (socket closed), and both fallbacks (no `?game=`, and an
+  unreachable server URL) landing on the local simulation.
