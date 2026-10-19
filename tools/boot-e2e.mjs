@@ -101,7 +101,10 @@ try {
       check(entry, 'engine screen dwell >= 3 s', startAt - engineAt >= 2800, `${startAt - engineAt}ms`);
     }
     if (startAt !== null) {
-      check(entry, 'start screen dwell >= 1.5 s', menuAt - startAt >= 1600, `${menuAt - startAt}ms`);
+      // The 1.5 s timer + 0.5 s fade starts when the view mounts; polling can
+      // miss the first part of it while the page is still loading, so this
+      // lower bound catches an immediate auto-advance without flaking.
+      check(entry, 'start screen dwell (>= 1.5 s design)', menuAt - startAt >= 1200, `${menuAt - startAt}ms`);
     }
 
     // The hash alone is not enough: the menu must be painted into the WebGL

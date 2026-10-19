@@ -323,7 +323,7 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
               <span class="c-white50">{{ vrStatusText() }}
             <div v-if="store.vr" class="opt-row">
               <span class="c-white50" style="font-size: 12px;">
-                sensor: {{ vrState.events }} events &middot; yaw {{ vrState.yaw }}&deg; &middot; pitch {{ vrState.pitch }}&deg; &middot; {{ vrState.dragLook ? 'drag look on' : 'drag look off' }}
+                sensor: {{ vrState.events }} events &middot; yaw {{ vrState.yaw }}&deg; &middot; pitch {{ vrState.pitch }}&deg; &middot; roll {{ vrState.roll }}&deg; &middot; {{ vrState.dragLook ? 'drag look on' : 'drag look off' }}
               </span>
             </div></span>
             </div>

@@ -7,6 +7,9 @@ export interface StickState {
   stickY: number;
 }
 
+/** Level horizon used while head-tracking (the ship's roll must not tilt it). */
+const WORLD_UP = vec3.fromValues(0, 1, 0);
+
 export class Camera {
   position = vec3.fromValues(16, 32, 16);
   lookAt = vec3.fromValues(0, 0, 0);
@@ -24,6 +27,24 @@ export class Camera {
   /** VR head offset in degrees, applied on top of the chase view. */
   vrYaw = 0;
   vrPitch = 0;
+  vrRoll = 0;
+  /** Sensor VR is looking around: keep the base horizon level. */
+  vrActive = false;
+
+  /**
+   * Base view with a level horizon for head-tracked VR. The head pose (yaw,
+   * pitch *and roll*) is then composed on top of it, so the up vector follows
+   * the headset instead of the ship's roll. Falls back to the ship up when
+   * looking nearly straight up/down (world up would be parallel to the view).
+   */
+  levelView(out: mat4): void {
+    const dx = this.lookAt[0] - this.position[0];
+    const dy = this.lookAt[1] - this.position[1];
+    const dz = this.lookAt[2] - this.position[2];
+    const len = Math.hypot(dx, dy, dz);
+    const nearVertical = len > 1e-6 && Math.abs(dy / len) > 0.98;
+    mat4.lookAt(out, this.position, this.lookAt, nearVertical ? this.up : WORLD_UP);
+  }
   /** Fixed menu-background pose (the original orbit's angle-0 position). */
   lookAtPosition(target: vec3): void {
     vec3.set(this.position, target[0], 3, target[2] - 6);
@@ -38,16 +59,29 @@ export class Camera {
   }
 
   updateMatrices(): void {
-    mat4.lookAt(this.view, this.position, this.lookAt, this.up);
+    // Head-tracked VR keeps the horizon level: the gyroscope's roll (applied
+    // below) defines the up vector, not the ship's roll. Outside VR the chase
+    // camera keeps the ship's up.
+    const dx = this.lookAt[0] - this.position[0];
+    const dy = this.lookAt[1] - this.position[1];
+    const dz = this.lookAt[2] - this.position[2];
+    const len = Math.hypot(dx, dy, dz);
+    const level = this.vrActive && len > 1e-6 && Math.abs(dy / len) <= 0.98;
+    const up = level ? WORLD_UP : this.up;
+    mat4.lookAt(this.view, this.position, this.lookAt, up);
     // VR: rotate the view around the camera (position untouched) by the head
     // offset from the gyroscope. Applies after lookAt, before the projection.
-    if (this.vrYaw !== 0 || this.vrPitch !== 0) {
+    if (this.vrYaw !== 0 || this.vrPitch !== 0 || this.vrRoll !== 0) {
       const rad = Math.PI / 180;
-      if (this.vrYaw !== 0) mat4.rotate(this.view, this.view, this.vrYaw * rad, this.up);
+      if (this.vrYaw !== 0) mat4.rotate(this.view, this.view, this.vrYaw * rad, up);
       if (this.vrPitch !== 0) {
         const right = vec3.fromValues(this.view[0], this.view[4], this.view[8]);
         mat4.rotate(this.view, this.view, this.vrPitch * rad, right);
       }
+      // Roll the world around the view axis: a positive device roll (tilted
+      // right) leaves the world up leaning left in view space, i.e. the
+      // horizon follows the head.
+      if (this.vrRoll !== 0) mat4.rotateZ(this.view, this.view, this.vrRoll * rad);
     }
     mat4.perspective(this.proj, this.fov, this.aspect, this.near, this.far);
     mat4.multiply(this.viewProj, this.proj, this.view);

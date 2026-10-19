@@ -135,6 +135,9 @@ export async function enterXr(
   entering = false;
   session = s;
   renderer.xrActive = true;
+  // Head-tracked view: the base camera keeps a level horizon so the HUD
+  // projection and the world-space HUD/menu planes agree with the eyes.
+  renderer.camera.vrActive = true;
   const gl = renderer.gl;
   await (gl as unknown as { makeXRCompatible(): Promise<void> }).makeXRCompatible();
   const layer = new XRWebGLLayer(s, gl);
@@ -164,6 +167,7 @@ export async function enterXr(
   let gaze: GazePointer | null = null;
   let gazeUi: ScreenUi | null = null;
   let selectQueued = false;
+  let calibrateQueued = false;
   const refSpace = await s.requestReferenceSpace('local');
   const head = mat4.create();
   const chase = mat4.create();
@@ -233,7 +237,10 @@ export async function enterXr(
     // The panel follows the base view (not the head): the headset's gaze ray
     // then sweeps across a stable panel, which is what a crosshair needs.
     const basis = panelBasis(renderer.camera.position, renderer.camera.direction, PANEL_DISTANCE);
-    mat4.copy(chase, renderer.camera.view);
+    // Level base: the ship's roll must not tilt the horizon. The head pose
+    // (including roll) is composed on top, so the up vector follows the
+    // headset - that is what keeps the view aligned with head rotation.
+    renderer.camera.levelView(chase);
     const cam = renderer.camera;
     // Each eye goes through the whole normal pipeline (scene target, scene
     // draw, composite) but the composite blits into the WebXR base layer with
@@ -319,6 +326,14 @@ export async function enterXr(
         });
       }
     }
+    // Apply a queued trigger/tap recalibration once both eyes are done: the
+    // click used the current view, and the next frame faces the head's
+    // current heading. Per-eye timing cannot skew the stereo pair.
+    if (calibrateQueued) {
+      baselineYawAbs = latestHeadYawAbs;
+      calibrateQueued = false;
+    }
+    if (!ui) selectQueued = false;
     renderer.viewport = null;
     renderer.presentFbo = null;
     instance.canvasW = fullW;
@@ -328,14 +343,18 @@ export async function enterXr(
   // A tap/trigger inside the session clicks the item under the crosshair; in a
   // match (no UI overlay) it re-centres the view instead.
   s.addEventListener('select', () => {
+    // Every trigger/tap recalibrates the view, in menus and in a match alike.
+    // The recalibration is applied after the UI click in the next frame, so
+    // the crosshair still activates what it was pointing at.
+    calibrateQueued = true;
     if (renderer.uiOverlay) selectQueued = true;
-    else baselineYawAbs = latestHeadYawAbs;
   });
   s.addEventListener('end', () => {
     panel?.dispose();
     cursor?.dispose();
     session = null;
     renderer.xrActive = false;
+    renderer.camera.vrActive = false;
     renderer.presentBounds = null;
     baselineYawAbs = 0;
     latestHeadYawAbs = 0;

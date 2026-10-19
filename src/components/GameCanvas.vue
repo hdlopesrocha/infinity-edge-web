@@ -391,6 +391,13 @@ onMounted(() => {
       if (!instance || !renderer) return;
       instance.canvasW = canvasRef.value?.clientWidth || 1280;
       instance.canvasH = canvasRef.value?.clientHeight || 720;
+      // Gyroscope look for the non-XR VR paths (the split view below and the
+      // normal frame). The XR session supplies its own head pose.
+      const look = store.vr ? vrLook() : { yaw: 0, pitch: 0, roll: 0, tracking: false };
+      renderer.camera.vrActive = store.vr;
+      renderer.camera.vrYaw = look.tracking ? look.yaw : 0;
+      renderer.camera.vrPitch = look.tracking ? look.pitch : 0;
+      renderer.camera.vrRoll = look.tracking ? look.roll : 0;
       // Stereo VR (no WebXR headset): two eyes side by side. Each half is a
       // full render with the camera shifted along its right axis, which is
       // what makes the depth read in a phone viewer.
@@ -458,6 +465,8 @@ onMounted(() => {
         // head tracking comes from the pose, so drop the gyro look here.
         renderer.camera.vrYaw = 0;
         renderer.camera.vrPitch = 0;
+        renderer.camera.vrRoll = 0;
+        renderer.camera.vrActive = true;   // level base, head pose adds roll
         return;
       }
       if (store.paused) {
@@ -475,10 +484,6 @@ onMounted(() => {
         instance.control.pauseRequested = false;
         store.paused = !store.paused;
       }
-      // VR: gyroscope drives the view, gamepad drives the ship.
-      const look = store.vr ? vrLook() : { yaw: 0, pitch: 0, tracking: false };
-      renderer.camera.vrYaw = look.tracking ? look.yaw : 0;
-      renderer.camera.vrPitch = look.tracking ? look.pitch : 0;
       mp.preTick(dtMs);
       instance.update(dtMs);
       mp.postTick(dtMs);

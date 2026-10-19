@@ -236,7 +236,9 @@ Two paths, in order:
 
 - **Immersive WebXR** (`navigator.xr` immersive-vr): per-eye pose and
   projection rendered straight into the XR framebuffer, gyroscope look is
-  dropped (the head pose carries the view). The in-game HUD (score, clock,
+  dropped (the head pose carries the view; the base view keeps a **level
+  horizon**, so the head pose - yaw, pitch *and roll* - defines the up vector
+  and the ship's roll never tilts it). The in-game HUD (score, clock,
   speed, life pools, missile/nitro items, aim reticle and target markers) is
   painted **once** with the base view and drawn as a **world-space panel** in
   each eye, exactly like the menus: the panel matches the base camera's field
@@ -257,10 +259,13 @@ Two paths, in order:
   when sensors are blocked) and the WebGL menus/HUD rendered per eye.
 
 VR input: gyroscope (DeviceOrientationEvent, iOS permission requested when
-present but never blocking) with a drag-to-look fallback on the scene; a
-reactive diagnostic readout (`sensor: N events · yaw … · pitch … · drag look`)
-proves the mode is alive. In a match (no menu screen) a trigger/tap re-centres
-the view. Pausing leaves the immersive session so the new pause panel is
+present but never blocking) with a drag-to-look fallback on the scene. The
+view keeps a level horizon and applies the gyro **roll** too, so the up vector
+follows the head rather than the ship. A reactive diagnostic readout
+(`sensor: N events · yaw … · pitch … · roll … · drag look`) proves the mode is
+alive. Every controller trigger/hand tap re-centres the view, in menus and in
+a match; in menus the click is applied first, so the item under the crosshair
+still activates. Pausing leaves the immersive session so the new pause panel is
 usable (VR stays on and resuming re-enters); VR ends with the match so the
 result screens come up as normal menus.
 
@@ -351,8 +356,9 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - **Motion blur was removed** at the user's request (velocity buffer, MB shader,
   debug view, config, option, tests and `src/engine/motion.ts` all deleted).
 - **VR**: WebXR immersive session (per-eye pose/projection into the XR
-  framebuffer) with a split-screen fallback; gyro look + drag-to-look; tap to
-  re-centre; the WebGL menus render on a world-space panel with a gaze
+  framebuffer) with a split-screen fallback; gyro look (yaw/pitch/roll) on a
+  level horizon; trigger/tap re-centres every time; the WebGL menus render on
+  a world-space panel with a gaze
   crosshair (trigger click + 2 s dwell) instead of a separate VR menu, and the
   in-game HUD is a world-space plane too (painted once from the base view;
   projected positions clamp to its edges), both verified by the panel

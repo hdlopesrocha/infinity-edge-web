@@ -13,8 +13,10 @@ import { store } from './store';
 /** Degrees, relative to the last calibration. */
 let yaw = 0;
 let pitch = 0;
+let roll = 0;
 let zeroYaw = 0;
 let zeroPitch = 0;
+let zeroRoll = 0;
 let haveOrientation = false;
 let eventCount = 0;
 let dragYaw = 0;
@@ -29,13 +31,16 @@ function onOrientation(e: DeviceOrientationEvent): void {
   vrState.events = eventCount;
   const a = e.alpha ?? 0;          // compass-ish yaw
   const b = e.beta ?? 0;           // front-back tilt
+  const g = e.gamma ?? 0;          // left-right roll
   // Screen orientation can rotate the axes; keep it simple and use the raw
   // values relative to the calibration point.
   yaw = a - zeroYaw;
   pitch = b - zeroPitch;
+  roll = g - zeroRoll;
   // Keep them in a sane range so a full turn does not spin wildly.
   yaw = ((yaw + 540) % 360) - 180;
   pitch = Math.max(-80, Math.min(80, pitch));
+  roll = Math.max(-90, Math.min(90, roll));
 }
 
 async function bind(): Promise<void> {
@@ -76,6 +81,7 @@ export const vrState = reactive({
   /** Live look values, updated every frame while VR is on. */
   yaw: 0,
   pitch: 0,
+  roll: 0,
   /** Last runtime error, shown on the settings screen. */
   lastError: '' as string,
   /** What the platform said about motion access, for the status line. */
@@ -168,23 +174,26 @@ export function calibrateVr(): void {
   // the calibration simply re-bases them.
   zeroYaw = ((yaw + zeroYaw + 540) % 360) - 180;
   zeroPitch = pitch + zeroPitch;
+  zeroRoll = roll + zeroRoll;
   yaw = 0;
   pitch = 0;
+  roll = 0;
 }
 
 /** Current head offset in degrees (0/0 until the first orientation event). */
-export function vrLook(): { yaw: number; pitch: number; tracking: boolean } {
+export function vrLook(): { yaw: number; pitch: number; roll: number; tracking: boolean } {
   void bind();
   // The sensor wins when it delivers; the drag offset is the fallback. The
   // values are mirrored into vrState so the settings screen can show them --
   // that readout is how the user sees the mode actually doing something.
   const out = haveOrientation
-    ? { yaw, pitch, tracking: true }
+    ? { yaw, pitch, roll, tracking: true }
     : vrState.dragLook
-      ? { yaw: dragYaw, pitch: dragPitch, tracking: true }
-      : { yaw: 0, pitch: 0, tracking: false };
+      ? { yaw: dragYaw, pitch: dragPitch, roll: 0, tracking: true }
+      : { yaw: 0, pitch: 0, roll: 0, tracking: false };
   vrState.yaw = Math.round(out.yaw);
   vrState.pitch = Math.round(out.pitch);
+  vrState.roll = Math.round(out.roll);
   vrState.tracking = out.tracking;
   return out;
 }
