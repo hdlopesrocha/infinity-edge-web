@@ -88,6 +88,19 @@ export class RoomUi implements ScreenUi {
     ctx.fillRect(0, 0, w, h);
     if (!snap) return;
 
+    // Scrims: the water behind the top/bottom chrome is often bright enough
+    // to wash the text out, so fade a dark band in from each edge.
+    const top = ctx.createLinearGradient(0, Y(0), 0, Y(96));
+    top.addColorStop(0, 'rgba(3, 7, 12, 0.8)');
+    top.addColorStop(1, 'rgba(3, 7, 12, 0)');
+    ctx.fillStyle = top;
+    ctx.fillRect(0, 0, w, Y(96));
+    const bottom = ctx.createLinearGradient(0, Y(DH - 70), 0, Y(DH));
+    bottom.addColorStop(0, 'rgba(3, 7, 12, 0)');
+    bottom.addColorStop(1, 'rgba(3, 7, 12, 0.72)');
+    ctx.fillStyle = bottom;
+    ctx.fillRect(0, Math.max(0, Y(DH - 70)), w, Math.max(0, h - Y(DH - 70)));
+
     // Title + subtitle (room identity, player count, phase).
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffffff';
@@ -98,12 +111,13 @@ export class RoomUi implements ScreenUi {
     ctx.shadowBlur = 0;
     ctx.fillStyle = 'rgba(127,232,216,0.9)';
     ctx.fillRect(X(DW / 2 - 90), Y(50), U(180), U(2));
-    ctx.font = `${U(14)}px ${FONT}`;
-    ctx.fillStyle = 'rgba(255,255,255,0.72)';
-    ctx.fillText(
-      `${snap.players.length}/${snap.maxPlayers} pilots · room ${snap.roomId.slice(0, 8)} · ${snap.level}`,
-      X(DW / 2), Y(70),
-    );
+    ctx.font = `600 ${U(15)}px ${FONT}`;
+    const subtitle = `${snap.players.length}/${snap.maxPlayers} pilots · room ${snap.roomId.slice(0, 8)} · ${snap.level}`;
+    const subW = ctx.measureText(subtitle).width;
+    ctx.fillStyle = 'rgba(3, 7, 12, 0.6)';
+    ctx.fillRect(X(DW / 2) - subW / 2 - U(12), Y(58), subW + U(24), U(24));
+    ctx.fillStyle = 'rgba(168,255,240,0.95)';
+    ctx.fillText(subtitle, X(DW / 2), Y(70));
     ctx.textAlign = 'left';
 
     this.paintPlayers(ctx, snap, s, X, Y, U);
@@ -112,13 +126,20 @@ export class RoomUi implements ScreenUi {
     // Status line, bottom centre.
     ctx.textAlign = 'center';
     ctx.font = `${U(14)}px ${FONT}`;
-    ctx.fillStyle = snap.phase === 'playing' ? '#ffd479' : 'rgba(255,255,255,0.6)';
+    ctx.fillStyle = snap.phase === 'playing' ? '#ffd479' : 'rgba(255,255,255,0.8)';
+    ctx.shadowColor = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur = U(5);
     const status = snap.phase === 'playing'
       ? 'match starting…'
       : snap.isHost
         ? 'waiting for players — PLAY starts the match for everyone'
         : 'waiting for the host to start the match…';
+    const statusW = ctx.measureText(status).width;
+    ctx.fillStyle = 'rgba(3, 7, 12, 0.55)';
+    ctx.fillRect(X(DW / 2) - statusW / 2 - U(10), Y(DH - 38), statusW + U(20), U(20));
+    ctx.fillStyle = snap.phase === 'playing' ? '#ffd479' : 'rgba(255,255,255,0.9)';
     ctx.fillText(status, X(DW / 2), Y(DH - 26));
+    ctx.shadowBlur = 0;
     ctx.textAlign = 'left';
 
     // Corners: leave/close, PLAY (host only).
