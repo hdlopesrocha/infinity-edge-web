@@ -10,7 +10,11 @@ import { MAX_AGE_CHOICES, mp } from './manager';
 import type { Multiplayer } from './manager';
 import type { RoomInfo } from '../nostr/event';
 import { nextUiVersion } from '../../engine/overlay';
-import { FS_REGION, paintFullscreenButton, toggleFullscreen } from '../ui/fullscreen';
+import { FS_REGION, toggleFullscreen } from '../ui/fullscreen';
+import {
+  UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
+  paintActionColumn, paintPanelBox,
+} from '../ui/layout';
 import type { ScreenUi } from '../../engine/overlay';
 
 export interface LobbyHooks {
@@ -128,10 +132,10 @@ export class LobbyUi implements ScreenUi {
     ctx.font = `700 ${U(34)}px ${FONT}`;
     ctx.shadowColor = 'rgba(0,0,0,0.85)';
     ctx.shadowBlur = U(8);
-    ctx.fillText('MULTIPLAYER', X(DW / 2), Y(32));
+    ctx.fillText('MULTIPLAYER', X(CONTENT_CX), Y(32));
     ctx.shadowBlur = 0;
     ctx.fillStyle = 'rgba(127,232,216,0.9)';
-    ctx.fillRect(X(DW / 2 - 90), Y(52), U(180), U(2));
+    ctx.fillRect(X(CONTENT_CX - 90), Y(52), U(180), U(2));
     const relays = this.mp.config.relays.length;
     const open = this.mp.online ? relays : 0;
     ctx.font = `${U(14)}px ${FONT}`;
@@ -139,7 +143,7 @@ export class LobbyUi implements ScreenUi {
     ctx.fillText(
       `you are ${this.mp.identityName()} · ${short(this.mp.npub)} · relays ${open}/${relays}` +
       (this.mp.guestCount() > 0 ? ` · ${this.mp.guestCount()} guest${this.mp.guestCount() === 1 ? '' : 's'}` : ''),
-      X(DW / 2), Y(72),
+      X(CONTENT_CX), Y(72),
     );
     ctx.textAlign = 'left';
 
@@ -154,21 +158,19 @@ export class LobbyUi implements ScreenUi {
     ctx.textAlign = 'center';
     ctx.font = `${U(14)}px ${FONT}`;
     ctx.fillStyle = this.mp.error ? '#ff8a76' : this.joining ? '#ffd479' : 'rgba(255,255,255,0.55)';
-    ctx.fillText(status, X(DW / 2), Y(DH - 26));
+    ctx.fillText(status, X(CONTENT_CX), Y(DH - 26));
     ctx.textAlign = 'left';
 
-    // Corner buttons: back (bottom left), refresh (bottom right).
-    this.button(ctx, X(0), Y(DH - 54), U(160), U(48), 'back', this.hover === 'back', s, 18, 'back');
-    this.button(ctx, X(DW - 160), Y(DH - 54), U(160), U(48), 'refresh', this.hover === 'refresh', s, 18, 'refresh');
-
-    // Fullscreen toggle, top-right, same chrome as the menus/boot screens.
-    {
-      const size = U(44);
-      const fx = X(DW - 60);
-      const fy = Y(12);
-      paintFullscreenButton(ctx, fx, fy, size, s, this.hover === FS_REGION);
-      this.regions.push({ id: FS_REGION, x: fx, y: fy, w: size, h: size });
-    }
+    // Right action column (1/8 of the width): create/refresh/close + back.
+    this.regions.push(...paintActionColumn(ctx, s, X, Y, U, {
+      primary: { id: 'create', label: 'CREATE ROOM' },
+      actions: [
+        { id: 'refresh', label: 'REFRESH' },
+        ...(this.mp.hosting ? [{ id: 'cancel-host', label: 'CLOSE ROOM', danger: true }] : []),
+      ],
+      back: { id: 'back', label: 'back' },
+      hover: this.hover,
+    }));
 
     // Open dropdown options last: they float above everything.
     if (this.openDropdown) this.paintDropdown(ctx, s, X, Y, U);
@@ -178,8 +180,8 @@ export class LobbyUi implements ScreenUi {
     ctx: CanvasRenderingContext2D, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
-    const x0 = 50, y0 = 104, w = 560, h = 520;
-    this.panel(ctx, X(x0), Y(y0), U(w), U(h), s);
+    const x0 = leftPanelX(0), y0 = PANEL_Y, w = PANEL_W, h = PANEL_H;
+    paintPanelBox(ctx, X(x0), Y(y0), U(w), U(h), s);
     ctx.fillStyle = '#ffffff';
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('PUBLIC ROOMS', X(x0 + 20), Y(y0 + 26));
@@ -261,8 +263,8 @@ export class LobbyUi implements ScreenUi {
     ctx: CanvasRenderingContext2D, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
-    const x0 = 670, y0 = 104, w = 560, h = 520;
-    this.panel(ctx, X(x0), Y(y0), U(w), U(h), s);
+    const x0 = leftPanelX(1), y0 = PANEL_Y, w = PANEL_W, h = PANEL_H;
+    paintPanelBox(ctx, X(x0), Y(y0), U(w), U(h), s);
     ctx.fillStyle = '#ffffff';
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('CREATE A ROOM', X(x0 + 20), Y(y0 + 26));
@@ -281,19 +283,18 @@ export class LobbyUi implements ScreenUi {
     row(1, 'Level', level.label, 'dd:level');
     row(2, 'Room size', `${MAX_PLAYERS[this.maxIdx]} pilots`, 'dd:max');
 
-    // Create button.
-    const cy = y0 + 68 + 3 * 62 + 8;
-    this.button(ctx, X(x0 + 22), Y(cy), U(w - 44), U(48), 'CREATE ROOM', this.hover === 'create', s, 18, 'create', false, true);
-
-    ctx.font = `${U(13)}px ${FONT}`;
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    const hint = this.mp.hosting
-      ? `hosting "${this.mp.hosting.title}" — guests join your match and fly with you`
-      : 'the room is published on Nostr; guests connect to this browser over WebRTC';
-    wrap(ctx, hint, X(x0 + 22), Y(cy + 62), U(w - 44), U(18), ctx.fillStyle as string);
+    // The CREATE ROOM / CLOSE ROOM actions live in the right column now.
+    const cy = y0 + 68 + 3 * 62 + 2;
+    ctx.font = `${U(14)}px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    wrap(ctx, 'press CREATE ROOM in the actions column to publish this room on Nostr and wait for guests.',
+      X(x0 + 22), Y(cy), U(w - 44), U(20), ctx.fillStyle as string);
 
     if (this.mp.hosting) {
-      this.button(ctx, X(x0 + 22), Y(y0 + h - 54), U(w - 44), U(36), 'CLOSE ROOM', this.hover === 'cancel-host', s, 15, 'cancel-host');
+      ctx.font = `${U(13)}px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,212,121,0.9)';
+      wrap(ctx, `hosting "${this.mp.hosting.title}" — guests join your match and fly with you.`,
+        X(x0 + 22), Y(cy + 48), U(w - 44), U(18), ctx.fillStyle as string);
     }
   }
 
@@ -352,13 +353,6 @@ export class LobbyUi implements ScreenUi {
   }
 
   // --------------------------------------------------------------- drawing
-  private panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, s: number): void {
-    ctx.fillStyle = 'rgba(8,12,20,0.62)';
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = Math.max(1, s);
-    ctx.strokeRect(x, y, w, h);
-  }
 
   private button(
     ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
@@ -502,7 +496,6 @@ export class LobbyUi implements ScreenUi {
   }
 }
 
-const FONT = "'DejaVu Sans','Segoe UI',Verdana,sans-serif";
 
 function clip(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
   if (ctx.measureText(text).width <= maxW) return text;

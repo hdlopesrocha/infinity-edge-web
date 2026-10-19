@@ -85,7 +85,7 @@ composition; the compiled XNB is exact. It is kept only for reference.
 | `#/ctf`, `#/tt`, `#/tt/{easy,normal,hard}` | Difficulty menus; TT lists Track 01.. / Demo Track |
 | `#/briefing/:level` | Level Menu.xml: scoreBoard (10 rows) + briefing textBox + "start" |
 | `#/game/:level` | Level.xml game (TT race or CTF 10v9) |
-| `#/options` (`#/settings`) | Options (ranges 128–512 / 4–0 / 0–1, saves on "save") |
+| `#/options` (`#/settings`) | Options (ranges 128–512 / 4–0 / 0–1, frame-time readout toggle, saves on "save") |
 | `#/about` | Credits (verbatim) |
 | `#/victory/:level`, `#/defeat/:level` | "Congratulations <user>!" + medal / defeat message |
 | unknown | empty chrome, no invented text |
@@ -95,12 +95,16 @@ only the scene description swaps (menus share the Background.xml scene).
 
 **Every menu screen is WebGL UI** (`src/game/ui/menuui.ts` + `screens.ts`): the
 routes above render no DOM at all — panels, the original icon/button art,
-sliders, checkboxes, text fields, score tables, the breadcrumb and the corner
-buttons are painted into the frame (the same overlay the multiplayer lobby
-uses), with a `_menubtn`-plated list, watermarked track menus and the
-Floating-Gear boot splash — whose "Floating Gear" and "Infinity Edge"
-wordmarks are text in the Airstrike face now, not the old bitmap logos. Only
-the in-match HUD stays DOM-based.
+sliders, checkboxes, text fields, score tables and the breadcrumb are painted
+into the frame (the same overlay the multiplayer lobby uses), with a
+`_menubtn`-plated list, watermarked track menus and the Floating-Gear boot
+splash — whose "Floating Gear" and "Infinity Edge" wordmarks are text in the
+Airstrike face now, not the old bitmap logos. Every menu reserves the **right
+eighth of the design width** for an actions column (fullscreen toggle, primary
+action such as save/start/create/play, context actions and back) and gives the
+remaining seven eighths to content; `src/game/ui/layout.ts` owns that split and
+is shared by the menus, the lobby and the room. Only the in-match HUD stays
+DOM-based.
 
 ## WebSocket asset channel (optional)
 
@@ -245,8 +249,10 @@ Two paths, in order:
   score/time/items stay fixed to the head rotation. The panel matches that
   same head view at its distance, so projected aim/marker positions are exact
   inside it and are pinned to the panel's edge when they fall outside (they
-  stick to the plane instead of the eye's screen). On the 2D page the HUD
-  stays a screen-space overlay. The menus, lobby and room menu are the **same
+  stick to the plane instead of the eye's screen). With the frame-time option
+  enabled (Options or the pause settings), the smoothed WebGL frame interval
+  is shown at the bottom centre of that plane. On the 2D page the HUD stays a
+  screen-space overlay. The menus, lobby and room menu are the **same
   WebGL UI** as the 2D pages, not a second VR menu: the screen is painted once
   into a texture and drawn as a plane in the scene (16:9, 8 world units wide,
   3 in front of the base view). A crosshair with a dwell ring follows the headset's gaze ray on

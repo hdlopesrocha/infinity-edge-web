@@ -7,9 +7,12 @@
 import { nextUiVersion } from '../../engine/overlay';
 import type { ScreenUi } from '../../engine/overlay';
 import type { RoomSnapshot } from './manager';
-import { FS_REGION, paintFullscreenButton, toggleFullscreen } from '../ui/fullscreen';
+import { FS_REGION, toggleFullscreen } from '../ui/fullscreen';
+import {
+  UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
+  paintActionColumn, paintPanelBox,
+} from '../ui/layout';
 
-const FONT = "'DejaVu Sans','Segoe UI',Verdana,sans-serif";
 const DW = 1280;
 const DH = 720;
 
@@ -108,17 +111,17 @@ export class RoomUi implements ScreenUi {
     ctx.font = `700 ${U(30)}px ${FONT}`;
     ctx.shadowColor = 'rgba(0,0,0,0.85)';
     ctx.shadowBlur = U(8);
-    ctx.fillText(snap.title || snap.level, X(DW / 2), Y(30));
+    ctx.fillText(snap.title || snap.level, X(CONTENT_CX), Y(30));
     ctx.shadowBlur = 0;
     ctx.fillStyle = 'rgba(127,232,216,0.9)';
-    ctx.fillRect(X(DW / 2 - 90), Y(50), U(180), U(2));
+    ctx.fillRect(X(CONTENT_CX - 90), Y(50), U(180), U(2));
     ctx.font = `600 ${U(15)}px ${FONT}`;
     const subtitle = `${snap.players.length}/${snap.maxPlayers} pilots · room ${snap.roomId.slice(0, 8)} · ${snap.level}`;
     const subW = ctx.measureText(subtitle).width;
     ctx.fillStyle = 'rgba(3, 7, 12, 0.6)';
-    ctx.fillRect(X(DW / 2) - subW / 2 - U(12), Y(58), subW + U(24), U(24));
+    ctx.fillRect(X(CONTENT_CX) - subW / 2 - U(12), Y(58), subW + U(24), U(24));
     ctx.fillStyle = 'rgba(168,255,240,0.95)';
-    ctx.fillText(subtitle, X(DW / 2), Y(70));
+    ctx.fillText(subtitle, X(CONTENT_CX), Y(70));
     ctx.textAlign = 'left';
 
     this.paintPlayers(ctx, snap, s, X, Y, U);
@@ -137,28 +140,20 @@ export class RoomUi implements ScreenUi {
         : 'waiting for the host to start the match…';
     const statusW = ctx.measureText(status).width;
     ctx.fillStyle = 'rgba(3, 7, 12, 0.55)';
-    ctx.fillRect(X(DW / 2) - statusW / 2 - U(10), Y(DH - 38), statusW + U(20), U(20));
+    ctx.fillRect(X(CONTENT_CX) - statusW / 2 - U(10), Y(DH - 38), statusW + U(20), U(20));
     ctx.fillStyle = snap.phase === 'playing' ? '#ffd479' : 'rgba(255,255,255,0.9)';
-    ctx.fillText(status, X(DW / 2), Y(DH - 26));
+    ctx.fillText(status, X(CONTENT_CX), Y(DH - 26));
     ctx.shadowBlur = 0;
     ctx.textAlign = 'left';
 
-    // Corners: leave/close, PLAY (host only).
-    this.button(ctx, X(0), Y(DH - 54), U(160), U(48), snap.isHost ? 'close room' : 'leave room',
-      'back', this.hover === 'back', U(15));
-    if (snap.isHost) {
-      this.button(ctx, X(DW - 160), Y(DH - 54), U(160), U(48),
-        snap.phase === 'playing' ? 'starting…' : 'PLAY', 'play', this.hover === 'play', U(18), true);
-    }
-
-    // Fullscreen toggle, top-right (the menu/lobby chrome, from boot on).
-    {
-      const size = U(44);
-      const fx = X(DW - 60);
-      const fy = Y(12);
-      paintFullscreenButton(ctx, fx, fy, size, s, this.hover === FS_REGION);
-      this.regions.push({ id: FS_REGION, x: fx, y: fy, w: size, h: size });
-    }
+    // Right action column (1/8 of the width): host PLAY + leave/close.
+    this.regions.push(...paintActionColumn(ctx, s, X, Y, U, {
+      primary: snap.isHost
+        ? { id: 'play', label: snap.phase === 'playing' ? 'STARTING…' : 'PLAY', disabled: snap.phase === 'playing' }
+        : undefined,
+      back: { id: 'back', label: snap.isHost ? 'CLOSE ROOM' : 'LEAVE ROOM', danger: true },
+      hover: this.hover,
+    }));
 
     if (this.openTeam !== null) this.paintTeamDropdown(ctx, snap, s, X, Y, U);
   }
@@ -167,8 +162,8 @@ export class RoomUi implements ScreenUi {
     ctx: CanvasRenderingContext2D, snap: RoomSnapshot, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
-    const x0 = 50, y0 = 104, w = 560, h = 512;
-    this.panel(ctx, X(x0), Y(y0), U(w), U(h), s);
+    const x0 = leftPanelX(0), y0 = PANEL_Y, w = PANEL_W, h = PANEL_H;
+    paintPanelBox(ctx, X(x0), Y(y0), U(w), U(h), s);
     ctx.fillStyle = '#ffffff';
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('PLAYERS', X(x0 + 20), Y(y0 + 26));
@@ -223,8 +218,8 @@ export class RoomUi implements ScreenUi {
     ctx: CanvasRenderingContext2D, snap: RoomSnapshot, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
-    const x0 = 670, y0 = 104, w = 560, h = 512;
-    this.panel(ctx, X(x0), Y(y0), U(w), U(h), s);
+    const x0 = leftPanelX(1), y0 = PANEL_Y, w = PANEL_W, h = PANEL_H;
+    paintPanelBox(ctx, X(x0), Y(y0), U(w), U(h), s);
     ctx.fillStyle = '#ffffff';
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('CHAT', X(x0 + 20), Y(y0 + 26));
@@ -361,13 +356,6 @@ export class RoomUi implements ScreenUi {
     });
   }
 
-  private panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, s: number): void {
-    ctx.fillStyle = 'rgba(8,12,20,0.64)';
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = Math.max(1, s);
-    ctx.strokeRect(x, y, w, h);
-  }
 
   private button(
     ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,

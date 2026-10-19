@@ -9,11 +9,14 @@
 // as `onSelect` / `onChange` callbacks.
 
 import { nextUiVersion } from '../../engine/overlay';
-import { FS_REGION, paintFullscreenButton } from './fullscreen';
+import { FS_REGION } from './fullscreen';
 import { wordmarkFont } from '../fonts';
+import {
+  UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, SINGLE_W,
+  leftPanelX, singlePanelX, paintActionColumn, paintPanelBox,
+} from './layout';
 import type { ScreenUi } from '../../engine/overlay';
 
-const FONT = "'DejaVu Sans','Segoe UI',Verdana,sans-serif";
 const DW = 1280;
 const DH = 720;
 const TEX_BASE = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
@@ -222,29 +225,56 @@ export class MenuUi implements ScreenUi {
       const both = !!(this.screen.left && this.screen.right);
       const columns: Column[] = [];
       if (both) {
-        columns.push({ panel: this.screen.left!, x: 50, y: 104, w: 560, h: 512 });
-        columns.push({ panel: this.screen.right!, x: 670, y: 104, w: 560, h: 512 });
+        columns.push({ panel: this.screen.left!, x: leftPanelX(0), y: PANEL_Y, w: PANEL_W, h: PANEL_H });
+        columns.push({ panel: this.screen.right!, x: leftPanelX(1), y: PANEL_Y, w: PANEL_W, h: PANEL_H });
       } else {
         const only = this.screen.left ?? this.screen.right;
-        if (only) columns.push({ panel: only, x: 280, y: 104, w: 720, h: 512 });
+        if (only) columns.push({ panel: only, x: singlePanelX(SINGLE_W), y: PANEL_Y, w: SINGLE_W, h: PANEL_H });
       }
       for (const col of columns) this.paintPanel(ctx, col, s, X, Y, U);
     }
 
-    if (!this.screen.hideChrome) this.paintChrome(ctx, s, X, Y, U);
-    // Always available, including the boot/engine/start screens (hideChrome).
-    this.paintFullscreen(ctx, s, X, Y, U);
+    // Right action column (1/8 of the width): primary + back, plus the
+    // fullscreen toggle. Boot/splash screens keep only the toggle.
+    this.regions.push(...paintActionColumn(ctx, s, X, Y, U, {
+      primary: !this.screen.hideChrome && this.screen.primary
+        ? { id: 'primary', label: this.screen.primary.label } : undefined,
+      back: this.screen.hideChrome ? undefined : { id: 'back', label: this.screen.backLabel ?? 'back' },
+      hover: this.hover,
+      chrome: !this.screen.hideChrome,
+    }));
+    this.paintCrumbs(ctx, s, X, Y, U);
   }
 
-  private paintFullscreen(
+  /** Breadcrumbs, bottom centre of the content area. */
+  private paintCrumbs(
     ctx: CanvasRenderingContext2D, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
-    const size = U(44);
-    const x = X(DW - 60);
-    const y = Y(12);
-    paintFullscreenButton(ctx, x, y, size, s, this.hover === FS_REGION);
-    this.regions.push({ id: FS_REGION, x, y, w: size, h: size });
+    if (this.crumbs.length <= 1) return;
+    ctx.font = `${U(12)}px ${FONT}`;
+    const full = this.crumbs.map((c) => c.label).join('  ›  ');
+    const total = ctx.measureText(full).width;
+    let x = X(CONTENT_CX) - total / 2;
+    const y = Y(DH - 30);
+    for (let i = 0; i < this.crumbs.length; i++) {
+      const c = this.crumbs[i];
+      const label = c.label;
+      const w = ctx.measureText(label).width;
+      ctx.fillStyle = c.current ? 'rgba(255,255,255,0.45)' : 'rgba(127,232,216,0.85)';
+      ctx.fillText(label, x, y);
+      if (!c.current) {
+        const id = 'crumb:' + i;
+        this.regions.push({ id, x: x - U(4), y: y - U(10), w: w + U(8), h: U(20) });
+      }
+      x += w;
+      if (i < this.crumbs.length - 1) {
+        const sep = '  ›  ';
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.fillText(sep, x, y);
+        x += ctx.measureText(sep).width;
+      }
+    }
   }
 
   private paintTitle(
@@ -256,14 +286,14 @@ export class MenuUi implements ScreenUi {
     ctx.font = `700 ${U(32)}px ${FONT}`;
     ctx.shadowColor = 'rgba(0,0,0,0.85)';
     ctx.shadowBlur = U(8);
-    ctx.fillText(this.screen.title, X(DW / 2), Y(34));
+    ctx.fillText(this.screen.title, X(CONTENT_CX), Y(34));
     ctx.shadowBlur = 0;
     ctx.fillStyle = 'rgba(127,232,216,0.9)';
-    ctx.fillRect(X(DW / 2 - 90), Y(54), U(180), U(2));
+    ctx.fillRect(X(CONTENT_CX - 90), Y(54), U(180), U(2));
     if (this.screen.subtitle) {
       ctx.font = `${U(14)}px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.72)';
-      ctx.fillText(this.screen.subtitle, X(DW / 2), Y(76));
+      ctx.fillText(this.screen.subtitle, X(CONTENT_CX), Y(76));
     }
     ctx.textAlign = 'left';
   }
@@ -276,7 +306,7 @@ export class MenuUi implements ScreenUi {
     if (text) {
       // Same place and proportions as the old 512x128 bitmap wordmarks (their
       // glyphs were ~508x37 at y=51..88), but rendered as text in Airstrike.
-      const cx = X(DW / 2);
+      const cx = X(CONTENT_CX);
       const cy = Y(280);
       const chars = [...text];
       let size = U(64);
@@ -320,7 +350,7 @@ export class MenuUi implements ScreenUi {
       const total = this.screen.loading.total;
       const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
       const bw = U(420), bh = U(14);
-      const bx = X(DW / 2) - bw / 2;
+      const bx = X(CONTENT_CX) - bw / 2;
       const by = Y(420);
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(bx - U(10), by - U(34), bw + U(20), U(86));
@@ -330,14 +360,14 @@ export class MenuUi implements ScreenUi {
       ctx.font = `700 ${U(15)}px ${FONT}`;
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillText('loading', X(DW / 2), by - U(14));
+      ctx.fillText('loading', X(CONTENT_CX), by - U(14));
       ctx.fillStyle = 'rgba(255,255,255,0.18)';
       ctx.fillRect(bx, by, bw, bh);
       ctx.fillStyle = '#7fe8d8';
       ctx.fillRect(bx, by, (bw * pct) / 100, bh);
       ctx.font = `${U(13)}px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.fillText(total > 0 ? `${done} / ${total}` : `${done} / …`, X(DW / 2), by + U(28));
+      ctx.fillText(total > 0 ? `${done} / ${total}` : `${done} / …`, X(CONTENT_CX), by + U(28));
       ctx.textAlign = 'left';
     }
   }
@@ -347,11 +377,7 @@ export class MenuUi implements ScreenUi {
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
     const p = col.panel;
-    ctx.fillStyle = 'rgba(8,12,20,0.64)';
-    ctx.fillRect(X(col.x), Y(col.y), U(col.w), U(col.h));
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = Math.max(1, s);
-    ctx.strokeRect(X(col.x), Y(col.y), U(col.w), U(col.h));
+    paintPanelBox(ctx, X(col.x), Y(col.y), U(col.w), U(col.h), s);
 
     if (p.watermark) {
       const img = this.image(p.watermark);
@@ -624,62 +650,6 @@ export class MenuUi implements ScreenUi {
       }
     }
     return y + rowH;
-  }
-
-  private paintChrome(
-    ctx: CanvasRenderingContext2D, s: number,
-    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
-  ): void {
-    const back = this.screen.backLabel ?? 'back';
-    this.corner(ctx, X(0), Y(DH - 54), U(160), U(48), back, 'back', s);
-    if (this.screen.primary) {
-      this.corner(ctx, X(DW - 160), Y(DH - 54), U(160), U(48), this.screen.primary.label, 'primary', s);
-    }
-    // Breadcrumbs, bottom centre (same trail the DOM chrome used).
-    if (this.crumbs.length > 1) {
-      ctx.font = `${U(12)}px ${FONT}`;
-      const full = this.crumbs.map((c) => c.label).join('  ›  ');
-      let total = ctx.measureText(full).width;
-      let x = X(DW / 2) - total / 2;
-      const y = Y(DH - 30);
-      for (let i = 0; i < this.crumbs.length; i++) {
-        const c = this.crumbs[i];
-        const label = c.label;
-        const w = ctx.measureText(label).width;
-        ctx.fillStyle = c.current ? 'rgba(255,255,255,0.45)' : 'rgba(127,232,216,0.85)';
-        ctx.fillText(label, x, y);
-        if (!c.current) {
-          const id = 'crumb:' + i;
-          this.regions.push({ id, x: x - U(4), y: y - U(10), w: w + U(8), h: U(20) });
-        }
-        x += w;
-        if (i < this.crumbs.length - 1) {
-          const sep = '  ›  ';
-          ctx.fillStyle = 'rgba(255,255,255,0.3)';
-          ctx.fillText(sep, x, y);
-          x += ctx.measureText(sep).width;
-        }
-      }
-      void total;
-    }
-  }
-
-  private corner(
-    ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
-    label: string, id: string, s: number,
-  ): void {
-    const hovered = this.hover === id;
-    ctx.fillStyle = hovered ? 'rgba(255,255,255,0.16)' : 'rgba(10,14,22,0.72)';
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-    ctx.lineWidth = Math.max(1, s);
-    ctx.strokeRect(x, y, w, h);
-    ctx.font = `700 ${Math.round(15 * s)}px ${FONT}`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(label, x + w / 2, y + h / 2 + s);
-    ctx.textAlign = 'left';
-    this.regions.push({ id, x, y, w, h });
   }
 
   // ---------------------------------------------------------------- input
