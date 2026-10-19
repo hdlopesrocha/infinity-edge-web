@@ -15,6 +15,7 @@ import { goBack } from '../game/nav';
 import { trail } from '../game/trail';
 import { pickMusicFile } from '../game/musicfile';
 import { toggleFullscreen } from '../game/ui/fullscreen';
+import { loadWordmarkFont } from '../game/fonts';
 import { enableVr, setVr } from '../game/vr';
 import { leaveXr } from '../game/xr';
 import type { Options } from '../game/resources';
@@ -364,6 +365,8 @@ export default defineComponent({
       if (r) r.uiOverlay = ui;
       rebuild();
       void audio.refreshCustomMusic().then(() => rebuild());
+      // The boot wordmarks are text now; repaint once the face is available.
+      void loadWordmarkFont().then(() => rebuild());
       if (nameOf() === 'options') enterOptions();
       if (nameOf() === 'briefing') void loadBriefing(String(route.params.level ?? ''));
       // Boot screens advance on their own. The routed view is remounted on

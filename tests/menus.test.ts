@@ -6,6 +6,14 @@ import { parseUsernameParam } from '../src/game/resources';
 import { store } from '../src/game/store';
 
 describe('menu screens', () => {
+  it('boot/engine/start screens use text wordmarks (Airstrike), not logo bitmaps', () => {
+    expect(screens.bootScreen('boot', null).wordmark).toBe('Infinity Edge');
+    expect(screens.bootScreen('engine', null).wordmark).toBe('Floating Gear');
+    expect(screens.bootScreen('start', null).wordmark).toBe('Infinity Edge');
+    // The old `logo` field is gone; screens carry text only.
+    expect('logo' in screens.bootScreen('engine', null)).toBe(false);
+  });
+
   it('main menu: four icons plus the multiplayer entry', () => {
     const s = screens.mainMenu();
     expect(s.left?.icons?.map((i) => i.id)).toEqual(['/single-player', '/hangar', '/options', '/about']);

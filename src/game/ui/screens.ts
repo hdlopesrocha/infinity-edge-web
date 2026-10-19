@@ -294,7 +294,7 @@ export function notFound(): MenuScreen {
 export function bootScreen(routeName: string, loading: { done: number; total: number } | null): MenuScreen {
   return {
     title: '',
-    logo: routeName === 'engine' ? '_engineLogo.png' : '_gameLogo.png',
+    wordmark: routeName === 'engine' ? 'Floating Gear' : 'Infinity Edge',
     loading,
     empty: true,
     hideChrome: true,

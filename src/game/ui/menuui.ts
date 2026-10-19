@@ -1,7 +1,8 @@
 // WebGL menu UI: every menu screen is painted into the WebGL frame (the same
 // ScreenUi overlay the multiplayer lobby uses), so the menus need no DOM at
 // all. The original menu art is used: 128/256 px icons, the `_menubtn` button
-// plate, the logo and medal textures.
+// plate and the medal textures; the boot/start wordmarks are text in the
+// original Airstrike face (src/game/fonts.ts).
 //
 // The screens (src/game/ui/screens.ts) describe their content declaratively;
 // this module lays it out, paints it, and routes pointer/keyboard input back
@@ -9,6 +10,7 @@
 
 import { nextUiVersion } from '../../engine/overlay';
 import { FS_REGION, paintFullscreenButton } from './fullscreen';
+import { wordmarkFont } from '../fonts';
 import type { ScreenUi } from '../../engine/overlay';
 
 const FONT = "'DejaVu Sans','Segoe UI',Verdana,sans-serif";
@@ -68,8 +70,8 @@ export interface MenuScreen {
   subtitle?: string;
   left?: MenuPanel;
   right?: MenuPanel;
-  /** Canvas-painted background behind the panels (boot logos). */
-  logo?: string;
+  /** Boot/start wordmark text, painted in the original Airstrike face. */
+  wordmark?: string;
   /** Loading bar (boot screens). */
   loading?: { done: number; total: number } | null;
   /** Primary corner button (save/start/menu); null = none. */
@@ -213,10 +215,10 @@ export class MenuUi implements ScreenUi {
     ctx.fillStyle = 'rgba(4, 8, 14, 0.42)';
     ctx.fillRect(0, 0, w, h);
 
-    if (this.screen.logo) this.paintLogo(ctx, s, X, Y, U);
+    if (this.screen.wordmark) this.paintWordmark(ctx, s, X, Y, U);
     if (this.screen.title) this.paintTitle(ctx, s, X, Y, U);
 
-    if (!this.screen.empty && !this.screen.logo) {
+    if (!this.screen.empty && !this.screen.wordmark) {
       const both = !!(this.screen.left && this.screen.right);
       const columns: Column[] = [];
       if (both) {
@@ -266,15 +268,52 @@ export class MenuUi implements ScreenUi {
     ctx.textAlign = 'left';
   }
 
-  private paintLogo(
+  private paintWordmark(
     ctx: CanvasRenderingContext2D, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
-    const img = this.image(this.screen.logo!);
-    if (img) {
-      const w = U(512 * 1.1), h = U(128 * 1.1);
-      ctx.globalAlpha = 1;
-      ctx.drawImage(img, X(DW / 2) - w / 2, Y(280) - h / 2, w, h);
+    const text = this.screen.wordmark;
+    if (text) {
+      // Same place and proportions as the old 512x128 bitmap wordmarks (their
+      // glyphs were ~508x37 at y=51..88), but rendered as text in Airstrike.
+      const cx = X(DW / 2);
+      const cy = Y(280);
+      const chars = [...text];
+      let size = U(64);
+      let tracking = U(4);
+      ctx.font = wordmarkFont(size);
+      let widths = chars.map((ch) => ctx.measureText(ch).width);
+      const width = (): number =>
+        widths.reduce((a, b) => a + b, 0) + tracking * Math.max(0, chars.length - 1);
+      // Never overflow the 1280-wide design canvas.
+      if (width() > U(760)) {
+        const k = U(760) / width();
+        size *= k;
+        tracking *= k;
+        ctx.font = wordmarkFont(size);
+        widths = chars.map((ch) => ctx.measureText(ch).width);
+      }
+      const total = width();
+      // Brushed-metal fill: light top, grey waist, light bottom (the bitmap's
+      // look), with a soft drop shadow for the dark space background.
+      const grad = ctx.createLinearGradient(0, cy - size * 0.6, 0, cy + size * 0.6);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.42, '#d7dfe6');
+      grad.addColorStop(0.58, '#8f9dab');
+      grad.addColorStop(1, '#eef3f7');
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.6)';
+      ctx.shadowBlur = U(10);
+      ctx.shadowOffsetY = U(3);
+      ctx.fillStyle = grad;
+      let x = cx - total / 2;
+      for (let i = 0; i < chars.length; i++) {
+        ctx.fillText(chars[i], x + widths[i] / 2, cy);
+        x += widths[i] + tracking;
+      }
+      ctx.restore();
     }
     if (this.screen.loading) {
       const done = this.screen.loading.done;

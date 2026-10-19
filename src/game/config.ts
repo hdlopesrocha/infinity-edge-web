@@ -56,7 +56,6 @@ export const TEXTURES: Record<string, string> = {
   _optionsIcon: 'System/options', _about: 'System/about', _back: 'System/back',
   _timeTrial: 'System/timeTrial', _ctf: 'System/ctf', _easy: 'System/easy', _normal: 'System/normal', _hard: 'System/hard',
   _key: 'System/key', _over: 'System/over',
-  _engineLogo: 'System/engineLogo', _gameLogo: 'System/logo',
   _backAnalog: 'Control/backAnalog', _stickAnalog: 'Control/stickAnalog',
   _fireButton: 'Control/fire', _fireButtonHM: 'Control/fireHM',
   _accelAnalog: 'Control/accelAnalog', _nitro: 'Control/nitro',
