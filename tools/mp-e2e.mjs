@@ -69,25 +69,20 @@ try {
     await until(() => clickRegion('dd:level'));
     await until(() => clickRegion('opt:dd:level:${LEVEL_IDX}'));
     await until(() => clickRegion('create'));
-    await until(() => location.hash.includes('/game/'), 90000);
-    let built = false;
-    try {
-      // The scene builds on the app's own interval; keep it ticking.
-      await until(() => window.__ieGame && mp.sessionActive && window.__ieGame.gameType !== 'BACK', 120000);
-      built = true;
-    } catch { /* report the state below */ }
+    // Creating a room opens the waiting room; the match starts on PLAY.
+    await until(() => location.hash.includes('/room'), 90000);
     const room = mp.hosting;
+    const snap = await until(() => mp.roomSnapshot(), 30000);
     return {
-      built, state: state(),
+      state: state(),
       hash: location.hash, roomId: room && room.id, roomGame: room && room.game,
       roomTitle: room && room.title, pubkey: mp.pubkey,
-      levelKey: window.__ieGame && window.__ieGame.levelKey,
-      ships: window.__ieGame && window.__ieGame.gameType !== 'BACK' ? window.__ieGame.teams.get('human').objects.length : 0,
+      players: snap.players.length, teams: snap.teams,
     };
   })()`);
-  step('host created + hosting', hostCreated);
-  if (!hostCreated.built) throw new Error('host match never started: ' + JSON.stringify(hostCreated.state));
+  step('host created a room + waits', hostCreated);
   if (!hostCreated.roomId || hostCreated.roomGame !== LEVEL) throw new Error('host did not create the room');
+  if (hostCreated.players !== 1) throw new Error('host room should start with one player');
 
   await host.evaluate(`(async () => { ${HELPERS} pump(10); return true; })()`);
 
@@ -136,30 +131,74 @@ try {
       await until(() => R().uiOverlay.regions.some((x) => x.id === 'join:' + key));
       click('join:' + key);
       try {
-        await until(() => location.hash.includes('/game/'), 90000);
+        await until(() => location.hash.includes('/room'), 90000);
       } catch {
         return { failed: 'navigate', error: mp.error, status: mp.status,
           pending: !!mp.pendingJoin, joining: R().uiOverlay ? R().uiOverlay.joining : null,
           trace: window.__ieMPTrace ? window.__ieMPTrace() : [] };
       }
-      const g = await until(() => {
-        const inst = window.__ieGame;
-        return inst && typeof inst.rtt === 'number' && inst.selectedObject ? inst : null;
-      }, 120000);
+      const snap = await until(() => {
+        const s = mp.roomSnapshot();
+        return s && s.players.length >= 2 ? s : null;
+      }, 60000);
       return {
         hash: location.hash, roomTitle: room.title, hostName: room.host,
-        isNet: typeof g.rtt === 'number',
-        ship: g.selectedObject ? [g.selectedObject.pos[0], g.selectedObject.pos[1], g.selectedObject.pos[2]] : null,
-        levelKey: g.levelKey,
+        waiting: true, meIndex: snap.meIndex, players: snap.players.length,
       };
     })()`).catch(async (e) => ({ failed: String(e.message) }));
-    step('guest ' + n + ' joined over WebRTC', joined);
+    step('guest ' + n + ' joined the room', joined);
     if (joined.failed) {
       const hostTrace = await host.evaluate('window.__ieMPTrace ? window.__ieMPTrace() : []').catch(() => []);
       throw new Error('guest ' + n + ' join failed: ' + JSON.stringify(joined) + ' hostTrace: ' + JSON.stringify(hostTrace));
     }
-    if (!joined.isNet) throw new Error('guest ' + n + ' did not end up on a NetGame instance');
     guests.push({ page: guest, info: joined });
+  }
+
+  // The host must see every guest before PLAY, then the match starts for all.
+  const hostStarted = await host.evaluate(`(async () => {
+    ${HELPERS}
+    const mp = window.__ieMP;
+    await until(() => mp.roomSnapshot() && mp.roomSnapshot().players.length === ${GUESTS + 1}, 60000);
+    const playing = await until(() => clickRegion('play'), 20000);
+    const started = await until(() => location.hash.includes('/game/'), 90000);
+    // The scene builds on the app's own interval; keep it ticking.
+    const gi = await until(() => window.__ieGame && mp.sessionActive && window.__ieGame.gameType !== 'BACK' ? window.__ieGame : null, 180000);
+    // Every guest follows the start message on its own; the session must see
+    // all of their Join frames before the input checks below.
+    await until(() => mp.debugGuests().filter((g) => g.joined).length === ${GUESTS}, 120000);
+    return {
+      playing, started, levelKey: gi.levelKey,
+      ships: gi.teams.get('human') ? gi.teams.get('human').objects.length : 0,
+      guests: mp.debugGuests(), hash: location.hash,
+    };
+  })()`).catch((e) => ({ failed: String(e.message), trace: [] }));
+  step('host PLAY started the match', hostStarted);
+  if (hostStarted.failed) {
+    const trace = await host.evaluate('window.__ieMPTrace ? window.__ieMPTrace() : []').catch(() => []);
+    throw new Error('host never started the match: ' + JSON.stringify(hostStarted) + ' trace: ' + JSON.stringify(trace));
+  }
+  if (!hostStarted.guests || hostStarted.guests.filter((g) => g.joined).length !== GUESTS) {
+    throw new Error('host session does not have all guests: ' + JSON.stringify(hostStarted.guests));
+  }
+
+  for (const g of guests) {
+    await g.page.waitForUrl('#/game/', 120000);
+    const info = await g.page.evaluate(`(async () => {
+      ${HELPERS}
+      const gi = await until(() => {
+        const inst = window.__ieGame;
+        return inst && typeof inst.rtt === 'number' && inst.selectedObject ? inst : null;
+      }, 180000);
+      return {
+        hash: location.hash, isNet: typeof gi.rtt === 'number', levelKey: gi.levelKey,
+        ship: gi.selectedObject ? [gi.selectedObject.pos[0], gi.selectedObject.pos[1], gi.selectedObject.pos[2]] : null,
+        team: gi.selectedObject ? gi.selectedObject.team.name : null,
+      };
+    })()`).catch(async (e) => ({ failed: String(e.message) }));
+    g.info = { ...g.info, ...info };
+    step('guest match after PLAY', g.info);
+    if (g.info.failed) throw new Error('guest never reached the match: ' + JSON.stringify(g.info));
+    if (!g.info.isNet) throw new Error('guest did not end up on a NetGame instance');
   }
 
   // Stream both ways: host steps + sends, guests apply.

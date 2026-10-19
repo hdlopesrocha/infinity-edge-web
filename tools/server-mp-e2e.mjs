@@ -110,6 +110,8 @@ try {
       await until(() => lobbyReady(), 60000);
       await mp.connect();
       const room = await until(() => mp.rooms.find((x) => x.host === ${JSON.stringify(SERVER_NAME)}), 60000);
+      // Dedicated rooms are flagged so clients skip the waiting room.
+      if (!room.srv) throw new Error('server room is missing srv:true');
       const key = room.hostPubkey + ':' + room.id;
       await until(() => R().uiOverlay.regions.some((x) => x.id === 'join:' + key));
       clickRegion('join:' + key);

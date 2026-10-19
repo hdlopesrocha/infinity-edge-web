@@ -17,6 +17,8 @@ export async function launchChrome({ port = 9334, windowSize = '1000,620', profi
     '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     '--no-first-run', '--no-default-browser-check',
     '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+    // Voice-chat tests: a synthetic microphone that is granted without a prompt.
+    '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     '--autoplay-policy=no-user-gesture-required',
     `--window-size=${windowSize}`, '--hide-scrollbars', 'about:blank',
   ], { stdio: 'ignore' });
@@ -161,6 +163,19 @@ export const HELPERS = `
     }
   };
   const lobbyReady = () => { const r = R(); return r && r.uiOverlay && r.uiOverlay.regions.length > 6; };
+  // Viewport (CSS px) coordinates of a WebGL UI region, for real CDP clicks.
+  const regionPoint = (id) => {
+    const r = R();
+    const ui = r && r.uiOverlay;
+    if (!ui) return null;
+    const reg = ui.regions.find((x) => x.id === id);
+    if (!reg) return null;
+    const rect = r.canvas.getBoundingClientRect();
+    return {
+      x: rect.left + (reg.x + reg.w / 2) * (rect.width / ui.logical.w),
+      y: rect.top + (reg.y + reg.h / 2) * (rect.height / ui.logical.h),
+    };
+  };
   const clickRegion = (id) => {
     const r = R();
     const lobby = r.uiOverlay;
