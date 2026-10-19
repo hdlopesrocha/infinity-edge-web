@@ -29,7 +29,10 @@ body {
 .app-root { position: fixed; inset: 0; }
 .viewport-layer { position: absolute; inset: 0; }
 .viewport-layer canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
-.ui-layer { position: absolute; inset: 0; overflow: hidden; }
+.ui-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* The menu and lobby screens are painted into the game canvas, so the DOM
+   overlay must not swallow their clicks: interactive in-match elements opt
+   back in below (.touch-layer, .corner-btn, .pause-backdrop, inputs, …). */
 
 .c-white { color: var(--ink); }
 .c-white70 { color: var(--ink-70); }

@@ -77,6 +77,33 @@ export function connect(wsUrl, debug = false) {
       }
       return res.result?.value;
     },
+    /**
+     * Real mouse input at viewport coordinates (CDP Input domain): hit
+     * testing, focus and pointer-event routing behave exactly like a user's
+     * click, unlike dispatching synthetic PointerEvents at a known target.
+     */
+    async click(x, y, holdMs = 40) {
+      const common = { x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 };
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...common });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...common, buttons: 1 });
+      await sleep(holdMs);
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...common, buttons: 0 });
+    },
+
+    /** Real pointer drag from (x1,y1) to (x2,y2) with intermediate moves. */
+    async drag(x1, y1, x2, y2, steps = 6) {
+      const common = { button: 'left', clickCount: 1 };
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x1), y: Math.round(y1), ...common });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(x1), y: Math.round(y1), ...common, buttons: 1 });
+      for (let i = 1; i <= steps; i++) {
+        const x = x1 + ((x2 - x1) * i) / steps;
+        const y = y1 + ((y2 - y1) * i) / steps;
+        await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x), y: Math.round(y), ...common, buttons: 1 });
+        await sleep(20);
+      }
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x2), y: Math.round(y2), ...common, buttons: 0 });
+    },
+
     /** Saves a PNG of this page (visual evidence of the WebGL UI). */
     async screenshot(path) {
       const shot = await send('Page.captureScreenshot', { format: 'png' });

@@ -34,6 +34,7 @@ npm run mp:server       # dedicated C++ room (server hosts, does not play)
 npm run mp:server-e2e   # real server + two browser guests, PASS/FAIL
 
 # verification tooling (headless Chrome, no extra dependencies)
+npm run ui:e2e          # real-mouse UI run: menus, options, lobby, pause chrome
 npm run asset-server    # HTTP + WebSocket asset channel on :8090
 npm run shots           # screenshots of every route -> tools/shots/
 node tools/verify.mjs   # behavioural checks: routing, history, single GL context,
@@ -340,6 +341,13 @@ ancestry for cold deep links. Reload rebuilds the stack.
   save → localStorage) → about reports **one canvas, zero DOM controls**, the
   original icon/`_menubtn` art drawn into the frame, `?username=` setting and
   saving the pilot name, and breadcrumb/back/primary corners.
+- `npm run ui:e2e` drives the same screens with **real mouse input**
+  (`Input.dispatchMouseEvent`, full browser hit-testing): menu navigation,
+  options checkbox/slider/save, the in-match back button + pause RESUME, and
+  the multiplayer lobby's age-filter dropdown and back button. It is the check
+  that caught the DOM overlay layer (`.ui-layer`) swallowing every canvas
+  click — the menus and lobby are painted into the canvas, so that layer is
+  `pointer-events: none` now, with the in-match controls opting back in.
 - Options screen matches SS8: right-aligned labels with a shared right edge,
   192 px black `_pixel` bars with `_ball` knobs and value text, black square
   checks with a white ball when set, `Clear All` at 90 % of the right list.
