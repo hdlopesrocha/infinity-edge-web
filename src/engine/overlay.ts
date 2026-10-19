@@ -27,6 +27,12 @@ export interface ScreenUi {
   version: number;
   /** Paint the UI; coordinates are device pixels of the overlay canvas. */
   paint(ctx: CanvasRenderingContext2D, w: number, h: number): void;
+  /**
+   * Optional input, used by the immersive VR panel's gaze crosshair. The
+   * screen-space path handles pointer events itself, so this is only called
+   * where the UI is shown inside the headset (coordinates are UI pixels).
+   */
+  pointer?(kind: 'move' | 'down' | 'up', x: number, y: number, cssW: number, cssH: number): boolean;
 }
 
 const VERT = `#version 300 es
