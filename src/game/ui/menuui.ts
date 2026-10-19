@@ -8,6 +8,7 @@
 // as `onSelect` / `onChange` callbacks.
 
 import { nextUiVersion } from '../../engine/overlay';
+import { FS_REGION, paintFullscreenButton } from './fullscreen';
 import type { ScreenUi } from '../../engine/overlay';
 
 const FONT = "'DejaVu Sans','Segoe UI',Verdana,sans-serif";
@@ -229,6 +230,19 @@ export class MenuUi implements ScreenUi {
     }
 
     if (!this.screen.hideChrome) this.paintChrome(ctx, s, X, Y, U);
+    // Always available, including the boot/engine/start screens (hideChrome).
+    this.paintFullscreen(ctx, s, X, Y, U);
+  }
+
+  private paintFullscreen(
+    ctx: CanvasRenderingContext2D, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  ): void {
+    const size = U(44);
+    const x = X(DW - 60);
+    const y = Y(12);
+    paintFullscreenButton(ctx, x, y, size, s, this.hover === FS_REGION);
+    this.regions.push({ id: FS_REGION, x, y, w: size, h: size });
   }
 
   private paintTitle(
@@ -577,44 +591,6 @@ export class MenuUi implements ScreenUi {
     ctx: CanvasRenderingContext2D, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
-    // Fullscreen toggle (web addition): 44 px icon button, top-right.
-    {
-      const size = U(44);
-      const bx = X(DW - 60), by = Y(12);
-      const hovered = this.hover === 'fs';
-      ctx.fillStyle = hovered ? 'rgba(255,255,255,0.16)' : 'rgba(10,14,22,0.6)';
-      ctx.fillRect(bx, by, size, size);
-      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-      ctx.lineWidth = Math.max(1, s);
-      ctx.strokeRect(bx, by, size, size);
-      const full = typeof document !== 'undefined' && !!document.fullscreenElement;
-      ctx.strokeStyle = hovered ? '#7fe8d8' : 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = Math.max(1.4, 2 * s);
-      const p = U(11);
-      const cx = bx + size / 2, cy = by + size / 2;
-      const arm = (dx: number, dy: number): void => {
-        ctx.beginPath();
-        ctx.moveTo(cx + dx * p, cy + dy * (p - U(6)));
-        ctx.lineTo(cx + dx * p, cy + dy * p);
-        ctx.lineTo(cx + dx * (p - U(6)), cy + dy * p);
-        ctx.stroke();
-      };
-      if (full) {
-        // Inward corners for "exit fullscreen".
-        ctx.beginPath();
-        ctx.moveTo(cx - p, cy - p + U(6)); ctx.lineTo(cx - p, cy - p); ctx.lineTo(cx - p + U(6), cy - p);
-        ctx.moveTo(cx + p - U(6), cy - p); ctx.lineTo(cx + p, cy - p); ctx.lineTo(cx + p, cy - p + U(6));
-        ctx.moveTo(cx - p, cy + p - U(6)); ctx.lineTo(cx - p, cy + p); ctx.lineTo(cx - p + U(6), cy + p);
-        ctx.moveTo(cx + p - U(6), cy + p); ctx.lineTo(cx + p, cy + p); ctx.lineTo(cx + p, cy + p - U(6));
-        ctx.stroke();
-      } else {
-        arm(-1, -1);
-        arm(1, -1);
-        arm(-1, 1);
-        arm(1, 1);
-      }
-      this.regions.push({ id: 'fs', x: bx, y: by, w: size, h: size });
-    }
     const back = this.screen.backLabel ?? 'back';
     this.corner(ctx, X(0), Y(DH - 54), U(160), U(48), back, 'back', s);
     if (this.screen.primary) {
@@ -797,7 +773,7 @@ export class MenuUi implements ScreenUi {
   }
 
   private activate(id: string): void {
-    if (id === 'fs') {
+    if (id === FS_REGION) {
       this.cb.onSelect('fs');
       return;
     }

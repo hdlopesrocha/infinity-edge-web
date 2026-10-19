@@ -111,6 +111,16 @@ try {
   check('ctf teams offered', hostRoom.teams.join(',') === 'human,alien', hostRoom.teams);
   check('host is player 0', hostRoom.isHost && hostRoom.meIndex === 0 && hostRoom.players.length === 1);
   const roomId = await host.evaluate('window.__ieMP.hosting.id');
+  const roomFs = await host.evaluate(`(async () => {
+    ${PAGE}
+    for (let i = 0; i < 20; i++) {
+      pump(1);
+      if (R().uiOverlay.regions.some((r) => r.id === 'fs')) return true;
+      await sleep(40);
+    }
+    return false;
+  })()`);
+  check('room menu has the fullscreen button', roomFs === true);
   await host.screenshot(join(SHOTS, 'room-host-waiting.png'));
 
   // ------------------------------------------------------------------ guest

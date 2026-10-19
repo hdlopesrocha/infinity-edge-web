@@ -7,6 +7,7 @@
 import { nextUiVersion } from '../../engine/overlay';
 import type { ScreenUi } from '../../engine/overlay';
 import type { RoomSnapshot } from './manager';
+import { FS_REGION, paintFullscreenButton, toggleFullscreen } from '../ui/fullscreen';
 
 const FONT = "'DejaVu Sans','Segoe UI',Verdana,sans-serif";
 const DW = 1280;
@@ -148,6 +149,15 @@ export class RoomUi implements ScreenUi {
     if (snap.isHost) {
       this.button(ctx, X(DW - 160), Y(DH - 54), U(160), U(48),
         snap.phase === 'playing' ? 'starting…' : 'PLAY', 'play', this.hover === 'play', U(18), true);
+    }
+
+    // Fullscreen toggle, top-right (the menu/lobby chrome, from boot on).
+    {
+      const size = U(44);
+      const fx = X(DW - 60);
+      const fy = Y(12);
+      paintFullscreenButton(ctx, fx, fy, size, s, this.hover === FS_REGION);
+      this.regions.push({ id: FS_REGION, x: fx, y: fy, w: size, h: size });
     }
 
     if (this.openTeam !== null) this.paintTeamDropdown(ctx, snap, s, X, Y, U);
@@ -415,6 +425,10 @@ export class RoomUi implements ScreenUi {
     const pressed = this.pressed;
     this.pressed = null;
     if (!id || id !== pressed) return !!id;
+    if (id === FS_REGION) {
+      void toggleFullscreen().then(() => this.bump());
+      return true;
+    }
     if (id === 'back') {
       this.hooks.back();
       return true;

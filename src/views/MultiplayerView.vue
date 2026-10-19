@@ -135,6 +135,7 @@ onMounted(() => {
   window.addEventListener('pointerup', onUp);
   canvas?.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('keydown', onKey);
+  document.addEventListener('fullscreenchange', onLobbyChange);
 });
 
 onBeforeUnmount(() => {
@@ -146,6 +147,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerup', onUp);
   canvas?.removeEventListener('wheel', onWheel);
   window.removeEventListener('keydown', onKey);
+  document.removeEventListener('fullscreenchange', onLobbyChange);
   lobby = null;
 });
 

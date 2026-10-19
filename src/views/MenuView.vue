@@ -14,6 +14,7 @@ import { audio } from '../game/audio';
 import { goBack } from '../game/nav';
 import { trail } from '../game/trail';
 import { pickMusicFile } from '../game/musicfile';
+import { toggleFullscreen } from '../game/ui/fullscreen';
 import { enableVr, setVr } from '../game/vr';
 import { leaveXr } from '../game/xr';
 import type { Options } from '../game/resources';
@@ -111,6 +112,11 @@ export default defineComponent({
       ui.setCrumbs(crumbs());
     }
 
+    /** Repaint the chrome so the fullscreen icon reflects the real state. */
+    function onFullscreenChange(): void {
+      ui?.bump();
+    }
+
     // ------------------------------------------------------------- handlers
     function select(id: string): void {
       audio.unlock();
@@ -163,9 +169,7 @@ export default defineComponent({
         return;
       }
       if (id === 'fs') {
-        if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
-        else void document.documentElement.requestFullscreen().catch(() => undefined);
-        rebuild();
+        void toggleFullscreen().finally(() => rebuild());
         return;
       }
       if (id.startsWith('/')) {
@@ -374,6 +378,8 @@ export default defineComponent({
       window.addEventListener('pointerup', onUp);
       canvas?.addEventListener('wheel', onWheel, { passive: false });
       window.addEventListener('keydown', onKey, true);
+      // External changes (F11, Esc) must update the icon too.
+      document.addEventListener('fullscreenchange', onFullscreenChange);
     });
 
     onBeforeUnmount(() => {
@@ -387,6 +393,7 @@ export default defineComponent({
       window.removeEventListener('pointerup', onUp);
       canvas?.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
       ui = null;
     });
 

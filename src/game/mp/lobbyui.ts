@@ -10,6 +10,7 @@ import { MAX_AGE_CHOICES, mp } from './manager';
 import type { Multiplayer } from './manager';
 import type { RoomInfo } from '../nostr/event';
 import { nextUiVersion } from '../../engine/overlay';
+import { FS_REGION, paintFullscreenButton, toggleFullscreen } from '../ui/fullscreen';
 import type { ScreenUi } from '../../engine/overlay';
 
 export interface LobbyHooks {
@@ -159,6 +160,15 @@ export class LobbyUi implements ScreenUi {
     // Corner buttons: back (bottom left), refresh (bottom right).
     this.button(ctx, X(0), Y(DH - 54), U(160), U(48), 'back', this.hover === 'back', s, 18, 'back');
     this.button(ctx, X(DW - 160), Y(DH - 54), U(160), U(48), 'refresh', this.hover === 'refresh', s, 18, 'refresh');
+
+    // Fullscreen toggle, top-right, same chrome as the menus/boot screens.
+    {
+      const size = U(44);
+      const fx = X(DW - 60);
+      const fy = Y(12);
+      paintFullscreenButton(ctx, fx, fy, size, s, this.hover === FS_REGION);
+      this.regions.push({ id: FS_REGION, x: fx, y: fy, w: size, h: size });
+    }
 
     // Open dropdown options last: they float above everything.
     if (this.openDropdown) this.paintDropdown(ctx, s, X, Y, U);
@@ -431,6 +441,10 @@ export class LobbyUi implements ScreenUi {
   }
 
   private activate(id: string): void {
+    if (id === FS_REGION) {
+      void toggleFullscreen().then(() => this.bump());
+      return;
+    }
     if (id.startsWith('dd:')) {
       this.openDropdown = this.openDropdown === id ? null : id;
       this.bump();

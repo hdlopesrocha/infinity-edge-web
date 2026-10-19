@@ -72,7 +72,19 @@ try {
   const page = await openPage(PORT, `${APP}#/menu`, true);
   await waitRegions(page);
 
-  let p = await clickRegion(page, '/single-player', 'main menu');
+  // The fullscreen chrome exists on the first menu and toggles both ways.
+  let p = await clickRegion(page, 'fs', 'main menu fullscreen');
+  const fullOn = await page.evaluate('!!document.fullscreenElement');
+  step('main menu fullscreen click', { hit: p.hit, full: fullOn });
+  if (!fullOn) throw new Error('the fullscreen button did not enter fullscreen');
+  await page.evaluate(`(async () => { ${HELPERS} await sleep(400); pump(4); return true; })()`);
+  p = await clickRegion(page, 'fs', 'exit fullscreen');
+  const fullOff = await page.evaluate('!!document.fullscreenElement');
+  step('main menu exit fullscreen click', { hit: p.hit, full: fullOff });
+  if (fullOff) throw new Error('the fullscreen button did not exit fullscreen');
+  await page.evaluate(`(async () => { ${HELPERS} await sleep(400); pump(4); return true; })()`);
+
+  p = await clickRegion(page, '/single-player', 'main menu');
   step('main menu click (single player)', { hit: p.hit, hash: await page.evaluate('location.hash') });
   if (!(await page.evaluate('location.hash')).includes('single-player')) throw new Error('single player click did not navigate');
 
@@ -157,8 +169,10 @@ try {
     await until(() => window.__ieMP && R() && R().uiOverlay && R().uiOverlay.regions.length > 0, 90000);
     await window.__ieMP.connect();
     await until(() => R().uiOverlay.regions.some((r) => r.id === 'dd:filter'), 30000);
+    await until(() => R().uiOverlay.regions.some((r) => r.id === 'fs'), 20000);
     return true;
   })()`);
+  step('lobby fullscreen button', await lobby.evaluate('!!window.__ieRenderer.uiOverlay.regions.find((r) => r.id === \'fs\')'));
   p = await clickRegion(lobby, 'dd:filter', 'lobby age filter');
   const opts = await lobby.evaluate(`(() => {
     const r = window.__ieRenderer;

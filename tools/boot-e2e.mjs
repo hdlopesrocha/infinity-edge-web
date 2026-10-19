@@ -52,6 +52,19 @@ try {
     let engineAt = null;
     let menuAt = null;
     let last = '';
+    let fsEngine = false;
+    let fsStart = false;
+
+    /** The WebGL chrome must offer fullscreen on every boot screen too. */
+    const fsVisible = async () => page.evaluate(`(async () => {
+      for (let i = 0; i < 20; i++) {
+        const r = window.__ieRenderer;
+        if (r) r.onFrame(16);
+        if (r && r.uiOverlay && r.uiOverlay.regions.some((x) => x.id === 'fs')) return true;
+        await new Promise((res) => setTimeout(res, 40));
+      }
+      return false;
+    })()`).catch(() => false);
 
     while (Date.now() - t0 < TIMEOUT) {
       // A reload/first paint can briefly destroy the evaluation context.
@@ -60,6 +73,8 @@ try {
         if (hash !== last) {
           seq.push([hash, Date.now() - t0]);
           last = hash;
+          if (hash === '#/engine') fsEngine = await fsVisible();
+          if (hash === '#/start') fsStart = await fsVisible();
         }
         if (hash === '#/engine' && engineAt === null) engineAt = Date.now() - t0;
         if (hash === '#/start' && startAt === null) startAt = Date.now() - t0;
@@ -78,6 +93,8 @@ try {
       continue;
     }
     check(entry, 'start screen in the chain', !entry.chain || startAt !== null, entry.chain ? undefined : 'not applicable');
+    check(entry, 'fullscreen button on the start screen', fsStart);
+    if (entry.engine) check(entry, 'fullscreen button on the engine screen', fsEngine);
     // The screens keep their designed dwell: engine >= 3 s, start >= 1.5 s
     // (plus the 0.5 s fade), so they cannot flash past on a fast machine.
     if (entry.engine && engineAt !== null && startAt !== null) {
@@ -95,7 +112,8 @@ try {
         const ui = r && r.uiOverlay;
         if (window.__ieStore && window.__ieStore.route === 'menu' && ui &&
             ui.regions.some((x) => x.id === '/multiplayer') &&
-            ui.regions.some((x) => x.id === '/single-player')) {
+            ui.regions.some((x) => x.id === '/single-player') &&
+            ui.regions.some((x) => x.id === 'fs')) {
           return {
             route: window.__ieStore.route,
             scene: window.__ieStore.sceneKey,

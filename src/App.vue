@@ -3,20 +3,13 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
 import GameCanvas from './components/GameCanvas.vue';
+import { isFullscreen, toggleFullscreen } from './game/ui/fullscreen';
 
 const route = useRoute();
 const fullscreen = ref(false);
 
 function onFullscreenChange(): void {
-  fullscreen.value = !!document.fullscreenElement;
-}
-
-function toggleFullscreen(): void {
-  if (document.fullscreenElement) {
-    void document.exitFullscreen().catch(() => undefined);
-  } else {
-    void document.documentElement.requestFullscreen().catch(() => undefined);
-  }
+  fullscreen.value = isFullscreen();
 }
 
 onMounted(() => document.addEventListener('fullscreenchange', onFullscreenChange));

@@ -41,6 +41,10 @@ export default defineComponent({
       })();
     }
 
+    function onFullscreenChange(): void {
+      ui?.bump();
+    }
+
     function refresh(): void {
       ui?.setSnapshot(mp.roomSnapshot());
       ui?.bump();
@@ -138,6 +142,7 @@ export default defineComponent({
       window.addEventListener('pointerup', onUp);
       canvas?.addEventListener('wheel', onWheel, { passive: false });
       window.addEventListener('keydown', onKey, true);
+      document.addEventListener('fullscreenchange', onFullscreenChange);
     });
 
     onBeforeUnmount(() => {
@@ -147,6 +152,7 @@ export default defineComponent({
       window.removeEventListener('pointerup', onUp);
       canvas?.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
       // Leaving the room screen without starting the match abandons the room
       // (the host closes it, the guest says bye); the PLAY path keeps it alive.
       if (!started && mp.inRoom) {

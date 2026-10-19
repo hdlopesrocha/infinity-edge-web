@@ -213,7 +213,9 @@ Keyboard (Control.cs): arrows steer, Space fire, LeftControl throttle,
 LeftAlt homing, LeftShift nitro (WASD/C/M/N aliases). Touch: left 2/3 stick
 (recenter + deadzone), right throttle slider, fire / homing (count) / nitro (%)
 buttons; Gamepad Back: Esc. Menu: browser back. A fullscreen toggle button
-(web addition) sits below the top-right corner chrome.
+(web addition) sits in the top-right corner of every WebGL view — the boot,
+engine and start screens, every menu, the lobby and the room menu — and in the
+in-match HUD; it toggles the browser's fullscreen state.
 
 The throttle slider is a **cruise control**: dragging it sets the speed and
 releasing the finger keeps it (the original only zeroed it in the `#if WINDOWS`
