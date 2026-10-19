@@ -362,7 +362,13 @@ export default defineComponent({
       void audio.refreshCustomMusic().then(() => rebuild());
       if (nameOf() === 'options') enterOptions();
       if (nameOf() === 'briefing') void loadBriefing(String(route.params.level ?? ''));
-      if (!store.loading.active) { minElapsed = true; } else { scheduleBoot(); }
+      // Boot screens advance on their own. The routed view is remounted on
+      // every navigation (RouterView is keyed by fullPath), so this has to be
+      // scheduled here too: arriving at /start from the engine screen means
+      // the preload has already finished, and the old code then waited for a
+      // timer that was never armed.
+      if (nameOf() === 'boot' || nameOf() === 'engine' || nameOf() === 'start') scheduleBoot();
+      else minElapsed = true;
       canvas?.addEventListener('pointermove', onMove);
       canvas?.addEventListener('pointerdown', onDown);
       window.addEventListener('pointerup', onUp);
