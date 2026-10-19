@@ -4,7 +4,8 @@ import { syncSceneState } from '../game/store';
 import { restoreTrail } from '../game/trail';
 
 // Every menu route renders through MenuView (the WebGL menu host); the match
-// keeps GameView (HUD) and the lobby keeps MultiplayerView.
+// keeps GameView (HUD), the lobby keeps MultiplayerView and browser-hosted
+// rooms wait in RoomView (the room menu: roster, teams, chat, voice).
 const menu = () => import('../views/MenuView.vue');
 
 const routes: RouteRecordRaw[] = [
@@ -13,6 +14,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/start', name: 'start', component: menu },
   { path: '/menu', name: 'menu', component: menu },
   { path: '/multiplayer', name: 'multiplayer', component: () => import('../views/MultiplayerView.vue') },
+  { path: '/room', name: 'room', component: () => import('../views/RoomView.vue') },
   { path: '/single-player', name: 'single', component: menu },
   { path: '/ctf', name: 'ctf', component: menu },
   { path: '/tt', name: 'tt', component: menu },

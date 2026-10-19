@@ -214,7 +214,7 @@ export class LobbyUi implements ScreenUi {
       this.regions.push({ id: rowId, x: X(x0 + 16), y: Y(ry), w: U(w - 48) + U(16), h: U(rowH - 6) });
       ctx.font = `700 ${U(12)}px ${FONT}`;
       ctx.fillStyle = own ? '#7fe8d8' : 'rgba(255,200,120,0.95)';
-      ctx.fillText(`${room.type || 'GAME'}${own ? ' · YOURS' : ''}${dead ? ' · OFFLINE?' : ''}`, X(x0 + 28), Y(ry + 15));
+      ctx.fillText(`${room.type || 'GAME'}${room.srv ? ' · SERVER' : ''}${own ? ' · YOURS' : ''}${dead ? ' · OFFLINE?' : ''}`, X(x0 + 28), Y(ry + 15));
       ctx.font = `700 ${U(16)}px ${FONT}`;
       ctx.fillStyle = dead ? 'rgba(255,255,255,0.45)' : '#ffffff';
       ctx.fillText(clip(ctx, room.title, U(w - 260)), X(x0 + 28), Y(ry + 34));

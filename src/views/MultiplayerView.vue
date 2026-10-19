@@ -28,7 +28,7 @@ function onLobbyChange(): void {
   lobby?.bump();
 }
 
-/** Publish the room, then drop straight into the match as the host. */
+/** Publish the room, then wait in the room menu until the host presses PLAY. */
 function startHost(level: string, type: string, title: string, maxPlayers: number): void {
   audio.unlock();
   void audio.sfx('button');
@@ -39,7 +39,7 @@ function startHost(level: string, type: string, title: string, maxPlayers: numbe
     try {
       await mp.createRoom({ game: level, type, title, maxPlayers });
       store.levelText = '';
-      await router.push('/game/' + level);
+      await router.push('/room');
     } catch {
       /* the status line shows the reason */
     } finally {
@@ -51,7 +51,8 @@ function startHost(level: string, type: string, title: string, maxPlayers: numbe
   })();
 }
 
-/** Connect to a listed room's host and join their match. */
+/** Connect to a listed room's host: dedicated servers start at once, browser
+ *  hosts wait in the room menu until they press PLAY. */
 function join(room: RoomInfo): void {
   audio.unlock();
   void audio.sfx('button');
@@ -61,10 +62,10 @@ function join(room: RoomInfo): void {
   mpTraceMark('view.join', room.id);
   void (async () => {
     try {
-      await mp.joinRoom(room);
+      const joined = await mp.joinRoom(room);
       mpTraceMark('view.joined', room.id);
       store.levelText = '';
-      await router.push('/game/' + room.game);
+      await router.push(joined.srv ? '/game/' + joined.game : '/room');
       mpTraceMark('view.pushed', location.hash);
     } catch {
       /* the status line shows the reason */
