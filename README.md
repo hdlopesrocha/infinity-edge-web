@@ -236,14 +236,17 @@ Two paths, in order:
 
 - **Immersive WebXR** (`navigator.xr` immersive-vr): per-eye pose and
   projection rendered straight into the XR framebuffer, gyroscope look is
-  dropped (the head pose carries the view), the HUD is drawn in WebGL per
-  eye at the view's own aspect (the texture follows it, so nothing is
-  stretched): the static HUD layout is identical in both eyes while the aim
-  and target markers are projected with each eye's own camera, so they line up
-  with the scene instead of being pulled into the safe area. The menus, lobby
-  and room menu are the **same WebGL UI** as the 2D pages, not a second VR
-  menu: the screen is painted once into a texture and drawn as a plane in the
-  scene (16:9, 8 world units wide, 3 in front of the base view). A crosshair with a dwell ring follows the headset's gaze ray on
+  dropped (the head pose carries the view). The in-game HUD (score, clock,
+  speed, life pools, missile/nitro items, aim reticle and target markers) is
+  painted **once** with the base view and drawn as a **world-space panel** in
+  each eye, exactly like the menus: the panel matches the base camera's field
+  of view at the 3-unit distance, so projected aim/marker positions are exact
+  inside it and are pinned to the panel's edge when they fall outside (they
+  stick to the plane instead of the eye's screen). On the 2D page the HUD
+  stays a screen-space overlay. The menus, lobby and room menu are the **same
+  WebGL UI** as the 2D pages, not a second VR menu: the screen is painted once
+  into a texture and drawn as a plane in the scene (16:9, 8 world units wide,
+  3 in front of the base view). A crosshair with a dwell ring follows the headset's gaze ray on
   that plane; the controller trigger (session `select`) clicks the item under
   it, and dwelling ~2 s selects without a controller. Hover/keyboard/click
   behaviour comes from the screens' own pointer handlers, so every menu and
@@ -349,8 +352,10 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - **VR**: WebXR immersive session (per-eye pose/projection into the XR
   framebuffer) with a split-screen fallback; gyro look + drag-to-look; tap to
   re-centre; the WebGL menus render on a world-space panel with a gaze
-  crosshair (trigger click + 2 s dwell) instead of a separate VR menu,
-  verified by the panel math/pointer unit tests; enterable without a gamepad;
+  crosshair (trigger click + 2 s dwell) instead of a separate VR menu, and the
+  in-game HUD is a world-space plane too (painted once from the base view;
+  projected positions clamp to its edges), both verified by the panel
+  math/pointer unit tests; enterable without a gamepad;
   the same Settings menu is shared with the pause panel (live apply,
   save/revert).
 - **Gameplay**: 5 s pre-match countdown (world frozen, world units per second

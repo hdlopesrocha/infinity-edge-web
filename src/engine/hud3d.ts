@@ -7,6 +7,8 @@
 // viewport after the post composite. Same data the DOM overlay renders, so the
 // two can never disagree.
 import { store } from '../game/store';
+import { WorldQuad } from './vrpanel';
+import type { vec3 } from './math';
 
 type Hud = typeof store.hud;
 
@@ -113,6 +115,8 @@ export class HudOverlay {
   private prog: WebGLProgram;
   private vao: WebGLVertexArrayObject;
   private uTex: WebGLUniformLocation | null;
+  /** World-space panel (immersive VR): the same painted texture on a plane. */
+  private quad: WorldQuad | null = null;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -247,19 +251,19 @@ export class HudOverlay {
     // Aim: the real _aim.png crosshair (32x32), exactly like the DOM HUD.
     // Falls back to the drawn reticle until the icon loads.
     {
-      // World-projected aim: map the canvas position across the whole texture.
-      // The 64 px safe area only applies to static chrome; squeezing the aim
-      // into it would pull the reticle inward (and wreck its stereo disparity
-      // relative to the scene).
-      const ax = h.aimX * sx;
-      const ay = h.aimY * sy;
+      // World-projected aim: inside the panel it is exactly where the base view
+      // projects it; past an edge it sticks to that edge of the panel (the VR
+      // HUD is a plane now, not the eye's screen).
       const rx = 22 * sx, ry = 22 * sy;
       const r = Math.max(rx, ry);
+      const aimW = 32 * sx, aimH = 32 * sy;
+      const aimMargin = 32 * Math.max(sx, sy) + 2;
+      const ax = Math.max(aimMargin, Math.min(W - aimMargin, h.aimX * sx));
+      const ay = Math.max(aimMargin, Math.min(H - aimMargin, h.aimY * sy));
       const aimImg = icon(AIM_URL);
       shadow(4);
       if (aimImg) {
-        const iw = 32 * sx, ih = 32 * sy;
-        c.drawImage(aimImg, ax - iw / 2, ay - ih / 2, iw, ih);
+        c.drawImage(aimImg, ax - aimW / 2, ay - aimH / 2, aimW, aimH);
       }
       // Extra red crosshair while an enemy is under it (missile lock ready).
       if (h.lockOn && aimImg) {
@@ -286,21 +290,23 @@ export class HudOverlay {
     // locked targets, the object's own icon otherwise - plus the label.
     // Procedural shapes cover icons that have not loaded yet.
     for (const m of h.pointers) {
-      // Same as the aim: projected world positions use the full canvas map.
-      const mx = m.x * sx;
-      const my = m.y * sy;
       const rx = 64 * sx, ry = 64 * sy;
       const r = Math.max(rx, ry);
       const col = `rgb(${(m.color[0] * 255) | 0},${(m.color[1] * 255) | 0},${(m.color[2] * 255) | 0})`;
       const iwCss = m.over ? 48 : m.w;
       const ihCss = m.over ? 48 : m.h;
+      const iw = iwCss * sx, ih = ihCss * sy;
+      const marginX = Math.max(iw / 2, r) + 2;
+      const marginY = Math.max(ih / 2, r) + 2;
+      // Exact inside the panel, pinned to the nearest edge outside it.
+      const mx = Math.max(marginX, Math.min(W - marginX, m.x * sx));
+      const my = Math.max(marginY, Math.min(H - marginY, m.y * sy));
       const sprite = icon(m.over ? OVER_URL : m.iconUrl);
       // Team-coloured glow, like the DOM drop-shadow on the marker.
       c.shadowColor = col;
       c.shadowBlur = 5;
       if (sprite) {
         // Friend and enemy alike: the icon itself in the team colour.
-        const iw = iwCss * sx, ih = ihCss * sy;
         c.drawImage(tinted(sprite, col), mx - iw / 2, my - ih / 2, iw, ih);
       } else {
         c.strokeStyle = col;
@@ -439,6 +445,16 @@ export class HudOverlay {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
     gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  /** Composite the painted HUD as a world-space panel (immersive VR). */
+  drawPlane(
+    fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array,
+    center: vec3, right: vec3, up: vec3,
+    halfW: number, halfH: number,
+  ): void {
+    if (!this.quad) this.quad = new WorldQuad(this.gl);
+    this.quad.draw(fbo, view, proj, center, right, up, halfW, halfH, this.tex);
   }
 
   /** Composite the overlay into the eye's framebuffer rectangle. */

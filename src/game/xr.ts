@@ -109,6 +109,11 @@ export async function enterXr(
     presentBounds: { w: number; h: number } | null;
     uiOverlay: ScreenUi | null;
     drawHudTo: (fbo: WebGLFramebuffer | null, rect: { x: number; y: number; w: number; h: number }, hud: typeof store.hud | null) => void;
+    prepareHud: (hud: typeof store.hud | null) => void;
+    drawHudPlane: (
+      fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array,
+      center: vec3, right: vec3, up: vec3, halfW: number, halfH: number,
+    ) => void;
     beginFrame: () => void;
     endFrame: (hud?: typeof store.hud | null) => void;
     renderOptions: { zoom: number };
@@ -191,13 +196,26 @@ export async function enterXr(
     const inMenu = !store.interactive;
     // Background/menu scenes still orbit their camera; only real matches freeze.
     if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
-    syncHud(instance);
-    // One HUD layout size for both eyes: the aim/markers are projected with
-    // each eye's own camera, but the static 2D HUD must sit at the same
-    // relative position in both, or it never fuses (double vision).
-    const firstVp = pose.views.length > 0 ? layer.getViewport(pose.views[0]) : null;
-    const hudW = firstVp && firstVp.width > 0 ? firstVp.width : gl.drawingBufferWidth;
-    const hudH = firstVp && firstVp.height > 0 ? firstVp.height : gl.drawingBufferHeight;
+    // In-match HUD: paint it ONCE with the base view, then draw the same
+    // texture as a world-space panel in each eye (like the menu plane). The
+    // panel's extents match the base camera's view at the plane distance, so
+    // the aim/markers land exactly where the base view projects them; the
+    // painter pins anything past an edge to that edge of the panel.
+    const inMatch = store.interactive && instance.gameType !== 'BACK';
+    let hudBasis: ReturnType<typeof panelBasis> | null = null;
+    let hudHalfW = 0;
+    let hudHalfH = 0;
+    if (inMatch) {
+      const hudH = 900;
+      const hudW = Math.max(2, Math.round(hudH * Math.max(1, renderer.camera.aspect)));
+      instance.canvasW = hudW;
+      instance.canvasH = hudH;
+      syncHud(instance);
+      renderer.prepareHud(store.hud);
+      hudBasis = panelBasis(renderer.camera.position, renderer.camera.direction, PANEL_DISTANCE);
+      hudHalfH = Math.tan(renderer.camera.fov / 2) * PANEL_DISTANCE;
+      hudHalfW = hudHalfH * (hudW / hudH);
+    }
     // The new UI overlay (MenuUi/LobbyUi/RoomUi) becomes a texture + panel.
     const ui = renderer.uiOverlay;
     if (ui && panel) {
@@ -242,27 +260,29 @@ export async function enterXr(
       // the composite itself carries no UI.
       renderer.beginFrame();   // scene target + frustum for this eye
       instance.draw();         // stages 1-3 into their targets
-      // HUD in the eye's own rect, laid out at the common HUD size above so
-      // both eyes get the same static layout.
-      instance.canvasW = Math.max(1, hudW);
-      instance.canvasH = Math.max(1, hudH);
-      syncHud(instance);
       // Stage 5 rides the final pass now, so the per-eye overlay hook is
       // gone; the HUD stays sharp while the world zoom-blurs behind it.
       renderer.endFrame(null);
       if (renderer.renderOptions.zoom > 0) {
         instance.drawShipsSharp(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
       }
-      // HUD straight into this eye's rectangle - the same math as the
-      // crosshair and as the split view, so both eyes can only match.
-      renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
+      const eyeView = cam.view as unknown as Float32Array;
+      const eyeProj = cam.proj as unknown as Float32Array;
+      // HUD panel over the scene, in this eye, with that eye's projection.
+      if (hudBasis) {
+        const board = hudBasis;
+        withClipRect(gl, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, () => {
+          renderer.drawHudPlane(
+            layer.framebuffer, eyeView, eyeProj,
+            board.center, board.right, board.up, hudHalfW, hudHalfH,
+          );
+        });
+      }
       if (ui && gaze && panel && cursor) {
         // The panel is drawn last, over the HUD, in this eye's rectangle.
         // withClipRect always clears the scissor afterwards: it must not
         // leak into the other eye's scene pass (that blacked out the right
         // eye while the menu itself still showed in both).
-        const eyeView = cam.view as unknown as Float32Array;
-        const eyeProj = cam.proj as unknown as Float32Array;
         // The loop mutates these; capture the non-null values for the closure.
         const aim = gaze;
         const board = panel;

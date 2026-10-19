@@ -191,6 +191,30 @@ export class Renderer {
     } catch { /* a failed overlay must never kill the frame */ }
   }
 
+  /** Paint the HUD snapshot into its texture without compositing it. */
+  prepareHud(hud: HudSnapshot | null): void {
+    if (!hud) return;
+    try {
+      if (!this.hudOverlay) this.hudOverlay = new HudOverlay(this.gl);
+      this.hudOverlay.update(hud);
+    } catch { /* a failed overlay must never kill the frame */ }
+  }
+
+  /**
+   * Draw the prepared HUD as a world-space panel in the current eye. The XR
+   * session paints the snapshot once (base view) and calls this per eye, so the
+   * HUD is a plane in the scene with correct stereo parallax instead of two
+   * screen-space copies.
+   */
+  drawHudPlane(
+    fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array,
+    center: vec3, right: vec3, up: vec3, halfW: number, halfH: number,
+  ): void {
+    try {
+      this.hudOverlay?.drawPlane(fbo, view, proj, center, right, up, halfW, halfH);
+    } catch { /* a failed overlay must never kill the frame */ }
+  }
+
   /** Stage 5: paint the GL HUD into this view's UI rect (null = skip). */
   drawUI(hud: HudSnapshot | null, uv: { x: number; y: number; w: number; h: number }): void {
     const rect = {

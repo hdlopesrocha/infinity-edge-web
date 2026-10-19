@@ -427,6 +427,70 @@ export class VrPanel {
   }
 }
 
+/**
+ * A textured quad in world space, clipped to one eye. The HUD uses it for its
+ * in-game panel (the menu VrPanel owns its own painter/uploader, but the
+ * drawing is the same).
+ */
+export class WorldQuad {
+  private gl: WebGL2RenderingContext;
+  private prog: WebGLProgram;
+  private quad: Quad;
+  private uTex: WebGLUniformLocation | null;
+  private uCenter: WebGLUniformLocation | null;
+  private uRight: WebGLUniformLocation | null;
+  private uUp: WebGLUniformLocation | null;
+  private uHalf: WebGLUniformLocation | null;
+  private uView: WebGLUniformLocation | null;
+  private uProj: WebGLUniformLocation | null;
+
+  constructor(gl: WebGL2RenderingContext) {
+    this.gl = gl;
+    this.prog = program(gl, PANEL_VERT, PANEL_FRAG);
+    this.uTex = gl.getUniformLocation(this.prog, 'uTex');
+    this.uCenter = gl.getUniformLocation(this.prog, 'uCenter');
+    this.uRight = gl.getUniformLocation(this.prog, 'uRight');
+    this.uUp = gl.getUniformLocation(this.prog, 'uUp');
+    this.uHalf = gl.getUniformLocation(this.prog, 'uHalf');
+    this.uView = gl.getUniformLocation(this.prog, 'uView');
+    this.uProj = gl.getUniformLocation(this.prog, 'uProj');
+    this.quad = quad(gl);
+  }
+
+  draw(
+    fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array,
+    center: vec3, right: vec3, up: vec3, halfW: number, halfH: number,
+    tex: WebGLTexture,
+  ): void {
+    const gl = this.gl;
+    withOverlayState(gl, () => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.useProgram(this.prog);
+      if (this.uCenter) gl.uniform3fv(this.uCenter, center);
+      if (this.uRight) gl.uniform3fv(this.uRight, right);
+      if (this.uUp) gl.uniform3fv(this.uUp, up);
+      if (this.uHalf) gl.uniform2f(this.uHalf, halfW, halfH);
+      if (this.uView) gl.uniformMatrix4fv(this.uView, false, view);
+      if (this.uProj) gl.uniformMatrix4fv(this.uProj, false, proj);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      if (this.uTex) gl.uniform1i(this.uTex, 0);
+      gl.bindVertexArray(this.quad.vao);
+      gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+      gl.bindVertexArray(null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+    });
+  }
+
+  dispose(): void {
+    const gl = this.gl;
+    gl.deleteProgram(this.prog);
+    gl.deleteVertexArray(this.quad.vao);
+    gl.deleteBuffer(this.quad.vbo);
+    gl.deleteBuffer(this.quad.ibo);
+  }
+}
+
 const CURSOR_VERT = `#version 300 es
 layout(location=0) in vec2 aPos;
 uniform vec3 uCenter, uRight, uUp;
