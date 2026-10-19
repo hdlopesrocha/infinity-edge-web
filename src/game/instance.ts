@@ -1,7 +1,7 @@
 // GameInstance 37_T verbatim: build order, Update order, Draw order, HUD
 // (ToVisualIngame scoreboard, aim, DrawPointer/MyClamp), scores, ghost.
 
-import { mat4, vec3, clamp } from '../engine/math';
+import { mat4, quat, vec3, clamp } from '../engine/math';
 import { frustumContains } from '../engine/frustum';
 import type { Renderer } from '../engine/renderer';
 import type { TexEntry } from '../engine/texture';
@@ -211,6 +211,26 @@ export class GameInstance {
     return gi;
   }
 
+  /** Turn the menu's ship/base in place (the sky and camera stay fixed). */
+  private spinBackdrop(dtMs: number): void {
+    const step = Math.min(0.25, (dtMs / 1000) * (Math.PI / 10));   // 18 deg/s
+    if (step <= 0) return;
+    const q = quat.setAxisAngle(quat.create(), [0, 1, 0], step);
+    const seen = new Set<SpaceObject>();
+    const spin = (obj: SpaceObject): void => {
+      if (seen.has(obj)) return;
+      if (!(obj instanceof SpaceShip) && !(obj instanceof Base)) return;
+      seen.add(obj);
+      // Pre-multiply by the world-up yaw so the model turns about its centre.
+      quat.multiply(obj.rot, q, obj.rot);
+      obj.update();
+    };
+    for (const team of this.teams.values()) {
+      for (const obj of team.objects) spin(obj);
+      if (team.base) spin(team.base);
+    }
+  }
+
   setNotification(voiceField: string): void {
     this.notificationText = this.rc.playVoice(voiceField);
     this.notificationTime = 3000;
@@ -289,7 +309,11 @@ export class GameInstance {
     this.dtMs = dtMs;
     if (this.gameType === 'BACK') {
       this.map.update(this, dtMs);
-      this.renderer.camera.lookAtPositionAuto(this.cameraTarget, dtMs);
+      // Menu backdrop: only the display ship and base turn, in place. The
+      // camera (and therefore the sky) stays still; the original orbited the
+      // camera, which made the whole background - sky included - rotate.
+      this.spinBackdrop(dtMs);
+      this.renderer.camera.lookAtPosition(this.cameraTarget);
       return;
     }
     if (this.finished) return;
@@ -524,7 +548,7 @@ export class GameInstance {
 
   snapCamera(): void {
     if (this.gameType === 'BACK' || !this.selectedObject) {
-      this.renderer.camera.lookAtPositionAuto(this.cameraTarget, 100000);
+      this.renderer.camera.lookAtPosition(this.cameraTarget);
       return;
     }
     const o = this.selectedObject;

@@ -21,10 +21,16 @@ export class Camera {
   proj = mat4.create();
   viewProj = mat4.create();
   world = mat4.create();
-  orbitAngle = 0;
   /** VR head offset in degrees, applied on top of the chase view. */
   vrYaw = 0;
   vrPitch = 0;
+  /** Fixed menu-background pose (the original orbit's angle-0 position). */
+  lookAtPosition(target: vec3): void {
+    vec3.set(this.position, target[0], 3, target[2] - 6);
+    vec3.set(this.lookAt, target[0], target[1] + 1, target[2]);
+    vec3.set(this.up, 0, 1, 0);
+    this.updateMatrices();
+  }
 
   setAspect(aspect: number): void {
     this.aspect = aspect;
@@ -84,13 +90,5 @@ export class Camera {
     this.updateMatrices();
   }
 
-  /** CommandLookAtPositionAuto verbatim (1 deg/frame, r=6, h=3). */
-  lookAtPositionAuto(target: vec3, dtMs: number): void {
-    this.orbitAngle = (this.orbitAngle + dtMs / 16.6667) % 360;
-    const a = (this.orbitAngle * Math.PI) / 180;
-    vec3.set(this.position, target[0] - 6 * Math.sin(a), target[1] + 3, target[2] - 6 * Math.cos(a));
-    vec3.set(this.lookAt, target[0], target[1] + 1, target[2]);
-    vec3.set(this.up, 0, 1, 0);
-    this.updateMatrices();
-  }
+
 }

@@ -276,7 +276,8 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - `src/engine/` — GL context/loop, BasicEffect-exact GLSL (plain-BasicEffect
   light: direction Down → shader `(0,1,0)`, white diffuse, ambient 0.001,
   LightBlue specular 1024, white material diffuse), texture cache,
-  converted-model loader with validation + LOD/fade, camera (follow + orbit),
+  converted-model loader with validation + LOD/fade, camera (chase follow +
+  fixed menu pose),
   frustum, OcTree (frag > 32), draw primitives (billboards/quads drawn
   CullNone like `Draws.DrawBillBoard`, billboards gated on Special Effects),
   `post.ts` (six-stage pipeline: 1 sky / 2 models / 3 billboards / 4 blur /

@@ -28,7 +28,6 @@ let instance: GameInstance | null = null;
 let building = '';
 let buildGen = 0;
 let sceneTimer = 0;
-let menuDrag: { x: number; y: number } | null = null;
 // EngineScreen: wheel model on black, CommandLookAtPositionAuto camera
 // (angle++ per 30 fps frame, radius 6, height 3, lookAt target + Up).
 let engineScene: { gpu: import('../engine/model').GpuModel; tex: import('../engine/texture').TexEntry | null; t: number } | null = null;
@@ -213,27 +212,21 @@ function onPointerDown(e: PointerEvent): void {
     return; // a full-screen GL UI (multiplayer lobby) handles the pointer
   }
   if (instance.gameType === 'BACK') {
-    menuDrag = p;
-  } else {
-    instance.control.touches.set(e.pointerId, p);
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    return; // menus: the UI handles pointer input; the backdrop does not move
   }
+  instance.control.touches.set(e.pointerId, p);
+  (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
 }
 
 function onPointerMove(e: PointerEvent): void {
   if (!instance || !renderer) return;
   const p = canvasPos(e);
-  if (menuDrag && instance.gameType === 'BACK') {
-    const dx = p.x - menuDrag.x;
-    renderer.camera.orbitAngle = (renderer.camera.orbitAngle + dx * 0.3) % 360;
-    menuDrag = p;
-  } else if (instance.control.touches.has(e.pointerId)) {
+  if (instance.control.touches.has(e.pointerId)) {
     instance.control.touches.set(e.pointerId, p);
   }
 }
 
 function onPointerUp(e: PointerEvent): void {
-  menuDrag = null;
   instance?.control.touches.delete(e.pointerId);
 }
 
