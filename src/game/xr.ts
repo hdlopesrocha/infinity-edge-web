@@ -55,8 +55,8 @@ function xr(): XrSystem | null {
   return n.xr ?? null;
 }
 
-/** Panel placement in world units (the old VR menu's comfortable scale). */
-const PANEL_DISTANCE = 6;
+/** Panel placement in world units (half the old distance: closer/readable). */
+const PANEL_DISTANCE = 3;
 const PANEL_WIDTH = 8;
 const PANEL_HEIGHT = PANEL_WIDTH * (PANEL_H / PANEL_W);
 
@@ -192,6 +192,12 @@ export async function enterXr(
     // Background/menu scenes still orbit their camera; only real matches freeze.
     if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
     syncHud(instance);
+    // One HUD layout size for both eyes: the aim/markers are projected with
+    // each eye's own camera, but the static 2D HUD must sit at the same
+    // relative position in both, or it never fuses (double vision).
+    const firstVp = pose.views.length > 0 ? layer.getViewport(pose.views[0]) : null;
+    const hudW = firstVp && firstVp.width > 0 ? firstVp.width : gl.drawingBufferWidth;
+    const hudH = firstVp && firstVp.height > 0 ? firstVp.height : gl.drawingBufferHeight;
     // The new UI overlay (MenuUi/LobbyUi/RoomUi) becomes a texture + panel.
     const ui = renderer.uiOverlay;
     if (ui && panel) {
@@ -236,9 +242,10 @@ export async function enterXr(
       // the composite itself carries no UI.
       renderer.beginFrame();   // scene target + frustum for this eye
       instance.draw();         // stages 1-3 into their targets
-      // Per-eye HUD in the eye's own rect (same relative position both eyes).
-      instance.canvasW = Math.max(1, vp.width);
-      instance.canvasH = Math.max(1, vp.height);
+      // HUD in the eye's own rect, laid out at the common HUD size above so
+      // both eyes get the same static layout.
+      instance.canvasW = Math.max(1, hudW);
+      instance.canvasH = Math.max(1, hudH);
       syncHud(instance);
       // Stage 5 rides the final pass now, so the per-eye overlay hook is
       // gone; the HUD stays sharp while the world zoom-blurs behind it.

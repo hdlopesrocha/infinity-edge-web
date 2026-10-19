@@ -10,8 +10,8 @@ import { store } from '../game/store';
 
 type Hud = typeof store.hud;
 
-const W = 1024;
-const H = 1024;
+/** Largest HUD texture edge (the texture itself takes the view's aspect). */
+const MAX_HUD = 1600;
 
 // Same base the DOM HUD uses for its icons (GameView `base`).
 const TEX_BASE = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
@@ -117,8 +117,8 @@ export class HudOverlay {
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
     this.canvas = document.createElement('canvas');
-    this.canvas.width = W;
-    this.canvas.height = H;
+    this.canvas.width = 1280;
+    this.canvas.height = 720;
     const ctx = this.canvas.getContext('2d');
     if (!ctx) throw new Error('2d context unavailable');
     this.ctx = ctx;
@@ -127,7 +127,7 @@ export class HudOverlay {
     this.tex = tex;
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1280, 720, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -154,8 +154,30 @@ export class HudOverlay {
     for (const u of [AIM_URL, OVER_URL, ACCEL_URL, FIRE_URL, FIRE_HM_URL, NITRO_URL, STICK_BACK_URL, STICK_KNOB_URL]) icon(u);
   }
 
+  /**
+   * The texture takes the destination's aspect ratio (capped), so the HUD is
+   * never stretched when it is composited into the canvas or an eye viewport:
+   * text stays readable and round buttons stay round. Everything below maps
+   * the game's canvas pixels into this texture with sx/sy.
+   */
+  private ensureSize(w: number, h: number): void {
+    if (this.canvas.width === w && this.canvas.height === h) return;
+    this.canvas.width = w;
+    this.canvas.height = h;
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
   /** Paint the DOM HUD's contents (score/clock/notify/timer/aim/life/markers). */
   update(h: Hud): void {
+    const scale = Math.min(1, MAX_HUD / Math.max(1, h.canvasW, h.canvasH));
+    const texW = Math.max(2, Math.round(h.canvasW * scale));
+    const texH = Math.max(2, Math.round(h.canvasH * scale));
+    this.ensureSize(texW, texH);
+    const W = texW;
+    const H = texH;
     const c = this.ctx;
     c.clearRect(0, 0, W, H);
     const sx = W / Math.max(1, h.canvasW);
@@ -225,8 +247,12 @@ export class HudOverlay {
     // Aim: the real _aim.png crosshair (32x32), exactly like the DOM HUD.
     // Falls back to the drawn reticle until the icon loads.
     {
-      const ax = padX + (h.aimX / Math.max(1, h.canvasW)) * (W - 2 * padX);
-      const ay = padY + (h.aimY / Math.max(1, h.canvasH)) * (H - 2 * padY);
+      // World-projected aim: map the canvas position across the whole texture.
+      // The 64 px safe area only applies to static chrome; squeezing the aim
+      // into it would pull the reticle inward (and wreck its stereo disparity
+      // relative to the scene).
+      const ax = h.aimX * sx;
+      const ay = h.aimY * sy;
       const rx = 22 * sx, ry = 22 * sy;
       const r = Math.max(rx, ry);
       const aimImg = icon(AIM_URL);
@@ -260,9 +286,9 @@ export class HudOverlay {
     // locked targets, the object's own icon otherwise - plus the label.
     // Procedural shapes cover icons that have not loaded yet.
     for (const m of h.pointers) {
-      // 16px padding from the border, same as every other HUD element.
-      const mx = padX + (m.x / Math.max(1, h.canvasW)) * (W - 2 * padX);
-      const my = padY + (m.y / Math.max(1, h.canvasH)) * (H - 2 * padY);
+      // Same as the aim: projected world positions use the full canvas map.
+      const mx = m.x * sx;
+      const my = m.y * sy;
       const rx = 64 * sx, ry = 64 * sy;
       const r = Math.max(rx, ry);
       const col = `rgb(${(m.color[0] * 255) | 0},${(m.color[1] * 255) | 0},${(m.color[2] * 255) | 0})`;
@@ -346,7 +372,7 @@ export class HudOverlay {
     // ammo they carried sits next to the life bars instead (below).
     if (!store.vr) {
       const bw = 96 * s;
-      const bx = (h.canvasW - 96 - 128) * sx - padX;
+      const bx = (h.canvasW - 96 - 128) * sx;
       const items: { url: string; count: string; dim: boolean }[] = [
         { url: FIRE_URL, count: '', dim: false },
         { url: FIRE_HM_URL, count: String(h.homings), dim: h.homings === 0 },
@@ -354,7 +380,7 @@ export class HudOverlay {
       ];
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        const y = (h.canvasH - (96 + 32) * (i + 1)) * sy - padY;
+        const y = (h.canvasH - (96 + 32) * (i + 1)) * sy;
         c.globalAlpha = it.dim ? 0.2 : 1;
         const disc = icon(ACCEL_URL);
         if (disc) c.drawImage(disc, bx, y, bw, bw);
@@ -370,18 +396,18 @@ export class HudOverlay {
       }
       // Accelerator bar + knob (top right of the item stack).
       c.fillStyle = 'rgba(255,255,255,0.2)';
-      c.fillRect((h.canvasW - 96 + 40) * sx - padX, (h.canvasH - 400 + 48) * sy - padY, 16 * s, (400 - 96) * s);
+      c.fillRect((h.canvasW - 96 + 40) * sx, (h.canvasH - 400 + 48) * sy, 16 * s, (400 - 96) * s);
       const knob = icon(ACCEL_URL);
       if (knob) {
-        const ky = (h.canvasH - 400 + 48 + (400 - 96) * (1 - h.acel) - 48) * sy - padY;
-        c.drawImage(knob, (h.canvasW - 96) * sx - padX, ky, 96 * s, 96 * s);
+        const ky = (h.canvasH - 400 + 48 + (400 - 96) * (1 - h.acel) - 48) * sy;
+        c.drawImage(knob, (h.canvasW - 96) * sx, ky, 96 * s, 96 * s);
       }
       // Flight stick, when the level enables it.
       if (h.stickOn) {
         const back = icon(STICK_BACK_URL);
-        if (back) c.drawImage(back, h.backX * sx + padX, h.backY * sy - padY, 256 * s, 256 * s);
+        if (back) c.drawImage(back, h.backX * sx, h.backY * sy, 256 * s, 256 * s);
         const sk = icon(STICK_KNOB_URL);
-        if (sk) c.drawImage(sk, h.knobX * sx + padX, h.knobY * sy - padY, 96 * s, 96 * s);
+        if (sk) c.drawImage(sk, h.knobX * sx, h.knobY * sy, 96 * s, 96 * s);
       }
     } else {
       // VR: no touch controls - homing missiles and nitro as small icons with
