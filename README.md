@@ -45,6 +45,14 @@ node tools/hangprobe.mjs <url> "<js>"  # poll an expression, detect main-thread 
 node tools/context-probe.mjs           # step-by-step WebGL context loss/restore trace
 ```
 
+The same entry points are wrapped in a `Makefile` (`make` prints the full
+list): `make build`, `make serve`, `make relay`, `make mp-server`,
+`make verify` (typecheck + unit tests + C++ tests), the four browser e2e
+suites, and `make cloc`. `make cloc` counts **source code only** — TypeScript,
+JavaScript, Vue components, C++/headers, CSS, HTML, Python and CMake — with
+`node_modules`, `dist`, `build`, `public/` assets, JSON levels, Markdown and
+lockfiles filtered out; `make cloc-files` prints the same filter per file.
+
 Model conversion reads the **original compiled XNA content** (the 2013 build
 output shipped with the game, reused byte-for-byte by the `../infinity-edge-mono`
 port). A copy of every `modelN.xnb` / `colorN.xnb` is vendored under
