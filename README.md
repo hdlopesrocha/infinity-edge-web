@@ -231,20 +231,28 @@ Enterable from the **Settings** menu (same menu as the in-game pause overlay).
 Two paths, in order:
 
 - **Immersive WebXR** (`navigator.xr` immersive-vr): per-eye pose and
-  projection rendered straight into the XR framebuffer, tap on the screen
-  re-centres via the session's `select` event, gyroscope look is dropped
-  (the head pose carries the view), the HUD is drawn in WebGL per eye.
+  projection rendered straight into the XR framebuffer, gyroscope look is
+  dropped (the head pose carries the view), the HUD is drawn in WebGL per
+  eye. The menus, lobby and room menu are the **same WebGL UI** as the 2D
+  pages, not a second VR menu: the screen is painted once into a texture and
+  drawn as a plane in the scene (16:9, 8 world units wide, 6 in front of the
+  base view). A crosshair with a dwell ring follows the headset's gaze ray on
+  that plane; the controller trigger (session `select`) clicks the item under
+  it, and dwelling ~1.6 s selects without a controller. Hover/keyboard/click
+  behaviour comes from the screens' own pointer handlers, so every menu and
+  every future screen works in the headset with no VR-specific items.
 - **Split-screen fallback** (no WebXR or refused): two eyes side by side
   (camera shifted ±0.125 world units along its right axis, own scissor and
   viewport per eye), with the gyroscope look (or a drag-to-look fallback
-  when sensors are blocked) and the DOM UI on top.
+  when sensors are blocked) and the WebGL menus/HUD rendered per eye.
 
 VR input: gyroscope (DeviceOrientationEvent, iOS permission requested when
 present but never blocking) with a drag-to-look fallback on the scene; a
 reactive diagnostic readout (`sensor: N events · yaw … · pitch … · drag look`)
-proves the mode is alive. Gaze-dwell (1 s) clicks menu buttons. VR ends with
-the match so the result screens come up as normal menus. Tap on the scene
-re-centres in both modes.
+proves the mode is alive. In a match (no menu screen) a trigger/tap re-centres
+the view. Pausing leaves the immersive session so the new pause panel is
+usable (VR stays on and resuming re-enters); VR ends with the match so the
+result screens come up as normal menus.
 
 ## Navigation
 
@@ -263,7 +271,8 @@ ancestry for cold deep links. Reload rebuilds the stack.
   CullNone like `Draws.DrawBillBoard`, billboards gated on Special Effects),
   `post.ts` (six-stage pipeline: 1 sky / 2 models / 3 billboards / 4 blur /
   5 UI / 6 final, zoom blur + lens flare), `noise.ts` (tileable 3D Perlin
-  field for smoke/plume), `hud3d.ts` (WebGL HUD overlay for stage 5).
+  field for smoke/plume), `hud3d.ts` (WebGL HUD overlay for stage 5),
+  `vrpanel.ts` (the same ScreenUi on a world-space VR panel + gaze cursor).
 - `src/game/` — math (GetH/GetV verbatim), life pools (Life1/Life3 quirks),
   physics presets + NextPosition + PreviewDirection, Team/Score/Reward/
   Conditions (Destroyed = !active, MorePoints = strictly above minimum),
@@ -275,7 +284,8 @@ ancestry for cold deep links. Reload rebuilds the stack.
   audio (SFX/voices + music), net (framed binary + gzip), ghost (framed+gzip
   persistence), store (options/scores/nav→scene map), level catalogue.
 - `src/game/hud.ts` — shared HUD snapshot (frame loop and WebXR session).
-- `src/game/xr.ts` — WebXR immersive session driver.
+- `src/game/xr.ts` — WebXR immersive session driver (per eye, HUD, menu panel
+  and gaze pointer).
 - `src/game/vr.ts` — VR state, gyro + drag-look fallback, calibration.
 - `src/components/`, `src/views/`, `src/router/` — canvas host, the in-match
   HUD (scoreboard, aim, pointers, life bar, touch controls), the WebGL menu
@@ -331,8 +341,10 @@ ancestry for cold deep links. Reload rebuilds the stack.
   debug view, config, option, tests and `src/engine/motion.ts` all deleted).
 - **VR**: WebXR immersive session (per-eye pose/projection into the XR
   framebuffer) with a split-screen fallback; gyro look + drag-to-look; tap to
-  re-centre; gaze-dwell (1 s) clicks menu buttons; enterable without a
-  gamepad; the same Settings menu is shared with the pause panel (live apply,
+  re-centre; the WebGL menus render on a world-space panel with a gaze
+  crosshair (trigger click + 1.6 s dwell) instead of a separate VR menu,
+  verified by the panel math/pointer unit tests; enterable without a gamepad;
+  the same Settings menu is shared with the pause panel (live apply,
   save/revert).
 - **Gameplay**: 5 s pre-match countdown (world frozen, world units per second
   "SPD" display, missile-lock warning, red lock crosshair, death-cause line in
@@ -380,11 +392,13 @@ ancestry for cold deep links. Reload rebuilds the stack.
   recovery (loop pauses, GL caches drop, scene rebuilds), 2x DPR backing store,
   no page errors. Run against both the dev server and the production build, over
   HTTP and over the WebSocket channel.
-- `npm test`: 120 unit tests (protocol framing/gzip/threshold/malformed input,
+- `npm test`: 136 unit tests (protocol framing/gzip/threshold/malformed input,
   frustum + ocTree culling, converted model sidecars, physics and life pools,
   BIP-340/NIP-19 vectors, Nostr event signing, multiplayer rooms over a local
-  relay, the browser host's frame production decoded by the client codec, and
-  the voice wire format/resampling; the live-relay test is opt-in).
+  relay, the browser host's frame production decoded by the client codec,
+  the voice wire format/resampling, and the VR panel/gaze math (panel basis,
+  ray/plane hit-to-UI mapping, dwell/click state); the live-relay test is
+  opt-in).
 - Dedicated multiplayer server: `npm run mp:server-e2e` starts the C++ server
   (own Nostr room, WebRTC, no player of its own) and two browser guests —
   joins over the WebGL lobby, authoritative life pools/HUD, guest throttle

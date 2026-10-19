@@ -1,3 +1,29 @@
+// Real WebXR ("immersive-vr"): the session owns the frame loop and we render
+// the scene once per eye straight into the XR framebuffer, with each eye's own
+// pose and projection. Not a gyroscope look-alike.
+//
+// Integration notes:
+// - the chase camera keeps flying the ship; the head pose is applied on top of
+//   that view (seated experience: rotation from the XR transform), so the ship
+//   stays centred while you look around.
+// - the post chain (zoom blur / lens flare / soft particles) is skipped inside
+//   XR: we draw the map directly into the XR framebuffer per eye.
+// - while a session is live, the normal rAF path only advances the simulation
+//   (renderer.xrActive) so nothing double-draws to the canvas.
+// - the menus are the same WebGL ScreenUi the 2D pages use: they are painted
+//   once into a texture and drawn as a world-space panel in front of the base
+//   view (src/engine/vrpanel.ts). The headset's gaze ray sweeps that panel and
+//   drives the UI's own pointer handler; trigger clicks instantly, dwelling
+//   (~1.6 s) selects without a controller. There is no separate VR menu.
+import { mat4, vec3 } from '../engine/math';
+import type { GameInstance } from './instance';
+import { store } from './store';
+import { syncHud } from './hud';
+import {
+  GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, hitPanel, panelBasis,
+} from '../engine/vrpanel';
+import type { ScreenUi } from '../engine/overlay';
+
 // Minimal WebXR typings: TypeScript's dom lib omits them and this module uses
 // only this surface, so we declare it locally instead of adding a dependency.
 interface XRViewport { x: number; y: number; width: number; height: number }
@@ -19,25 +45,6 @@ interface XRSession {
   end(): Promise<void>;
 }
 
-// Real WebXR ("immersive-vr"): the session owns the frame loop and we render
-// the scene once per eye straight into the XR framebuffer, with each eye's own
-// pose and projection. Not a gyroscope look-alike.
-//
-// Integration notes:
-// - the chase camera keeps flying the ship; the head pose is applied on top of
-//   that view (seated experience: rotation from the XR transform, translation
-//   ignored), so the ship stays centred while you look around.
-// - the post chain (zoom blur / lens flare / soft particles) is skipped inside
-//   XR: we draw the map directly into the XR framebuffer per eye.
-// - while a session is live, the normal rAF path only advances the simulation
-//   (renderer.xrActive) so nothing double-draws to the canvas.
-import { mat4 } from '../engine/math';
-import type { GameInstance } from './instance';
-import { store } from './store';
-import { calibrateVr } from './vr';
-import { VrMenu } from '../engine/vrmenu';
-import { syncHud } from './hud';
-
 type XrSystem = {
   isSessionSupported(mode: string): Promise<boolean>;
   requestSession(mode: string, init?: Record<string, unknown>): Promise<XRSession>;
@@ -48,9 +55,12 @@ function xr(): XrSystem | null {
   return n.xr ?? null;
 }
 
+/** Panel placement in world units (the old VR menu's comfortable scale). */
+const PANEL_DISTANCE = 6;
+const PANEL_WIDTH = 8;
+const PANEL_HEIGHT = PANEL_WIDTH * (PANEL_H / PANEL_W);
+
 let session: XRSession | null = null;
-let menuHandler: ((id: string) => void) | null = null;
-export function setMenuHandler(fn: ((id: string) => void) | null): void { menuHandler = fn; }
 let keepVrOnEnd = false;
 let entering = false;
 let baselineYawAbs = 0;
@@ -74,7 +84,8 @@ export async function xrSupported(): Promise<boolean> {
 
 /**
  * End the session. `keepVr` keeps the app in VR mode (split view with the DOM
- * UI) - that is what menus do, since an immersive session hides the page DOM.
+ * UI) - that is what pressing pause does, since an immersive session hides the
+ * page DOM and the pause panel belongs to the DOM HUD.
  */
 export function leaveXr(keepVr = false): void {
   const s = session;
@@ -96,6 +107,7 @@ export async function enterXr(
     viewport: { x: number; y: number; w: number; h: number } | null;
     presentFbo: WebGLFramebuffer | null;
     presentBounds: { w: number; h: number } | null;
+    uiOverlay: ScreenUi | null;
     drawHudTo: (fbo: WebGLFramebuffer | null, rect: { x: number; y: number; w: number; h: number }, hud: typeof store.hud | null) => void;
     beginFrame: () => void;
     endFrame: (hud?: typeof store.hud | null) => void;
@@ -132,8 +144,12 @@ export async function enterXr(
   if (layer.framebufferWidth > 0 && layer.framebufferHeight > 0) {
     renderer.presentBounds = { w: layer.framebufferWidth, h: layer.framebufferHeight };
   }
-  const vrMenu = new VrMenu(gl);
-  vrMenu.setOnFire((id) => { if (menuHandler) menuHandler(id); });
+  // The new UI (menus, lobby, room menu) on a world-space panel + gaze cursor.
+  const panel = new VrPanel(gl);
+  const cursor = new GazeCursor(gl);
+  let gaze: GazePointer | null = null;
+  let gazeUi: ScreenUi | null = null;
+  let selectQueued = false;
   const refSpace = await s.requestReferenceSpace('local');
   const head = mat4.create();
   const chase = mat4.create();
@@ -148,7 +164,8 @@ export async function enterXr(
     const pose = frame.getViewerPose(refSpace);
     if (!instance || !pose) return;
     // Re-centering: the head yaw that maps to "forward" is the one recorded
-    // when VR starts, or the one recorded on a tap (select). Taps re-record it.
+    // when VR starts, or the one recorded on a tap/trigger in a match (menus
+    // use select for clicks instead).
     if (pose.views.length > 0) {
       const m = pose.views[0].transform.matrix;
       latestHeadYawAbs = Math.atan2(m[8], m[10]);
@@ -165,25 +182,24 @@ export async function enterXr(
     const inMenu = !store.interactive;
     // Background/menu scenes still orbit their camera; only real matches freeze.
     if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
-    // The GL menu always needs its canvas painted (and its texture uploaded)
-    // whenever it is on screen - even on menu screens where instance.update
-    // already ran for the background scene.
-    if (store.paused || inMenu) {
-      const sel = instance.selectedObject;
-      const rCam = renderer.camera;
-      const shipPos = inMenu ? rCam.position : (sel ? sel.pos : rCam.position);
-      const shipDir = inMenu ? rCam.direction : (sel ? sel.dir : rCam.direction);
-      // Use camDir for gaze (head yaw tracking not working reliably)
-      vrMenu.update(dt,
-        rCam.position as unknown as Float32Array, rCam.direction as unknown as Float32Array,
-        shipPos as unknown as Float32Array, shipDir as unknown as Float32Array,
-        rCam.direction as unknown as Float32Array);
-    }
-    // menu items follow the screen we are on
-    vrMenu.setItems(inMenu
-      ? [{ id: 'single', label: 'SINGLE PLAYER' }, { id: 'options', label: 'OPTIONS' }, { id: 'about', label: 'ABOUT' }, { id: 'back', label: 'BACK' }, { id: 'exitvr', label: 'EXIT VR' }]
-      : [{ id: 'resume', label: 'RESUME' }, { id: 'leave', label: 'LEAVE MATCH' }, { id: 'exitvr', label: 'EXIT VR' }]);
     syncHud(instance);
+    // The new UI overlay (MenuUi/LobbyUi/RoomUi) becomes a texture + panel.
+    const ui = renderer.uiOverlay;
+    if (ui) {
+      panel.update(ui);
+      if (ui !== gazeUi) {
+        gazeUi = ui;
+        gaze = new GazePointer(ui, panel.width, panel.height);
+      }
+    } else if (gaze) {
+      // A match has no ScreenUi (the HUD is drawn separately): drop the hover.
+      gaze.reset();
+      gaze = null;
+      gazeUi = null;
+    }
+    // The panel follows the base view (not the head): the headset's gaze ray
+    // then sweeps across a stable panel, which is what a crosshair needs.
+    const basis = panelBasis(renderer.camera.position, renderer.camera.direction, PANEL_DISTANCE);
     mat4.copy(chase, renderer.camera.view);
     const cam = renderer.camera;
     // Each eye goes through the whole normal pipeline (scene target, scene
@@ -191,7 +207,8 @@ export async function enterXr(
     // that eye's viewport instead of the canvas. Drawing only the scene left
     // the eyes black: the composite is what produces the final image.
     gl.disable(gl.SCISSOR_TEST);
-    for (const view of pose.views) {
+    for (let vi = 0; vi < pose.views.length; vi++) {
+      const view = pose.views[vi];
       const vp = layer.getViewport(view);
       if (!vp || vp.width <= 0 || vp.height <= 0) continue;
       mat4.invert(head, view.transform.matrix);
@@ -220,9 +237,42 @@ export async function enterXr(
       // HUD straight into this eye's rectangle - the same math as the
       // crosshair and as the split view, so both eyes can only match.
       renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
-      // While paused the DOM is hidden, so the pause menu is painted here,
-      // one copy per eye, with a 1 s gaze-dwell to select an item.
-      if (store.paused || !store.interactive) vrMenu.draw(layer.framebuffer, cam.view as unknown as Float32Array, cam.proj as unknown as Float32Array, cam.position as unknown as Float32Array);
+      if (ui && gaze) {
+        // The panel is drawn last, over the HUD, in this eye's rectangle.
+        const eyeView = cam.view as unknown as Float32Array;
+        const eyeProj = cam.proj as unknown as Float32Array;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+        gl.enable(gl.SCISSOR_TEST);
+        gl.scissor(vp.x, vp.y, vp.width, vp.height);
+        gl.viewport(vp.x, vp.y, vp.width, vp.height);
+        // Gaze ray from this eye's view matrix: origin = inverse translation,
+        // direction = -Z of the camera basis.
+        const inv = mat4.create();
+        mat4.invert(inv, cam.view);
+        const origin = vec3.fromValues(inv[12], inv[13], inv[14]);
+        const ray = vec3.normalize(vec3.create(), vec3.fromValues(-eyeView[2], -eyeView[6], -eyeView[10]));
+        const hit = hitPanel(origin, ray, basis, PANEL_WIDTH, PANEL_HEIGHT, panel.width, panel.height);
+        if (vi === 0) {
+          // One pointer/dwell state for the UI; the left eye aims it.
+          gaze.update(hit, dt);
+          if (selectQueued) {
+            gaze.click();
+            selectQueued = false;
+          }
+          // A hover change bumps the UI version: repaint before drawing.
+          panel.update(ui);
+        }
+        panel.draw(layer.framebuffer, eyeView, eyeProj, basis, PANEL_WIDTH, PANEL_HEIGHT);
+        // Reticle at this eye's own hit (parallax-correct); a fixed distance
+        // along the gaze when the panel does not fill that direction.
+        const point = hit
+          ? hit.point
+          : vec3.scaleAndAdd(vec3.create(), origin, ray, PANEL_DISTANCE);
+        const radius = Math.max(0.06, (hit ? hit.distance : PANEL_DISTANCE) * 0.032);
+        const right = vec3.fromValues(eyeView[0], eyeView[4], eyeView[8]);
+        const up = vec3.fromValues(eyeView[1], eyeView[5], eyeView[9]);
+        cursor.draw(layer.framebuffer, eyeView, eyeProj, point, right, up, radius, gaze.progress);
+      }
     }
     renderer.viewport = null;
     renderer.presentFbo = null;
@@ -230,10 +280,15 @@ export async function enterXr(
     instance.canvasH = fullH;
   };
   s.requestAnimationFrame(loop);
-  // A tap on the screen inside the session re-centres the view (there is no
-  // DOM in there, so this is the only click the page can see).
-  s.addEventListener('select', () => { baselineYawAbs = latestHeadYawAbs; });
+  // A tap/trigger inside the session clicks the item under the crosshair; in a
+  // match (no UI overlay) it re-centres the view instead.
+  s.addEventListener('select', () => {
+    if (renderer.uiOverlay) selectQueued = true;
+    else baselineYawAbs = latestHeadYawAbs;
+  });
   s.addEventListener('end', () => {
+    panel.dispose();
+    cursor.dispose();
     session = null;
     renderer.xrActive = false;
     renderer.presentBounds = null;

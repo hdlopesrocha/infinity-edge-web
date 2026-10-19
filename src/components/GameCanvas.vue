@@ -262,10 +262,11 @@ function tryImmersive(): void {
 watch(() => store.paused, (p) => {
   if (!renderer || !store.vr) return;
   if (!store.interactive) return;
-  // Paused: keep the session alive so the GL menu is drawn per eye (the DOM
-  // pause panel is hidden inside an immersive session). Resuming re-enters
-  // only if the session was lost.
-  if (!p) tryImmersive();
+  // There is no separate VR pause menu: the pause panel belongs to the new
+  // (DOM) HUD. Ending the immersive session makes it reachable; VR mode stays
+  // on and resuming re-enters the session, exactly like the menus do.
+  if (p) leaveXr(true);
+  else tryImmersive();
 });
 watch(() => store.interactive, (on) => {
   if (!renderer) return;

@@ -210,7 +210,10 @@ export class Renderer {
         this.hudOverlay.draw(this.post.uiFbo, rect);
       } catch { /* a failed overlay must never kill the frame */ }
     }
-    if (this.uiOverlay) {
+    // Immersive sessions draw the same overlay as a world-space panel in the
+    // scene (see game/xr.ts); pasting it over each eye as well would show the
+    // menu twice.
+    if (this.uiOverlay && !this.xrActive) {
       try {
         if (!this.screenOverlay) this.screenOverlay = new ScreenOverlay(this.gl);
         this.screenOverlay.drawUi(this.post.uiFbo, rect, this.uiOverlay, this.post.w, this.post.h);
