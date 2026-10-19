@@ -238,7 +238,7 @@ Two paths, in order:
   drawn as a plane in the scene (16:9, 8 world units wide, 6 in front of the
   base view). A crosshair with a dwell ring follows the headset's gaze ray on
   that plane; the controller trigger (session `select`) clicks the item under
-  it, and dwelling ~1.6 s selects without a controller. Hover/keyboard/click
+  it, and dwelling ~2 s selects without a controller. Hover/keyboard/click
   behaviour comes from the screens' own pointer handlers, so every menu and
   every future screen works in the headset with no VR-specific items.
 - **Split-screen fallback** (no WebXR or refused): two eyes side by side
@@ -342,7 +342,7 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - **VR**: WebXR immersive session (per-eye pose/projection into the XR
   framebuffer) with a split-screen fallback; gyro look + drag-to-look; tap to
   re-centre; the WebGL menus render on a world-space panel with a gaze
-  crosshair (trigger click + 1.6 s dwell) instead of a separate VR menu,
+  crosshair (trigger click + 2 s dwell) instead of a separate VR menu,
   verified by the panel math/pointer unit tests; enterable without a gamepad;
   the same Settings menu is shared with the pause panel (live apply,
   save/revert).

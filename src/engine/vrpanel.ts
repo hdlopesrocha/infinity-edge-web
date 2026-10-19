@@ -10,8 +10,9 @@
 // One interaction rule the UI layer cannot know: dwelling. A headset without a
 // controller still selects by keeping the crosshair on an item; the controller
 // trigger (session "select") clicks immediately. The dwell ring is drawn by
-// GazeCursor, and after any click the pointer is disarmed until the gaze moves,
-// so a screen change cannot auto-click whatever lands under the crosshair.
+// GazeCursor. Dwell only arms after a deliberate move and disarms after every
+// click, so a freshly opened screen cannot auto-click whatever happens to sit
+// under the crosshair.
 
 import { vec3 } from './math';
 import type { ScreenUi } from './overlay';
@@ -21,9 +22,12 @@ export const PANEL_W = 1600;
 export const PANEL_H = 900;
 
 /** Dwell needed to select without a controller (ms). */
-export const DWELL_MS = 1600;
-/** Moving further than this resets the dwell (UI pixels). */
-export const DWELL_SLOP_PX = 14;
+export const DWELL_MS = 2000;
+/**
+ * Moving further than this resets the dwell (UI pixels). ~1.2 degrees on the
+ * panel, so ordinary head-tracking jitter does not starve the timer.
+ */
+export const DWELL_SLOP_PX = 28;
 
 const WORLD_UP: vec3 = vec3.fromValues(0, 1, 0);
 
@@ -117,7 +121,8 @@ export class GazePointer {
   private anchorX = 0;
   private anchorY = 0;
   private dwell = 0;
-  private armed = true;
+  private armed = false;
+  private entered = false;
 
   constructor(
     private ui: ScreenUi,
@@ -158,8 +163,17 @@ export class GazePointer {
       this.lastY = hit.y;
       this.ui.pointer?.('move', hit.x, hit.y, this.w, this.h);
     }
+    // A fresh screen must not click whatever happens to sit under the
+    // crosshair when it appears: dwell only arms after a deliberate move.
+    if (!this.entered) {
+      this.entered = true;
+      this.anchorX = hit.x;
+      this.anchorY = hit.y;
+      this.armed = false;
+      this.dwell = 0;
+      return false;
+    }
     if (!this.armed) {
-      // Re-arm only after a deliberate move; a screen change must not click.
       if (Math.abs(hit.x - this.anchorX) > DWELL_SLOP_PX || Math.abs(hit.y - this.anchorY) > DWELL_SLOP_PX) {
         this.armed = true;
         this.anchorX = hit.x;
@@ -200,7 +214,8 @@ export class GazePointer {
     this.lastX = -1;
     this.lastY = -1;
     this.dwell = 0;
-    this.armed = true;
+    this.armed = false;
+    this.entered = false;
   }
 }
 

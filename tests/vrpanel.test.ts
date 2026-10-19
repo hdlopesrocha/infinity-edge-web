@@ -106,15 +106,18 @@ describe('GazePointer', () => {
     const { ui, calls } = fakeUi();
     const g = new GazePointer(ui);
     expect(g.hover).toBeNull();
-    let fired = false;
-    for (let i = 0; i < 200 && !fired; i++) fired = g.update({ x: 100, y: 120 }, 16);
-    expect(fired).toBe(true);
+    // First hit only enters the panel; a deliberate move arms the dwell.
+    expect(g.update({ x: 100, y: 120 }, 16)).toBe(false);
     expect(calls[0]).toEqual(['move', 100, 120, PANEL_W, PANEL_H]);
+    g.update({ x: 140, y: 120 }, 16);
+    let fired = false;
+    for (let i = 0; i < 300 && !fired; i++) fired = g.update({ x: 140, y: 120 }, 16);
+    expect(fired).toBe(true);
     const downs = calls.filter((c) => c[0] === 'down');
     const ups = calls.filter((c) => c[0] === 'up');
     expect(downs).toHaveLength(1);
     expect(ups).toHaveLength(1);
-    expect(downs[0][1]).toBe(100);
+    expect(downs[0][1]).toBe(140);
     expect(downs[0][2]).toBe(120);
     expect(g.progress).toBe(0);
   });
@@ -122,20 +125,26 @@ describe('GazePointer', () => {
   it('does not re-click while the gaze stays put after a click', () => {
     const { ui, calls } = fakeUi();
     const g = new GazePointer(ui);
-    for (let i = 0; i < 200 && !g.update({ x: 50, y: 50 }, 16); i++) { /* dwell */ }
+    g.update({ x: 50, y: 50 }, 16);
+    g.update({ x: 90, y: 50 }, 16);
+    for (let i = 0; i < 300 && !g.update({ x: 90, y: 50 }, 16); i++) { /* dwell */ }
     const downs = calls.filter((c) => c[0] === 'down').length;
-    for (let i = 0; i < 300; i++) expect(g.update({ x: 50, y: 50 }, 16)).toBe(false);
+    expect(downs).toBe(1);
+    for (let i = 0; i < 300; i++) expect(g.update({ x: 90, y: 50 }, 16)).toBe(false);
     expect(calls.filter((c) => c[0] === 'down')).toHaveLength(downs);
   });
 
   it('resets the dwell when the gaze moves past the slop', () => {
     const { ui } = fakeUi();
     const g = new GazePointer(ui);
-    // 1 s on one spot...
-    for (let i = 0; i < 60; i++) g.update({ x: 100, y: 100 }, 16);
-    expect(g.progress).toBeGreaterThan(0.5);
+    g.update({ x: 100, y: 100 }, 16);   // enter
+    g.update({ x: 100, y: 100 }, 16);   // (no move yet: still disarmed)
+    g.update({ x: 140, y: 100 }, 16);   // deliberate move: arms
+    // 0.8 s on one spot...
+    for (let i = 0; i < 50; i++) g.update({ x: 140, y: 100 }, 16);
+    expect(g.progress).toBeGreaterThan(0.3);
     // ...then a deliberate move restarts the timer.
-    g.update({ x: 140, y: 100 }, 16);
+    g.update({ x: 200, y: 100 }, 16);
     expect(g.progress).toBeLessThan(0.05);
   });
 
@@ -188,10 +197,26 @@ describe('GazePointer', () => {
   it('uses the dwell constant it advertises', () => {
     const { ui } = fakeUi();
     const g = new GazePointer(ui);
+    g.update({ x: 0, y: 0 }, 10);      // enter
+    g.update({ x: 100, y: 0 }, 10);    // arm
     // One ms short of the dwell must not click.
     const steps = Math.floor((DWELL_MS - 1) / 10);
-    for (let i = 0; i < steps; i++) expect(g.update({ x: 0, y: 0 }, 10)).toBe(false);
+    for (let i = 0; i < steps; i++) expect(g.update({ x: 100, y: 0 }, 10)).toBe(false);
     expect(g.progress).toBeLessThan(1);
-    expect(g.update({ x: 0, y: 0 }, 10)).toBe(true);
+    expect(g.update({ x: 100, y: 0 }, 10)).toBe(true);
+  });
+
+  it('needs a move before dwelling on a freshly shown screen', () => {
+    const { ui, calls } = fakeUi();
+    const g = new GazePointer(ui);
+    // Stare at the same spot from the moment the screen appears: no click.
+    for (let i = 0; i < 400; i++) expect(g.update({ x: 200, y: 200 }, 16)).toBe(false);
+    expect(calls.filter((c) => c[0] === 'down')).toHaveLength(0);
+    expect(g.progress).toBe(0);
+    // A deliberate move arms it, and then the dwell works.
+    g.update({ x: 260, y: 200 }, 16);
+    let fired = false;
+    for (let i = 0; i < 300 && !fired; i++) fired = g.update({ x: 260, y: 200 }, 16);
+    expect(fired).toBe(true);
   });
 });

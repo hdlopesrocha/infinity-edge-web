@@ -14,7 +14,7 @@
 //   once into a texture and drawn as a world-space panel in front of the base
 //   view (src/engine/vrpanel.ts). The headset's gaze ray sweeps that panel and
 //   drives the UI's own pointer handler; trigger clicks instantly, dwelling
-//   (~1.6 s) selects without a controller. There is no separate VR menu.
+//   (~2 s) selects without a controller. There is no separate VR menu.
 import { mat4, vec3 } from '../engine/math';
 import type { GameInstance } from './instance';
 import { store } from './store';
@@ -145,8 +145,17 @@ export async function enterXr(
     renderer.presentBounds = { w: layer.framebufferWidth, h: layer.framebufferHeight };
   }
   // The new UI (menus, lobby, room menu) on a world-space panel + gaze cursor.
-  const panel = new VrPanel(gl);
-  const cursor = new GazeCursor(gl);
+  // A driver that rejects the small shaders must not kill the session: the
+  // world and HUD still render, only the panel is missing.
+  let panel: VrPanel | null = null;
+  let cursor: GazeCursor | null = null;
+  try {
+    panel = new VrPanel(gl);
+    cursor = new GazeCursor(gl);
+  } catch {
+    panel = null;
+    cursor = null;
+  }
   let gaze: GazePointer | null = null;
   let gazeUi: ScreenUi | null = null;
   let selectQueued = false;
@@ -185,7 +194,7 @@ export async function enterXr(
     syncHud(instance);
     // The new UI overlay (MenuUi/LobbyUi/RoomUi) becomes a texture + panel.
     const ui = renderer.uiOverlay;
-    if (ui) {
+    if (ui && panel) {
       panel.update(ui);
       if (ui !== gazeUi) {
         gazeUi = ui;
@@ -237,7 +246,7 @@ export async function enterXr(
       // HUD straight into this eye's rectangle - the same math as the
       // crosshair and as the split view, so both eyes can only match.
       renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
-      if (ui && gaze) {
+      if (ui && gaze && panel && cursor) {
         // The panel is drawn last, over the HUD, in this eye's rectangle.
         const eyeView = cam.view as unknown as Float32Array;
         const eyeProj = cam.proj as unknown as Float32Array;
@@ -287,8 +296,8 @@ export async function enterXr(
     else baselineYawAbs = latestHeadYawAbs;
   });
   s.addEventListener('end', () => {
-    panel.dispose();
-    cursor.dispose();
+    panel?.dispose();
+    cursor?.dispose();
     session = null;
     renderer.xrActive = false;
     renderer.presentBounds = null;
