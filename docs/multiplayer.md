@@ -20,16 +20,24 @@ through `renderer.uiOverlay`): the multiplayer route renders no HTML at all.
    offers 1, 3, 6, 12 and 24 hours and is remembered).
 3. **CREATE A ROOM**: pick the game type (Capture the Flag / Time Trial /
    King of the System / Survival), the level and the room size, then
-   **CREATE ROOM**. The room is signed with your key and published, and the
-   match starts in your browser.
-4. Other players see the room and press **JOIN**. They land in your match.
-   Guests fly **with the host**: on team levels they take over an AI ship of the
-   host's team (the AI resumes when they leave); on time trials a wingman ship
-   is spawned for them. Up to `room size` players can be connected at once.
-5. A room can be closed by its creator only (the **DELETE** button on your own
-   rooms, or simply leaving the match). Rooms also expire on the relays 30
-   minutes after the last heartbeat, so a crashed host does not leave a room
+   **CREATE ROOM**. The room is signed with your key and published, and you
+   land in its **room menu** — the match does not start yet.
+4. Other players see the room and press **JOIN**. They land in the *same room
+   menu*: the roster, the team picker, the chat and the **MIC** toggle are
+   shared. The host can also open the room menu alone and wait.
+5. When everyone is in, the host presses **PLAY**; the match starts for all
+   pilots at once. Guests fly the team chosen for them in the room menu: on
+   team levels they take over an AI ship of that team (the AI resumes when they
+   leave) or a wingman is spawned on it; the host may move itself to another
+   team too. Up to `room size` players can be connected at once.
+6. A room can be closed by its creator only (the **DELETE** button on your own
+   rooms, or **close room** in the room menu). Rooms also expire on the relays
+   30 minutes after the last heartbeat, so a crashed host does not leave a room
    listed forever.
+
+Dedicated-server rooms skip the room menu (there is nobody to press PLAY):
+they carry `srv: true` in the room content and a JOIN goes straight into the
+match.
 
 Rooms from other clients are visible to everyone: the relay is a public
 database, and the WebRTC candidates are public too (see below).
@@ -40,7 +48,7 @@ Two custom event kinds (all payloads are JSON in `content`):
 
 | Kind | NIP class | Purpose |
 |---|---|---|
-| `30333` | addressable (30000–39999) | A room: `d` = room id, `t` = `ie3d-mp-room` + game type, `expiration` = NIP-40 TTL. Content: `{v, game, type, title, host, players, max, ice, created}`. Replaced by the host on heartbeats/player changes; only the author's key can replace or delete it. |
+| `30333` | addressable (30000–39999) | A room: `d` = room id, `t` = `ie3d-mp-room` + game type, `expiration` = NIP-40 TTL. Content: `{v, game, type, title, host, players, max, ice, created, cert, srv?}` (`srv: true` = dedicated server, join starts immediately). Replaced by the host on heartbeats/player changes; only the author's key can replace or delete it. |
 | `25050` | ephemeral (20000–29999) | Signalling: `d` = room id, `p` = recipient pubkey. Content: `{v, room, to, kind: offer\|answer\|ice\|bye, sdp?, candidates?[], name?}`. Relays forward these without storing them. |
 | `5` | NIP-09 | Room deletion: an `a` tag `30333:<hostPubkey>:<roomId>`. Only an event signed by the room's author deletes it. |
 
@@ -92,6 +100,43 @@ shim, so remote ships fly exactly like the local player's. Explosions replay on
 every client from the event's seed; sounds are evaluated per viewpoint (each
 guest hears distance/pan from its own ship).
 
+## Waiting room (browser-hosted rooms)
+
+`CREATE ROOM` opens `#/room` (`src/views/RoomView.vue` and
+`src/game/mp/roomui.ts`, painted into the WebGL frame like the lobby); no HTML
+is rendered there either. The host owns the room state; the guests mirror it.
+
+- **Host → guests** (`Room` frame, message id `122`, JSON in the payload):
+  `{t:'state', level, title, max, phase, teams, you, players:[{name, pubkey,
+  team, mic, host}]}` after every change, `{t:'chat', from, text, system}`,
+  `{t:'start', level}` and `{t:'closed', reason}`.
+- **Guest → host**: `{t:'hello', name}`, `{t:'team', team}`,
+  `{t:'chat', text}`, `{t:'mic', on}`. The host checks the team against the
+  level's combatant teams and re-broadcasts the roster, so a guest cannot spoof
+  another pilot's team, name or microphone state.
+- **Chat** is a trimmed text line (200 characters max) relayed by the host;
+  every pilot sees the same log, and joins/leaves are system lines.
+- **Voice**: the **MIC** button captures the microphone (`getUserMedia`),
+  resamples to 16 kHz mono PCM and sends `Voice` frames (message id `121`:
+  `[u8 speaker][int16 little-endian samples]`). The host plays each guest's
+  chunks locally and relays them to the other guests with the guest's roster
+  index, so the star topology needs no extra peer connections.
+  `src/game/mp/voice.ts` owns capture, resampling and the bounded playback
+  queue (latency stays bounded by dropping audio older than 250 ms); the wire
+  format is frozen and covered by `tests/voice.test.ts`.
+- **Teams**: the picker offers the level's combatant teams (`human`, `alien`,
+  …) or `auto` (the level default); the host may change any pilot's team, a
+  guest may change its own. On PLAY the picks are applied in the match: the
+  host's ship moves to its chosen team (team bookkeeping and base), and each
+  guest's Join adopts an AI ship of its team or spawns a wingman on it.
+- **PLAY** is host-only (guests see "waiting for the host"). Leaving the room
+  menu closes the room for the host or says `bye` for a guest. Chat and voice
+  frames keep flowing on the same data channels during the match (the client
+  has no in-match chat UI yet).
+
+The room menu renders no DOM: roster, team dropdowns, chat log/input, the mic
+meter, PLAY and the corner buttons are all part of the WebGL overlay.
+
 ## Dedicated server (no player, all computation on the server)
 
 The C++ server can host a room itself: it publishes the room on Nostr, answers
@@ -99,6 +144,10 @@ the guests' WebRTC offers and runs the authoritative match. It has **no player
 of its own** — every ship belongs to a guest, and all physics, collision
 detection, AI and goals run on the server. Clients only send input and render
 the frames they receive.
+
+Its room events carry `srv: true`, so browser clients joining one skip the
+waiting room and go straight into the running match (there is no host UI to
+press PLAY in); the server starts the match itself.
 
 The server needs OpenSSL and libusrsctp development headers
 (`libssl-dev`, `libusrsctp-dev`); the first CMake configure also fetches
@@ -209,13 +258,23 @@ npm run server:run      # serves dist/ on http://127.0.0.1:8091
 npm run mp:e2e          # host + one guest, real browser, PASS/FAIL
 npm run mp:e2e -- --guests 2            # several data channels at once
 npm run mp:e2e -- --level ctf-easy --type CTF --level-idx 0
+npm run room:e2e        # waiting room: chat, voice, teams, PLAY (real input)
 ```
 
 `tools/mp-e2e.mjs` drives two or more headless Chrome tabs through the actual
-lobby UI: room publishing, listing, joining, the RTC handshake, Scene/Hud
-delivery, and guest throttle reaching the host simulation (it fails if the
-guest's HUD speed does not rise). Screenshots of the lobby and of the guest's
-match are written to `/tmp/opencode/shots` (override with `MP_E2E_SHOTS`).
+lobby UI: room publishing, listing, joining, the waiting room, the host's PLAY,
+the RTC handshake, Scene/Hud delivery, and guest throttle reaching the host
+simulation (it fails if the guest's HUD speed does not rise). Screenshots of
+the lobby and of the guest's match are written to `/tmp/opencode/shots`
+(override with `MP_E2E_SHOTS`).
+
+`tools/room-e2e.mjs` focuses on the waiting room and uses **real input** only
+(CDP mouse/key events): the host creates a CTF room and does not start the
+match, the guest joins the same room menu, chat text and mic PCM travel over
+WebRTC (a synthetic microphone is enabled in the headless profile), the host
+assigns both teams through the dropdowns, PLAY starts the match for both, and
+the guest flies the assigned team while the host's own ship moved to its own
+pick. It also checks that chat keeps relaying during the match.
 
 The Nostr layer has its own tests: `tests/nostr.test.ts` runs the official
 BIP-340 vectors plus nostr-tools cross-check fixtures; `tests/mp-rooms.test.ts`

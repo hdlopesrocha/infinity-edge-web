@@ -32,6 +32,7 @@ npm run mp:e2e -- --guests 2             # several data channels at once
 npm run mp:e2e -- --level ctf-easy --type CTF --level-idx 0
 npm run mp:server       # dedicated C++ room (server hosts, does not play)
 npm run mp:server-e2e   # real server + two browser guests, PASS/FAIL
+npm run room:e2e        # waiting room: chat, voice, team picks, PLAY (real input)
 
 # verification tooling (headless Chrome, no extra dependencies)
 npm run ui:e2e          # real-mouse UI run: menus, options, lobby, pause chrome
@@ -69,6 +70,7 @@ composition; the compiled XNB is exact. It is kept only for reference.
 | `#/` → `#/engine` → `#/start` | EngineScreen (wheel + logo, 3 s) → StartScreen (logo, 3 s) → MainMenu. Both boot screens show the Floating-Gear loading bar while every model, texture and level is preloaded; the sequence only advances to the menu once that finishes |
 | `#/menu` | MainMenu (SINGLE PLAYER / HANGAR / OPTIONS / ABOUT / MULTIPLAYER) |
 | `#/multiplayer` | Public rooms on Nostr + "create a room" — the whole view is painted into the WebGL frame (`src/game/mp/lobbyui.ts`), no HTML |
+| `#/room` | Browser-hosted waiting room: roster + per-pilot teams, chat, microphone toggle and the host's PLAY — painted into the same WebGL frame (`src/game/mp/roomui.ts`), no HTML |
 | `?username=<name>` | sets and saves the pilot name (search string or hash query), e.g. `#/menu?username=Bob` |
 | `#/single-player` | CTF / TIME TRIAL |
 | `#/ctf`, `#/tt`, `#/tt/{easy,normal,hard}` | Difficulty menus; TT lists Track 01.. / Demo Track |
@@ -122,9 +124,19 @@ the C++ server sends, so guests run the same render-only `NetGame` client.
   dropdown 1/3/6/12/24 h, persisted), with JOIN buttons and DELETE on your own
   rooms (NIP-09: only the creator's key can delete).
 - Creating a room uses dropdowns for game type, level and room size, publishes
-  the room and starts the match in this browser.
-- Guests fly with the host: they take over an AI ship of the host's team (the
-  AI resumes when they leave) or get a wingman on time trials.
+  the room and opens its **room menu** (`#/room`); the match only starts when
+  the host presses **PLAY**. Guests joining land in the same room menu, so the
+  host can wait for everyone before starting.
+- The room menu (also pure WebGL UI) carries a text **chat** over the data
+  channels, a **microphone toggle** (16 kHz PCM voice frames relayed by the
+  host, `src/game/mp/voice.ts`) and a **team picker per pilot** (the level's
+  combatant teams: the host may set any pilot's team, guests their own). On
+  PLAY the picks are applied: the host's ship moves to its team, and each guest
+  takes over an AI ship of its team (the AI resumes when they leave) or gets a
+  wingman spawned on it.
+- Chat and voice keep flowing on the same channels during the match; room
+  control is message `122`, voice is message `121` (documented in
+  `docs/multiplayer.md`).
 - Room events are addressable Nostr events (kind `30333`, 30-minute NIP-40
   expiry refreshed by heartbeats); SDP/ICE travel as public ephemeral events
   (kind `25050`), so the WebRTC candidates are visible on the relays exactly as
@@ -133,7 +145,8 @@ the C++ server sends, so guests run the same render-only `NetGame` client.
   `src/game/nostr/`. The lobby UI and the in-game HUD are painted into the GL
   frame; the multiplayer view renders no DOM at all.
 - **Dedicated server**: the C++ server can host a room itself
-  (`ie-server --room ctf-easy`). It publishes the room, accepts WebRTC guests
+  (`ie-server --room ctf-easy`). It publishes the room with `srv: true` (so
+  clients skip the waiting room and join the running match), accepts WebRTC guests
   and runs the whole match — physics, collision detection, AI, goals — with no
   player of its own; guests only send input and render the frames. libdatachannel
   is fetched at configure time; `/mp/status` reports the room, and the same
@@ -358,11 +371,11 @@ ancestry for cold deep links. Reload rebuilds the stack.
   recovery (loop pauses, GL caches drop, scene rebuilds), 2x DPR backing store,
   no page errors. Run against both the dev server and the production build, over
   HTTP and over the WebSocket channel.
-- `npm test`: 83 unit tests (protocol framing/gzip/threshold/malformed input,
+- `npm test`: 120 unit tests (protocol framing/gzip/threshold/malformed input,
   frustum + ocTree culling, converted model sidecars, physics and life pools,
   BIP-340/NIP-19 vectors, Nostr event signing, multiplayer rooms over a local
-  relay, and the browser host's frame production decoded by the client codec;
-  the live-relay test is opt-in).
+  relay, the browser host's frame production decoded by the client codec, and
+  the voice wire format/resampling; the live-relay test is opt-in).
 - Dedicated multiplayer server: `npm run mp:server-e2e` starts the C++ server
   (own Nostr room, WebRTC, no player of its own) and two browser guests —
   joins over the WebGL lobby, authoritative life pools/HUD, guest throttle
@@ -383,6 +396,15 @@ ancestry for cold deep links. Reload rebuilds the stack.
   relay in `tests/mp-rooms.test.ts`, and signing against the official BIP-340
   vectors plus a live relay publish (`tests/relay.integration.test.ts`,
   opt-in).
+- Multiplayer waiting room: `npm run room:e2e` drives the host and one guest
+  through the room menu with **real CDP input** — the host creates a CTF room
+  and stays out of the match, the guest joins the same roster, chat text and
+  mic PCM travel over WebRTC (synthetic microphone), both team pickers are
+  exercised, PLAY starts the match for both, the host's own ship moved to its
+  picked team (`alien`), the guest flies its picked team (`human`, 11 human /
+  12 alien ships, 2 flags) on the render-only `NetGame`, and chat still relays
+  during the match. It fails on any missing step; screenshots of both room
+  menus and both matches are written to `/tmp/opencode/shots`.
 - Game channel (server authoritative): Node load client against the C++ server
   (CTF Easy 8000 asteroids/19 ships: 36 KiB/s wire, 43 % of payload; KOTS solo
   13 KiB/s), and a driven browser run with `?game=/game` — TT Easy flight
