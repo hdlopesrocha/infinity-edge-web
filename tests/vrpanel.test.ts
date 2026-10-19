@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { vec3 } from 'gl-matrix';
 import {
-  DWELL_MS, GazePointer, PANEL_H, PANEL_W, hitPanel, panelBasis,
+  DWELL_MS, GazePointer, PANEL_H, PANEL_W, hitPanel, panelBasis, withClipRect,
 } from '../src/engine/vrpanel';
 import type { ScreenUi } from '../src/engine/overlay';
 
@@ -98,6 +98,40 @@ describe('hitPanel', () => {
     const hit = hitPanel(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, -1), basis, W, H, 800, 450)!;
     expect(hit.x).toBeCloseTo(400, 5);
     expect(hit.y).toBeCloseTo(225, 5);
+  });
+});
+
+describe('withClipRect', () => {
+  function fakeGl(): { gl: WebGL2RenderingContext; calls: string[] } {
+    const calls: string[] = [];
+    const gl = {
+      SCISSOR_TEST: 3089,
+      enable: (cap: number) => calls.push('enable:' + cap),
+      disable: (cap: number) => calls.push('disable:' + cap),
+      scissor: (x: number, y: number, w: number, h: number) => calls.push(`scissor:${x},${y},${w},${h}`),
+      viewport: (x: number, y: number, w: number, h: number) => calls.push(`viewport:${x},${y},${w},${h}`),
+    } as unknown as WebGL2RenderingContext;
+    return { gl, calls };
+  }
+
+  it('clips the eye rectangle and always clears the scissor afterwards', () => {
+    const { gl, calls } = fakeGl();
+    withClipRect(gl, { x: 10, y: 0, w: 100, h: 80 }, () => calls.push('draw'));
+    expect(calls).toEqual([
+      'enable:3089',
+      'scissor:10,0,100,80',
+      'viewport:10,0,100,80',
+      'draw',
+      'disable:3089',
+    ]);
+  });
+
+  it('clears the scissor even when the overlay draw throws', () => {
+    const { gl, calls } = fakeGl();
+    expect(() => withClipRect(gl, { x: 0, y: 0, w: 1, h: 1 }, () => {
+      throw new Error('boom');
+    })).toThrow('boom');
+    expect(calls[calls.length - 1]).toBe('disable:3089');
   });
 });
 

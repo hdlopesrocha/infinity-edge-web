@@ -265,6 +265,25 @@ function quad(gl: WebGL2RenderingContext): Quad {
   return { vao, vbo, ibo };
 }
 
+export interface ClipRect { x: number; y: number; w: number; h: number }
+
+/**
+ * Run `draw` clipped (and viewported) to one eye's rectangle, then always
+ * clear the scissor. Leaving the scissor enabled after an overlay is a nasty
+ * stereo bug: the *next* eye's scene is clipped to the previous eye's half,
+ * so the panel shows in both eyes while the world only renders in one.
+ */
+export function withClipRect(gl: WebGL2RenderingContext, rect: ClipRect, draw: () => void): void {
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(rect.x, rect.y, rect.w, rect.h);
+  gl.viewport(rect.x, rect.y, rect.w, rect.h);
+  try {
+    draw();
+  } finally {
+    gl.disable(gl.SCISSOR_TEST);
+  }
+}
+
 /** Save/restore the GL state these quads touch (they draw over the frame). */
 function withOverlayState(gl: WebGL2RenderingContext, draw: () => void): void {
   const depth = gl.isEnabled(gl.DEPTH_TEST);

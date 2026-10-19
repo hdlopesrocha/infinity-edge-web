@@ -20,7 +20,7 @@ import type { GameInstance } from './instance';
 import { store } from './store';
 import { syncHud } from './hud';
 import {
-  GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, hitPanel, panelBasis,
+  GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, hitPanel, panelBasis, withClipRect,
 } from '../engine/vrpanel';
 import type { ScreenUi } from '../engine/overlay';
 
@@ -220,6 +220,9 @@ export async function enterXr(
       const view = pose.views[vi];
       const vp = layer.getViewport(view);
       if (!vp || vp.width <= 0 || vp.height <= 0) continue;
+      // Never inherit a clip rect: the panel below scopes its own, and a
+      // leftover scissor would black out this eye's scene composite.
+      gl.disable(gl.SCISSOR_TEST);
       mat4.invert(head, view.transform.matrix);
       // yaw-only re-center: looking the way you did when VR started (or when
       // you last tapped) gives the unrotated chase view.
@@ -248,39 +251,45 @@ export async function enterXr(
       renderer.drawHudTo(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, store.hud);
       if (ui && gaze && panel && cursor) {
         // The panel is drawn last, over the HUD, in this eye's rectangle.
+        // withClipRect always clears the scissor afterwards: it must not
+        // leak into the other eye's scene pass (that blacked out the right
+        // eye while the menu itself still showed in both).
         const eyeView = cam.view as unknown as Float32Array;
         const eyeProj = cam.proj as unknown as Float32Array;
+        // The loop mutates these; capture the non-null values for the closure.
+        const aim = gaze;
+        const board = panel;
+        const pointer = cursor;
         gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
-        gl.enable(gl.SCISSOR_TEST);
-        gl.scissor(vp.x, vp.y, vp.width, vp.height);
-        gl.viewport(vp.x, vp.y, vp.width, vp.height);
-        // Gaze ray from this eye's view matrix: origin = inverse translation,
-        // direction = -Z of the camera basis.
-        const inv = mat4.create();
-        mat4.invert(inv, cam.view);
-        const origin = vec3.fromValues(inv[12], inv[13], inv[14]);
-        const ray = vec3.normalize(vec3.create(), vec3.fromValues(-eyeView[2], -eyeView[6], -eyeView[10]));
-        const hit = hitPanel(origin, ray, basis, PANEL_WIDTH, PANEL_HEIGHT, panel.width, panel.height);
-        if (vi === 0) {
-          // One pointer/dwell state for the UI; the left eye aims it.
-          gaze.update(hit, dt);
-          if (selectQueued) {
-            gaze.click();
-            selectQueued = false;
+        withClipRect(gl, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, () => {
+          // Gaze ray from this eye's view matrix: origin = inverse
+          // translation, direction = -Z of the camera basis.
+          const inv = mat4.create();
+          mat4.invert(inv, cam.view);
+          const origin = vec3.fromValues(inv[12], inv[13], inv[14]);
+          const ray = vec3.normalize(vec3.create(), vec3.fromValues(-eyeView[2], -eyeView[6], -eyeView[10]));
+          const hit = hitPanel(origin, ray, basis, PANEL_WIDTH, PANEL_HEIGHT, board.width, board.height);
+          if (vi === 0) {
+            // One pointer/dwell state for the UI; the left eye aims it.
+            aim.update(hit, dt);
+            if (selectQueued) {
+              aim.click();
+              selectQueued = false;
+            }
+            // A hover change bumps the UI version: repaint before drawing.
+            board.update(ui);
           }
-          // A hover change bumps the UI version: repaint before drawing.
-          panel.update(ui);
-        }
-        panel.draw(layer.framebuffer, eyeView, eyeProj, basis, PANEL_WIDTH, PANEL_HEIGHT);
-        // Reticle at this eye's own hit (parallax-correct); a fixed distance
-        // along the gaze when the panel does not fill that direction.
-        const point = hit
-          ? hit.point
-          : vec3.scaleAndAdd(vec3.create(), origin, ray, PANEL_DISTANCE);
-        const radius = Math.max(0.06, (hit ? hit.distance : PANEL_DISTANCE) * 0.032);
-        const right = vec3.fromValues(eyeView[0], eyeView[4], eyeView[8]);
-        const up = vec3.fromValues(eyeView[1], eyeView[5], eyeView[9]);
-        cursor.draw(layer.framebuffer, eyeView, eyeProj, point, right, up, radius, gaze.progress);
+          board.draw(layer.framebuffer, eyeView, eyeProj, basis, PANEL_WIDTH, PANEL_HEIGHT);
+          // Reticle at this eye's own hit (parallax-correct); a fixed distance
+          // along the gaze when the panel does not fill that direction.
+          const point = hit
+            ? hit.point
+            : vec3.scaleAndAdd(vec3.create(), origin, ray, PANEL_DISTANCE);
+          const radius = Math.max(0.06, (hit ? hit.distance : PANEL_DISTANCE) * 0.032);
+          const right = vec3.fromValues(eyeView[0], eyeView[4], eyeView[8]);
+          const up = vec3.fromValues(eyeView[1], eyeView[5], eyeView[9]);
+          pointer.draw(layer.framebuffer, eyeView, eyeProj, point, right, up, radius, aim.progress);
+        });
       }
     }
     renderer.viewport = null;
