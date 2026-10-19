@@ -142,6 +142,7 @@ Event makeRoomEvent(const std::string& roomId, const RoomContent& content, int t
   for (const auto& url : content.ice) iceItems.emplace_back(url);
   c.set("ice", Json(std::move(iceItems)));
   c.set("created", Json(static_cast<double>(content.created > 0 ? content.created : now)));
+  if (content.srv) c.set("srv", Json(true));
   std::vector<std::vector<std::string>> tags = {
       {"d", roomId},
       {"t", kRoomTag},

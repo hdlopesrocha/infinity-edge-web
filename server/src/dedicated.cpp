@@ -152,6 +152,9 @@ void DedicatedRoom::publishRoom() {
   content.ice = cfg_.iceServers;
   content.created = created_;
   content.cert = cert_;
+  // Mark server rooms: a browser joining one starts immediately (there is no
+  // waiting room to press PLAY in). Browser hosts leave this false.
+  content.srv = true;
   const nostr::Event evt = nostr::makeRoomEvent(roomId_, content, kRoomTtlSec, key_, 0);
   relay_->publish(evt);
   std::printf("[mp] room %s \"%s\" (%s) published as %s\n", roomId_.c_str(),

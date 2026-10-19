@@ -67,6 +67,8 @@ struct RoomContent {
   std::vector<std::string> ice;
   int64_t created = 0;
   HostCert cert;
+  /** Dedicated server: clients join straight into the match (no room menu). */
+  bool srv = false;
 };
 
 Event makeRoomEvent(const std::string& roomId, const RoomContent& content, int ttlSec,
