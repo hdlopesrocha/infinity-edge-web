@@ -33,6 +33,7 @@ npm run mp:e2e -- --level ctf-easy --type CTF --level-idx 0
 npm run mp:server       # dedicated C++ room (server hosts, does not play)
 npm run mp:server-e2e   # real server + two browser guests, PASS/FAIL
 npm run room:e2e        # waiting room: chat, voice, team picks, PLAY (real input)
+npm run boot:e2e        # boot screens reach the painted main menu on their own
 
 # verification tooling (headless Chrome, no extra dependencies)
 npm run ui:e2e          # real-mouse UI run: menus, options, lobby, pause chrome
@@ -47,7 +48,7 @@ node tools/context-probe.mjs           # step-by-step WebGL context loss/restore
 
 The same entry points are wrapped in a `Makefile` (`make` prints the full
 list): `make build`, `make serve`, `make relay`, `make mp-server`,
-`make verify` (typecheck + unit tests + C++ tests), the four browser e2e
+`make verify` (typecheck + unit tests + C++ tests), the five browser e2e
 suites, and `make cloc`. `make cloc` counts **source code only** — TypeScript,
 JavaScript, Vue components, C++/headers, CSS, HTML, Python and CMake — with
 `node_modules`, `dist`, `build`, `public/` assets, JSON levels, Markdown and
@@ -404,6 +405,13 @@ ancestry for cold deep links. Reload rebuilds the stack.
   relay in `tests/mp-rooms.test.ts`, and signing against the official BIP-340
   vectors plus a live relay publish (`tests/relay.integration.test.ts`,
   opt-in).
+- Boot sequence: `npm run boot:e2e` loads `#/`, `#/engine` and `#/start`
+  directly and requires each to reach `#/menu` by itself, with the designed
+  dwell (engine ≥ 3 s, start ≥ 1.5 s) and the **painted** main menu (WebGL
+  overlay: `MAIN MENU` plus the single-player/multiplayer regions), not just a
+  hash change. This pins the regression where the keyed `RouterView` remounted
+  the menu at `#/start` after the preload had finished and no advance timer was
+  armed.
 - Multiplayer waiting room: `npm run room:e2e` drives the host and one guest
   through the room menu with **real CDP input** — the host creates a CTF room
   and stays out of the match, the guest joins the same roster, chat text and

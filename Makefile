@@ -24,7 +24,7 @@ CLOC_EXCLUDE_DIRS := node_modules,dist,build,public,certs,.git,docs
 CLOC_LANGS := TypeScript,JavaScript,Vuejs Component,C++,C/C++ Header,CSS,HTML,Python,CMake,GLSL
 
 .PHONY: help install dev build preview typecheck test test-watch verify \
-        cxx cxx-test serve relay mp-server e2e mp-e2e room-e2e server-e2e ui-e2e \
+        cxx cxx-test serve relay mp-server e2e boot-e2e mp-e2e room-e2e server-e2e ui-e2e \
         cloc cloc-files clean clean-server distclean
 
 help: ## show this help
@@ -75,7 +75,10 @@ relay: ## local Nostr relay for multiplayer on ws://127.0.0.1:7777
 mp-server: build cxx ## dedicated C++ room on :8097 (hosts, does not play)
 	$(NPM) run mp:server
 
-e2e: mp-e2e room-e2e server-e2e ui-e2e ## all browser suites (relay + serve must be up)
+e2e: boot-e2e mp-e2e room-e2e server-e2e ui-e2e ## all browser suites (relay + serve must be up)
+
+boot-e2e: ## boot sequence ends on the painted main menu (serve up)
+	$(NPM) run boot:e2e
 
 mp-e2e: ## browser host + guests over WebRTC (relay + serve up)
 	$(NPM) run mp:e2e
