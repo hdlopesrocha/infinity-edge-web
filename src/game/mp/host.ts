@@ -70,6 +70,8 @@ export interface GuestInfo {
   /** Display name. */
   name: string;
   transport: GuestTransport;
+  /** Team picked in the waiting room (empty = the host's team). */
+  team?: string;
 }
 
 export interface GuestSummary {
@@ -80,6 +82,8 @@ export interface GuestSummary {
 
 interface Guest extends GuestInfo {
   id: number;
+  /** Team chosen in the waiting room (empty = the host's team). */
+  team: string;
   control: RemoteControl;
   /** The ship this guest flies (owned by the simulation). */
   ship: SpaceShip | null;
@@ -121,12 +125,50 @@ export class HostSession {
   /** Called when a guest's link closes on its own. */
   onGuestClosed: ((id: number) => void) | null = null;
 
-  constructor(private gi: GameInstance) {
+  constructor(private gi: GameInstance, hostTeam = '') {
     this.installHooks();
+    this.moveHostToTeam(hostTeam);
+  }
+
+  /**
+   * The waiting room may have put the host on another team: move the level's
+   * player ship (and its team bookkeeping) before the match starts. The ship
+   * itself stays the selected object, so HUD/camera are unaffected.
+   */
+  private moveHostToTeam(teamName: string): void {
+    const ship = this.gi.selectedObject;
+    if (!ship || !teamName) return;
+    const team = this.gi.teams.get(teamName);
+    if (!team || team === ship.team) return;
+    const old = ship.team;
+    const idx = old.objects.indexOf(ship);
+    if (idx >= 0) old.objects.splice(idx, 1);
+    ship.team = team;
+    team.objects.push(ship);
+    if (team.base) {
+      // Spawn at the new team's base, like a fresh level spawn would.
+      const base = team.base;
+      ship.pos[0] = base.pos[0] + 10;
+      ship.pos[1] = base.pos[1] + 4;
+      ship.pos[2] = base.pos[2] + 10;
+      ship.update();
+    }
   }
 
   get guestCount(): number {
     return this.guests.size;
+  }
+
+  /** Waiting room: the host moved itself to another team after attach. */
+  setHostTeam(team: string): void {
+    this.moveHostToTeam(team);
+  }
+
+  /** Waiting room: a guest's team changed before its Join arrived. */
+  setGuestTeam(pubkey: string, team: string): void {
+    for (const g of this.guests.values()) {
+      if (g.pubkey === pubkey && !g.joined) g.team = team;
+    }
   }
 
   /** The ship a guest flies (null before Join / while destroyed). */
@@ -160,6 +202,7 @@ export class HostSession {
     const id = this.nextGuestId++;
     const guest: Guest = {
       ...info,
+      team: info.team ?? '',
       id,
       control: new RemoteControl(),
       ship: null,
@@ -304,7 +347,9 @@ export class HostSession {
     const gi = this.gi;
     const host = gi.selectedObject;
     if (!host) return null;
-    const team = host.team;
+    // The waiting room may have assigned this guest to another team: adopt an
+    // AI ship of that team or spawn a wingman on it.
+    const team = (guest.team && gi.teams.get(guest.team)) || host.team;
     const taken = new Set<SpaceShip>();
     for (const g of this.guests.values()) if (g.ship) taken.add(g.ship);
     // 1. An AI ship of the host's team still flying its own brain.
@@ -322,11 +367,14 @@ export class HostSession {
     const life = host.life instanceof Life3
       ? new Life3(host.life.maxLeft, host.life.maxCenter, host.life.maxRight)
       : new Life1(100);
+    // Prefer the assigned team's base as the spawn point; fall back to a spot
+    // next to the host when that team has none.
+    const anchor = team.base ?? host;
     const side = host.side;
     const pos = vec3.fromValues(
-      host.pos[0] + side[0] * 14 - host.dir[0] * 6,
-      host.pos[1] + 2 + side[1] * 14,
-      host.pos[2] + side[2] * 14 - host.dir[2] * 6,
+      anchor.pos[0] + side[0] * 14 - host.dir[0] * 6,
+      anchor.pos[1] + 2 + side[1] * 14,
+      anchor.pos[2] + side[2] * 14 - host.dir[2] * 6,
     );
     const ship = new SpaceShip(host.physics, gi, team, pos, host.model, life, gi.rc.model('Base'));
     quat.copy(ship.rot, host.rot);

@@ -110,6 +110,8 @@ export interface RoomInfo {
   ice: string[];
   /** The host's pinned WebRTC certificate (absent on legacy hosts). */
   cert: HostCert | null;
+  /** True when the room is hosted by a dedicated server (starts immediately). */
+  srv: boolean;
   /** Event id of the current revision (deletion reference). */
   eventId: string;
   /** The signed event this record came from (kept for verification). */
@@ -138,6 +140,8 @@ export interface RoomContent {
   ice: string[];
   created: number;
   cert?: HostCert;
+  /** Dedicated server room: joins go straight into the match (no waiting room). */
+  srv?: boolean;
 }
 
 /** Random room id (96 bits, lowercase hex). */
@@ -212,6 +216,7 @@ export function roomFromEvent(evt: NostrEvent): RoomInfo | null {
           sig: String(content.cert.sig ?? ''),
         }
       : null,
+    srv: content.srv === true,
     eventId: evt.id,
     raw: evt,
   };

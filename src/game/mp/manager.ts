@@ -20,6 +20,9 @@ import { bytesToHex, hexToBytes, randomBytes, schnorrPubkey, validSecretKey } fr
 import { npubEncode } from '../nostr/bech32';
 import { decodeMessage, encodeMessage, textDecoder, textEncoder } from '../net';
 import { GameMsg } from '../protocol';
+import { decodeVoiceFrame, encodeVoiceFrame } from './voice';
+import { loadLevel } from '../levels';
+import { TEAMS } from '../config';
 import {
   createHostCert, importCertKey, newNonce, signAnswer, signAuth, verifyAnswer, verifyAuth,
   verifyHostCert,
@@ -53,6 +56,62 @@ export interface MpConfig {
 export interface JoinIntent {
   room: RoomInfo;
   transport: GameTransport;
+}
+
+/** One player in the waiting room (host first). */
+export interface RoomPlayerInfo {
+  name: string;
+  pubkey: string;
+  /** Chosen team name ('' = the level's default for that player). */
+  team: string;
+  /** Microphone enabled (voice chat). */
+  mic: boolean;
+  host: boolean;
+}
+
+export interface ChatLine {
+  from: string;
+  text: string;
+  at: number;
+  /** Join/leave/status notices (rendered dimmer, no author). */
+  system?: boolean;
+}
+
+/** Everything the room menu draws (host and guest views of the same room). */
+export interface RoomSnapshot {
+  roomId: string;
+  level: string;
+  title: string;
+  maxPlayers: number;
+  /** Teams the level offers (host loads the level, guests get them in state). */
+  teams: string[];
+  players: RoomPlayerInfo[];
+  meIndex: number;
+  isHost: boolean;
+  phase: 'waiting' | 'playing';
+  chat: ChatLine[];
+  micOn: boolean;
+  status: string;
+}
+
+/** Host-side per-guest link. */
+interface GuestLink {
+  name: string;
+  transport: GameTransport;
+  authed: boolean;
+  team: string;
+  mic: boolean;
+}
+
+/** Guest-side view of the room it joined and is waiting in. */
+interface GuestRoom {
+  info: RoomInfo;
+  /** Proxy transport handed to NetGame when the match starts. */
+  transport: GameTransport;
+  you: number;
+  players: RoomPlayerInfo[];
+  teams: string[];
+  phase: 'waiting' | 'playing';
 }
 
 /** One guest's peer connection on the host side. */
@@ -117,6 +176,29 @@ function iceConfig(urls: string[]): RTCConfiguration {
   return { iceServers: urls.map((u) => ({ urls: u })) };
 }
 
+/**
+ * Keep a tap on an incoming transport: the room control frames (chat, voice,
+ * roster) stay with the manager while whatever consumes the proxy — NetGame
+ * during a match — sets its own handlers on the proxy.
+ */
+function tapTransport(inner: GameTransport, tap: (data: ArrayBuffer | Uint8Array) => void): GameTransport {
+  const proxy: GameTransport = {
+    send: (frame) => inner.send(frame),
+    close: () => inner.close(),
+    get open() { return inner.open; },
+    onopen: null,
+    onmessage: null,
+    onclose: null,
+  };
+  inner.onmessage = (data) => {
+    tap(data);
+    proxy.onmessage?.(data);
+  };
+  inner.onopen = () => proxy.onopen?.();
+  inner.onclose = () => proxy.onclose?.();
+  return proxy;
+}
+
 export class Multiplayer {
   config: MpConfig = {
     relays: envRelays() ?? RELAY_DEFAULTS,
@@ -136,6 +218,12 @@ export class Multiplayer {
   onChange: (() => void) | null = null;
   /** Called when the hosted match's guest list changes. */
   onGuests: ((list: GuestSummary[]) => void) | null = null;
+  /** Called when the waiting room (roster, chat, phase) changes. */
+  onRoom: (() => void) | null = null;
+  /** Called when the host starts the match (guests navigate to the level). */
+  onStart: ((level: string) => void) | null = null;
+  /** Voice frame received from the room (speaker index + 16 kHz PCM). */
+  onVoice: ((speaker: number, pcm: Int16Array) => void) | null = null;
 
   /** Room/identity public key, derived once from the stored secret key. */
   readonly pubkeyHex: string;
@@ -148,7 +236,7 @@ export class Multiplayer {
   // Hosting.
   private hostingRoom: RoomInfo | null = null;
   private hostPeers = new Map<string, HostPeer>();
-  private pendingChannels: { pubkey: string; name: string; transport: GameTransport }[] = [];
+  private pendingChannels: { pubkey: string; name: string; transport: GameTransport; team: string }[] = [];
   private session: HostSession | null = null;
   private heartTimer = 0;
   private sigSub: (() => void) | null = null;
@@ -159,6 +247,16 @@ export class Multiplayer {
   private joinReject: ((e: Error) => void) | null = null;
   private pendingJoin: JoinIntent | null = null;
   private hostIntent: RoomInfo | null = null;
+  private guestRoom: GuestRoom | null = null;
+
+  // Waiting room (host and guest).
+  private roster: RoomPlayerInfo[] = [];
+  private chat: ChatLine[] = [];
+  private roomPhase: 'waiting' | 'playing' = 'waiting';
+  private roomTeams: string[] = [];
+  private roomTeamsFor = '';
+  private hostTeam = '';
+  private micOn = false;
 
   constructor() {
     const stored = loadJson<Partial<MpConfig>>(CONFIG_KEY);
@@ -216,7 +314,24 @@ export class Multiplayer {
   }
 
   get guestSession(): RoomInfo | null {
-    return this.pendingJoin?.room ?? null;
+    return this.guestRoom?.info ?? this.pendingJoin?.room ?? null;
+  }
+
+  /** Guest: leave the waiting room (or the match) and tell the host. */
+  leaveGuestRoom(): void {
+    const room = this.guestRoom?.info ?? null;
+    if (room && this.pool) {
+      const evt = finalizeEvent(signalTemplate(room.id, room.hostPubkey, { kind: 'bye' }), this.sk);
+      void this.pool.publish(evt);
+    }
+    try { this.guestRoom?.transport.close(); } catch { /* already closed */ }
+    this.guestRoom = null;
+    this.roster = [];
+    this.chat = [];
+    this.roomPhase = 'waiting';
+    this.cancelJoin();
+    this.onRoom?.();
+    this.emit();
   }
 
   // ------------------------------------------------------------ relay pool
@@ -245,6 +360,8 @@ export class Multiplayer {
 
   close(): void {
     this.endSession();
+    try { this.guestRoom?.transport.close(); } catch { /* already closed */ }
+    this.guestRoom = null;
     this.cancelJoin();
     if (this.filterTimer) {
       clearInterval(this.filterTimer);
@@ -363,11 +480,33 @@ export class Multiplayer {
     };
     const room = await this.publishRoom(id, content);
     this.hostingRoom = room;
+    // Waiting room: the match only starts when the host presses PLAY.
+    this.roomPhase = 'waiting';
+    this.chat = [];
+    this.roster = [{ name: content.host, pubkey: this.pubkey, team: '', mic: false, host: true }];
+    this.hostTeam = '';
+    void this.loadTeams(opts.game);
     this.subscribeSignals();
     this.heartTimer = setInterval(() => void this.heartbeat(), HEARTBEAT_MS);
-    this.hostIntent = room;
     this.emit();
+    this.onRoom?.();
     return room;
+  }
+
+  /** Teams the level offers (config order), used by the team pickers. */
+  private async loadTeams(levelKey: string): Promise<void> {
+    if (this.roomTeamsFor === levelKey && this.roomTeams.length > 0) return;
+    try {
+      const def = await loadLevel(levelKey);
+      const names = [...new Set(def.objects.map((o) => o.team))].filter((n) => n && n !== 'ambient');
+      const order = TEAMS.map((t) => t.name);
+      names.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      this.roomTeams = names.length > 0 ? names : ['human'];
+    } catch {
+      this.roomTeams = ['human'];
+    }
+    this.roomTeamsFor = levelKey;
+    this.onRoom?.();
   }
 
   private async publishRoom(id: string, content: RoomContent): Promise<RoomInfo> {
@@ -384,7 +523,7 @@ export class Multiplayer {
   private async heartbeat(): Promise<void> {
     if (!this.hostingRoom || !this.pool) return;
     try {
-      const players = 1 + (this.session?.guestCount ?? 0);
+      const players = this.hostingRoom && this.roster.length > 0 ? this.roster.length : 1;
       const content: RoomContent = {
         v: 1,
         game: this.hostingRoom.game,
@@ -429,14 +568,26 @@ export class Multiplayer {
   attachHost(gi: GameInstance): void {
     trace('attachHost', !!this.hostingRoom);
     if (!this.hostingRoom) return;
-    this.session = new HostSession(gi);
+    // The waiting room's team picks travel into the match: the host's own team
+    // now, every guest's team when it sends Join.
+    this.session = new HostSession(gi, this.hostTeam || '');
     this.session.onGuests = (list) => {
       this.onGuests?.(list);
       void this.heartbeat();
       this.emit();
     };
+    // Authenticated room guests become match guests. Channels queued while the
+    // room waited are the same links: only attach a queued one when its guest
+    // is not already known (avoids a duplicate, never-joined guest entry).
+    const attached = new Set<string>();
+    for (const [pubkey, link] of this.links) {
+      if (!link.authed) continue;
+      attached.add(pubkey);
+      if (!this.linkSessionIds.has(pubkey)) this.attachGuest(pubkey, link.name, link.transport, link.team);
+    }
     for (const pending of this.pendingChannels.splice(0)) {
-      this.attachGuest(pending.pubkey, pending.name, pending.transport);
+      if (attached.has(pending.pubkey)) continue;
+      this.attachGuest(pending.pubkey, pending.name, pending.transport, pending.team);
     }
     this.emit();
   }
@@ -457,6 +608,17 @@ export class Multiplayer {
    */
   endSession(graceMs = 0, keepRoom = false): void {
     trace('endSession', { graceMs, keepRoom, hosting: !!this.hostingRoom, session: !!this.session });
+    if (keepRoom) {
+      // Opening the match in a room that is already live (the host pressed
+      // PLAY): keep the signalling subscription, the heartbeat, the peer
+      // connections, the authenticated links and the queued channels — the
+      // guests are waiting in the room menu and become match guests next.
+      this.session?.dispose();
+      this.session = null;
+      this.linkSessionIds.clear();
+      this.emit();
+      return;
+    }
     if (this.heartTimer) {
       clearInterval(this.heartTimer);
       this.heartTimer = 0;
@@ -477,20 +639,16 @@ export class Multiplayer {
     };
     if (graceMs > 0 && (session || peers.length > 0)) setTimeout(closeAll, graceMs);
     else closeAll();
-    if (keepRoom) {
-      // The room carries on (a match is being rebuilt for it): keep the
-      // signalling subscription, the heartbeat and the listing alive.
-      if (this.hostingRoom) {
-        this.heartTimer = setInterval(() => void this.heartbeat(), HEARTBEAT_MS);
-      }
-      this.emit();
-      return;
-    }
     this.links.clear();
+    this.linkSessionIds.clear();
+    this.pendingFrames.clear();
     this.sigSub?.();
     this.sigSub = null;
     this.hostCert = null;
     this.hostCertKey = null;
+    this.roster = [];
+    this.chat = [];
+    this.roomPhase = 'waiting';
     const room = this.hostingRoom;
     this.hostingRoom = null;
     this.hostIntent = null;
@@ -508,6 +666,121 @@ export class Multiplayer {
     return this.session?.guestCount ?? 0;
   }
 
+  /** The waiting room's roster (host view; guests mirror the host's state). */
+  get players(): RoomPlayerInfo[] {
+    return this.roster;
+  }
+
+  /** True while this client sits in a waiting room (host or guest). */
+  get inRoom(): boolean {
+    return !!(this.hostingRoom || this.guestRoom);
+  }
+
+  /** Everything the room menu draws, or null when not in a room. */
+  roomSnapshot(): RoomSnapshot | null {
+    const info = this.hostingRoom ?? this.guestRoom?.info ?? null;
+    if (!info) return null;
+    const players = this.hostingRoom
+      ? [{ name: info.host, pubkey: this.pubkey, team: this.hostTeam, mic: this.micOn, host: true },
+          ...[...this.links.values()].filter((l) => l.authed).map((l) => ({
+            name: l.name, pubkey: '', team: l.team, mic: l.mic, host: false,
+          }))]
+      : this.roster;
+    return {
+      roomId: info.id,
+      level: info.game,
+      title: info.title,
+      maxPlayers: info.maxPlayers,
+      teams: this.roomTeams,
+      players,
+      meIndex: this.hostingRoom ? 0 : (this.guestRoom?.you ?? 0),
+      isHost: !!this.hostingRoom,
+      phase: this.roomPhase,
+      chat: this.chat,
+      micOn: this.micOn,
+      status: this.status,
+    };
+  }
+
+  /** Host: pick a team for any player; guests: for themselves. */
+  setPlayerTeam(index: number, team: string): void {
+    if (this.hostingRoom) {
+      if (index === 0) {
+        this.hostTeam = team;
+        if (this.session) this.session.setHostTeam(team);
+      } else {
+        const link = [...this.links.values()].filter((l) => l.authed)[index - 1];
+        if (link) {
+          link.team = team;
+          const pubkey = [...this.links.entries()].filter(([, l]) => l.authed)[index - 1]?.[0];
+          if (pubkey && this.session) this.session.setGuestTeam(pubkey, team);
+        }
+      }
+      this.broadcastRoom();
+      this.onRoom?.();
+      return;
+    }
+    if (this.guestRoom && index === this.guestRoom.you) {
+      const payload = textEncoder.encode(JSON.stringify({ t: 'team', team }));
+      this.guestRoom.transport.send(encodeMessage(GameMsg.Room, payload));
+    }
+  }
+
+  /** Chat message from this client (room or match: the relay keeps it alive). */
+  sendChat(text: string): void {
+    const clean = text.trim().slice(0, 200);
+    if (!clean) return;
+    if (this.hostingRoom) {
+      this.pushChat({ from: this.identityName(), text: clean, at: Date.now() }, true);
+      return;
+    }
+    if (this.guestRoom) {
+      const payload = textEncoder.encode(JSON.stringify({ t: 'chat', text: clean }));
+      this.guestRoom.transport.send(encodeMessage(GameMsg.Room, payload));
+    }
+  }
+
+  /** Mic toggle: the capture itself lives in the room view. */
+  setMic(on: boolean): void {
+    this.micOn = on;
+    if (this.hostingRoom) {
+      this.broadcastRoom();
+    } else if (this.guestRoom) {
+      const payload = textEncoder.encode(JSON.stringify({ t: 'mic', on }));
+      this.guestRoom.transport.send(encodeMessage(GameMsg.Room, payload));
+    }
+    this.onRoom?.();
+  }
+
+  /** One PCM chunk (16 kHz mono) to everyone else in the room/match. */
+  sendVoice(pcm: Int16Array): void {
+    if (!this.micOn || pcm.length === 0) return;
+    const frame = encodeMessage(GameMsg.Voice, encodeVoiceFrame(0, pcm));
+    if (this.hostingRoom) {
+      for (const link of this.links.values()) if (link.authed) link.transport.send(frame);
+    } else if (this.guestRoom) {
+      this.guestRoom.transport.send(frame);
+    }
+  }
+
+  /** Host: start the match (the guests are told and follow). */
+  startMatch(): string | null {
+    if (!this.hostingRoom) return null;
+    this.roomPhase = 'playing';
+    const payload = textEncoder.encode(JSON.stringify({ t: 'start', level: this.hostingRoom.game }));
+    for (const link of this.links.values()) if (link.authed) link.transport.send(encodeMessage(GameMsg.Room, payload));
+    // GameCanvas consumes this when it builds the level for the match.
+    this.hostIntent = this.hostingRoom;
+    this.onRoom?.();
+    this.emit();
+    return this.hostingRoom.game;
+  }
+
+  /** Host: close the room and drop everyone (back from the room menu). */
+  closeRoom(): void {
+    this.endSession();
+  }
+
   /** True while a hosted match is streaming to its guests. */
   get sessionActive(): boolean {
     return this.session !== null;
@@ -517,7 +790,11 @@ export class Multiplayer {
   hostCert: HostCert | null = null;
   private hostCertKey: CryptoKey | null = null;
   /** Per-peer links until the channel challenge is answered. */
-  private links = new Map<string, { name: string; transport: GameTransport; authed: boolean }>();
+  private links = new Map<string, GuestLink>();
+  /** Session guest ids, so game frames can be routed after room frames. */
+  private linkSessionIds = new Map<string, number>();
+  /** Game frames that arrived before the host's session was attached. */
+  private pendingFrames = new Map<string, (ArrayBuffer | Uint8Array)[]>();
 
   /** Diagnostics (console / e2e): the hosted session's guests. */
   debugGuests(): Record<string, unknown>[] {
@@ -567,7 +844,8 @@ export class Multiplayer {
     if (!this.hostingRoom || !this.pool) return;
     const pubkey = evt.pubkey;
     if (this.hostPeers.has(pubkey)) return; // one connection per guest
-    if ((this.session?.guestCount ?? 0) >= this.hostingRoom.maxPlayers - 1) {
+    // Waiting-room guests count too: the session is only attached on PLAY.
+    if (this.links.size >= this.hostingRoom.maxPlayers - 1) {
       return; // room is full: no answer, the guest times out
     }
     if (this.hostPeers.size >= this.hostingRoom.maxPlayers) {
@@ -602,8 +880,9 @@ export class Multiplayer {
       trace('host.dataChannel', { guest: pubkey.slice(0, 8) });
       peer.channel = e.channel;
       const transport = rtcTransport(e.channel);
-      if (this.session) this.addGuestChannel(pubkey, peer.name, transport);
-      else this.pendingChannels.push({ pubkey, name: peer.name, transport });
+      // Every channel goes through the challenge gate first: it becomes a
+      // guest of the waiting room (and later of the match) once authenticated.
+      this.addGuestChannel(pubkey, peer.name, transport);
       e.channel.onclose = () => this.dropPeer(pubkey);
     };
     peer.pc.onconnectionstatechange = () => {
@@ -643,7 +922,7 @@ export class Multiplayer {
   private addGuestChannel(pubkey: string, name: string, transport: GameTransport): void {
     // The channel stays closed to game traffic until it answers the host
     // challenge: only then is it a guest the session may talk to.
-    this.links.set(pubkey, { name, transport, authed: false });
+    this.links.set(pubkey, { name, transport, authed: false, team: '', mic: false });
     transport.onclose = () => this.dropPeer(pubkey);
     transport.onmessage = (data) => void this.onGuestFrame(pubkey, data);
   }
@@ -672,25 +951,192 @@ export class Multiplayer {
         link.transport.send(encodeMessage(GameMsg.Auth, ack));
         link.authed = true;
         trace('host.authOk', { guest: pubkey.slice(0, 8) });
-        this.attachGuest(pubkey, link.name, link.transport);
+        this.pushChat({ from: '', text: `${link.name} joined the room`, at: Date.now(), system: true });
+        this.sendRoomTo(pubkey, this.authedIndex(pubkey));
+        if (this.session) this.attachGuest(pubkey, link.name, link.transport, link.team);
+        else this.attachGuestDelayed(pubkey, link.name, link.transport, link.team);
+        this.broadcastRoom();
       } catch { /* malformed request: leave the link unauthenticated */ }
       return;
     }
-  }
-
-  private attachGuest(pubkey: string, name: string, transport: GameTransport): void {
-    if (!this.session) {
-      this.pendingChannels.push({ pubkey, name, transport });
+    // Authenticated: room control and voice stay in the manager, game frames
+    // go to the match session when one is attached (they share the channel).
+    if (frame.type === GameMsg.Room) {
+      this.handleGuestRoom(pubkey, frame.payload);
       return;
     }
-    const id = this.session.addGuest({ pubkey, name, transport });
-    this.links.set(pubkey, { name, transport, authed: true });
-    transport.onmessage = (data) => void this.session?.handleFrame(id, data);
+    if (frame.type === GameMsg.Voice) {
+      const voice = decodeVoiceFrame(frame.payload);
+      if (voice) this.relayVoice(pubkey, voice.pcm);
+      return;
+    }
+    const id = this.linkSessionIds.get(pubkey);
+    if (this.session && id !== undefined) {
+      await this.session.handleFrame(id, data);
+    } else if (frame.type === GameMsg.Join || frame.type === GameMsg.Input || frame.type === GameMsg.Ping) {
+      // The host is still loading the level: hold the first frames (Join!) so
+      // they are not lost between the waiting room and the match session.
+      const queue = this.pendingFrames.get(pubkey) ?? [];
+      if (queue.length < 256) queue.push(data);
+      this.pendingFrames.set(pubkey, queue);
+    }
+  }
+
+  /** Replay frames a guest sent before the match session existed. */
+  private async drainPendingFrames(pubkey: string, id: number): Promise<void> {
+    const queue = this.pendingFrames.get(pubkey);
+    if (!queue) return;
+    this.pendingFrames.delete(pubkey);
+    for (const data of queue) {
+      if (!this.session) return;
+      await this.session.handleFrame(id, data);
+    }
+  }
+
+  /** One-based roster index of an authenticated guest (voice speaker id). */
+  private authedIndex(pubkey: string): number {
+    const keys = [...this.links.entries()].filter(([, l]) => l.authed).map(([k]) => k);
+    return keys.indexOf(pubkey) + 1;
+  }
+
+  /** Queue a guest until the match session exists (waiting room). */
+  private attachGuestDelayed(pubkey: string, name: string, transport: GameTransport, team: string): void {
+    const existing = this.pendingChannels.find((p) => p.pubkey === pubkey);
+    if (existing) {
+      existing.name = name;
+      existing.transport = transport;
+      existing.team = team;
+    } else {
+      this.pendingChannels.push({ pubkey, name, transport, team });
+    }
+  }
+
+  /** Guest -> host waiting-room messages. */
+  private handleGuestRoom(pubkey: string, payload: Uint8Array): void {
+    const link = this.links.get(pubkey);
+    if (!link) return;
+    let msg: { t?: string; text?: string; team?: string; on?: boolean };
+    try {
+      msg = JSON.parse(textDecoder.decode(payload)) as typeof msg;
+    } catch {
+      return;
+    }
+    if (msg.t === 'chat' && typeof msg.text === 'string') {
+      this.pushChat({ from: link.name, text: msg.text.trim().slice(0, 200), at: Date.now() }, true);
+      return;
+    }
+    if (msg.t === 'team' && typeof msg.team === 'string') {
+      if (msg.team === '' || this.roomTeams.includes(msg.team)) {
+        link.team = msg.team;
+        this.broadcastRoom();
+        this.onRoom?.();
+      }
+      return;
+    }
+    if (msg.t === 'mic') {
+      link.mic = msg.on === true;
+      this.broadcastRoom();
+      this.onRoom?.();
+      return;
+    }
+    if (msg.t === 'hello') {
+      this.broadcastRoom();
+    }
+  }
+
+  private attachGuest(pubkey: string, name: string, transport: GameTransport, team = ''): void {
+    if (!this.session) {
+      this.pendingChannels.push({ pubkey, name, transport, team });
+      return;
+    }
+    const id = this.session.addGuest({ pubkey, name, transport, team });
+    this.linkSessionIds.set(pubkey, id);
+    const link = this.links.get(pubkey);
+    if (link) {
+      link.authed = true;
+      link.team = team;
+    }
+    // Incoming frames keep flowing through the manager router: room control
+    // and voice stay live during the match, game frames go to the session.
+    void this.drainPendingFrames(pubkey, id);
     transport.onclose = () => this.dropPeer(pubkey);
   }
 
+  // ------------------------------------------------------------- waiting room
+  /** Per-guest state snapshot (the `you` index differs for every guest). */
+  private roomStatePayload(you: number): Uint8Array {
+    const info = this.hostingRoom;
+    const players: RoomPlayerInfo[] = info
+      ? [{ name: info.host, pubkey: this.pubkey, team: this.hostTeam, mic: this.micOn, host: true },
+          ...[...this.links.entries()].filter(([, l]) => l.authed).map(([pubkey, l]) => ({
+            name: l.name, pubkey, team: l.team, mic: l.mic, host: false,
+          }))]
+      : [];
+    this.roster = players;
+    return textEncoder.encode(JSON.stringify({
+      t: 'state',
+      level: info?.game ?? '',
+      title: info?.title ?? '',
+      max: info?.maxPlayers ?? 0,
+      phase: this.roomPhase,
+      teams: this.roomTeams,
+      you,
+      players,
+    }));
+  }
+
+  /** Push the current roster to every authenticated guest. */
+  private broadcastRoom(): void {
+    if (!this.hostingRoom) return;
+    let index = 1;
+    for (const link of this.links.values()) {
+      if (!link.authed) continue;
+      link.transport.send(encodeMessage(GameMsg.Room, this.roomStatePayload(index)));
+      index++;
+    }
+  }
+
+  private sendRoomTo(pubkey: string, you: number): void {
+    const link = this.links.get(pubkey);
+    if (link?.authed) link.transport.send(encodeMessage(GameMsg.Room, this.roomStatePayload(you)));
+  }
+
+  /** Append a chat line (host authoritative) and fan it out. */
+  private pushChat(line: ChatLine, broadcast = true): void {
+    this.chat.push(line);
+    if (this.chat.length > 200) this.chat.shift();
+    if (broadcast && this.hostingRoom) {
+      const payload = textEncoder.encode(JSON.stringify({
+        t: 'chat', from: line.from, text: line.text, system: line.system ?? false,
+      }));
+      for (const link of this.links.values()) {
+        if (link.authed) link.transport.send(encodeMessage(GameMsg.Room, payload));
+      }
+    }
+    this.onRoom?.();
+    this.emit();
+  }
+
+  /** Voice from a guest: fan it out (with their roster index) and play locally. */
+  private relayVoice(fromPubkey: string, pcm: Int16Array): void {
+    const keys = [...this.links.entries()].filter(([, l]) => l.authed).map(([k]) => k);
+    const index = keys.indexOf(fromPubkey) + 1;
+    if (index <= 0) return;
+    for (const [pubkey, link] of this.links) {
+      if (pubkey === fromPubkey || !link.authed) continue;
+      link.transport.send(encodeMessage(GameMsg.Voice, encodeVoiceFrame(index, pcm)));
+    }
+    this.onVoice?.(index, pcm);
+  }
+
   private dropPeer(pubkey: string): void {
+    const leaving = this.links.get(pubkey);
+    if (leaving && this.hostingRoom) {
+      this.pushChat({ from: '', text: `${leaving.name} left the room`, at: Date.now(), system: true });
+    }
     this.links.delete(pubkey);
+    this.linkSessionIds.delete(pubkey);
+    this.pendingFrames.delete(pubkey);
     const peer = this.hostPeers.get(pubkey);
     if (peer) {
       try { peer.pc.close(); } catch { /* already closed */ }
@@ -702,17 +1148,20 @@ export class Multiplayer {
       }
     }
     this.pendingChannels = this.pendingChannels.filter((p) => p.pubkey !== pubkey);
+    if (this.hostingRoom) this.broadcastRoom();
     void this.heartbeat();
+    this.onRoom?.();
     this.emit();
   }
 
   // ---------------------------------------------------------------- joining
   /**
    * Connect to a room: offer/answer + ICE over the relays, then the RTC data
-   * channel. Resolves with a ready transport (GameCanvas passes it to
-   * NetGame.openTransport).
+   * channel and the host challenge. Browser-hosted rooms land in the waiting
+   * room (`guestRoom`, the /room screen); dedicated servers hand the transport
+   * straight to GameCanvas (`pendingJoin`).
    */
-  async joinRoom(room: RoomInfo): Promise<JoinIntent> {
+  async joinRoom(room: RoomInfo): Promise<RoomInfo> {
     trace('joinRoom.start', { id: room.id, host: room.host });
     if (room.raw && !verifyEvent(room.raw)) throw new Error('room event failed verification');
     const ok = await this.connect();
@@ -822,8 +1271,8 @@ export class Multiplayer {
               return;
             }
             trace('joinRoom.authOk', null);
-            transport.onmessage = null;
-            this.joinResolve?.(transport);
+            const proxy = tapTransport(transport, (data) => void this.onRoomFrame(data));
+            this.joinResolve?.(proxy);
           } catch {
             this.joinReject?.(new Error('host authentication failed'));
           }
@@ -854,11 +1303,109 @@ export class Multiplayer {
     this.joinResolve = null;
     this.joinReject = null;
     this.status = '';
-    const intent: JoinIntent = { room, transport: result };
-    this.pendingJoin = intent;
-    trace('joinRoom.ready', { id: room.id });
+    trace('joinRoom.ready', { id: room.id, srv: room.srv });
+    const hello = textEncoder.encode(JSON.stringify({ t: 'hello', name: this.identityName() }));
+    result.send(encodeMessage(GameMsg.Room, hello));
+    if (room.srv) {
+      // Dedicated server rooms start immediately: no waiting room.
+      this.pendingJoin = { room, transport: result };
+    } else {
+      this.guestRoom = {
+        info: room,
+        transport: result,
+        you: 0,
+        players: [],
+        teams: [],
+        phase: 'waiting',
+      };
+      this.chat = [];
+    }
     this.emit();
-    return intent;
+    this.onRoom?.();
+    return room;
+  }
+
+  /** Guest: host -> client waiting-room messages (chat, roster, start). */
+  private handleGuestRoomMessage(msg: {
+    t?: string; level?: string; title?: string; max?: number; phase?: 'waiting' | 'playing';
+    you?: number; players?: RoomPlayerInfo[]; teams?: string[];
+    from?: string; text?: string; system?: boolean;
+  }): void {
+    const room = this.guestRoom;
+    switch (msg.t) {
+      case 'state':
+        if (!room) return;
+        room.you = typeof msg.you === 'number' ? msg.you : room.you;
+        room.players = Array.isArray(msg.players) ? msg.players : room.players;
+        room.teams = Array.isArray(msg.teams) && msg.teams.length > 0 ? msg.teams : room.teams;
+        room.phase = msg.phase === 'playing' ? 'playing' : 'waiting';
+        this.roster = room.players;
+        this.roomTeams = room.teams;
+        this.roomPhase = room.phase;
+        this.onRoom?.();
+        this.emit();
+        return;
+      case 'chat':
+        if (typeof msg.text !== 'string') return;
+        this.chat.push({
+          from: typeof msg.from === 'string' ? msg.from : '',
+          text: msg.text,
+          at: Date.now(),
+          system: msg.system === true,
+        });
+        if (this.chat.length > 200) this.chat.shift();
+        this.onRoom?.();
+        return;
+      case 'start': {
+        if (!room) return;
+        room.phase = 'playing';
+        this.roomPhase = 'playing';
+        // Hand the ready transport to GameCanvas (the scene rebuild consumes it).
+        this.pendingJoin = { room: room.info, transport: room.transport };
+        this.onRoom?.();
+        this.onStart?.(msg.level ?? room.info.game);
+        return;
+      }
+      case 'closed':
+        this.error = 'the host closed the room';
+        this.guestRoom = null;
+        this.roster = [];
+        this.chat = [];
+        this.onRoom?.();
+        this.emit();
+        return;
+      default:
+        return;
+    }
+  }
+
+  /** Cheap frame-type peek so game frames are not decoded twice. */
+  private roomFrameType(data: ArrayBuffer | Uint8Array): number {
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+    if (bytes.length < 8) return -1;
+    return bytes[2] | (bytes[3] << 8);
+  }
+
+  /** Guest: incoming frames — room control/voice are ours, the rest is NetGame's. */
+  private async onRoomFrame(data: ArrayBuffer | Uint8Array): Promise<void> {
+    const type = this.roomFrameType(data);
+    if (type !== GameMsg.Voice && type !== GameMsg.Room) return;
+    let frame;
+    try {
+      frame = await decodeMessage(data);
+    } catch {
+      return;
+    }
+    if (frame.type === GameMsg.Voice) {
+      const voice = decodeVoiceFrame(frame.payload);
+      if (voice) this.onVoice?.(voice.speaker, voice.pcm);
+      return;
+    }
+    try {
+      this.handleGuestRoomMessage(JSON.parse(textDecoder.decode(frame.payload)));
+    } catch {
+      /* malformed room message: ignore */
+    }
   }
 
   cancelJoin(): void {
@@ -883,12 +1430,7 @@ export class Multiplayer {
 
   /** Announce a clean exit to the host (best effort) and drop the session. */
   leaveGuest(): void {
-    const room = this.guestSession;
-    if (room && this.pool) {
-      const evt = finalizeEvent(signalTemplate(room.id, room.hostPubkey, { kind: 'bye' }), this.sk);
-      void this.pool.publish(evt);
-    }
-    this.cancelJoin();
+    this.leaveGuestRoom();
   }
 }
 

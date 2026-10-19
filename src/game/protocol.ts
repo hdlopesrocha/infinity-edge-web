@@ -25,6 +25,10 @@ export enum GameMsg {
   Ping = 113,
   /** Pre-join host authentication (multiplayer, JSON payload). */
   Auth = 120,
+  /** Voice chat PCM (multiplayer): [u8 speaker][i16le samples]. */
+  Voice = 121,
+  /** Waiting-room control (multiplayer, JSON payload). */
+  Room = 122,
   // Both.
   Error = 0xffff,
 }
