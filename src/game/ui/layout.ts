@@ -97,34 +97,38 @@ export function paintActionColumn(
     ctx.fillRect(X(x0), Y(0), U(ACTIONS_W), U(MENU_H));
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
     ctx.fillRect(X(x0), Y(0), Math.max(1, s), U(MENU_H));
+    // Compact header: label on the left, fullscreen toggle on the right.
     ctx.font = `700 ${U(11)}px ${UI_FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.fillText('ACTIONS', X(x0 + 12), Y(74));
+    ctx.fillText('ACTIONS', X(x0 + 12), Y(30));
   }
 
   // Fullscreen toggle, top right of the column (present on every screen).
   const fsSize = U(44);
   const fsX = X(MENU_W - 60);
-  const fsY = Y(12);
+  const fsY = Y(6);
   paintFullscreenButton(ctx, fsX, fsY, fsSize, s, spec.hover === FS_REGION);
   regions.push({ id: FS_REGION, x: fsX, y: fsY, w: fsSize, h: fsSize });
 
   if (spec.chrome !== false) {
-    const bx = X(x0 + 10);
-    const bw = U(ACTIONS_W - 20);
-    let y = 88;
+    // Square tiles: each action is exactly the column's width and height
+    // (160 x 160), edge to edge, so the whole column is a big click target.
+    const bx = X(x0);
+    const bw = U(ACTIONS_W);
+    const bh = ACTIONS_W;
+    let y = 56;
 
-    const button = (a: ActionSpec, h: number, primary: boolean): void => {
+    const tile = (a: ActionSpec, primary: boolean): void => {
       const disabled = a.disabled === true;
       const hovered = !disabled && spec.hover === a.id;
       ctx.fillStyle = disabled
         ? 'rgba(10,14,22,0.35)'
         : primary
-          ? (hovered ? 'rgba(127,232,216,0.24)' : 'rgba(127,232,216,0.13)')
+          ? (hovered ? 'rgba(127,232,216,0.26)' : 'rgba(127,232,216,0.14)')
           : a.danger
-            ? (hovered ? 'rgba(130,36,28,0.5)' : 'rgba(70,18,18,0.38)')
+            ? (hovered ? 'rgba(130,36,28,0.55)' : 'rgba(70,18,18,0.4)')
             : (hovered ? 'rgba(255,255,255,0.16)' : 'rgba(10,14,22,0.72)');
-      ctx.fillRect(bx, Y(y), bw, U(h));
+      ctx.fillRect(bx, Y(y), bw, U(bh));
       ctx.strokeStyle = disabled
         ? 'rgba(255,255,255,0.10)'
         : primary
@@ -133,49 +137,36 @@ export function paintActionColumn(
             ? 'rgba(255,122,82,0.5)'
             : 'rgba(255,255,255,0.16)';
       ctx.lineWidth = Math.max(1, s);
-      ctx.strokeRect(bx, Y(y), bw, U(h));
-      ctx.font = `700 ${U(primary ? 14 : 13)}px ${UI_FONT}`;
+      ctx.strokeRect(bx, Y(y), bw, U(bh));
+      const size = primary ? 18 : 16;
+      ctx.font = `700 ${U(size)}px ${UI_FONT}`;
+      const label = a.label;
       ctx.textAlign = 'center';
       ctx.fillStyle = disabled ? 'rgba(255,255,255,0.3)' : primary ? '#7fe8d8' : '#ffffff';
-      const words = a.label.split(' ');
-      if (ctx.measureText(a.label).width > bw - U(14) && words.length > 1) {
-        const mid = Math.ceil(words.length / 2);
-        ctx.fillText(words.slice(0, mid).join(' '), bx + bw / 2, Y(y + h / 2) - U(7));
-        ctx.fillText(words.slice(mid).join(' '), bx + bw / 2, Y(y + h / 2) + U(8));
-      } else {
-        ctx.fillText(a.label, bx + bw / 2, Y(y + h / 2) + U(1));
-      }
+      ctx.fillText(label, bx + bw / 2, Y(y + bh / 2) + U(1));
       ctx.textAlign = 'left';
-      if (!disabled) regions.push({ id: a.id, x: bx, y: Y(y), w: bw, h: U(h) });
-      y += h + 10;
+      if (!disabled) regions.push({ id: a.id, x: bx, y: Y(y), w: bw, h: U(bh) });
+      y += bh;
     };
 
-    if (spec.primary) button(spec.primary, 48, true);
-    for (const a of spec.actions ?? []) button(a, 44, false);
+    if (spec.primary) tile(spec.primary, true);
+    for (const a of spec.actions ?? []) tile(a, false);
 
     if (spec.back) {
-      const h = 48;
-      const by = MENU_H - 54;
-      const hovered = spec.hover === spec.back.id;
+      const by = MENU_H - bh;
+      const a = spec.back;
+      const hovered = spec.hover === a.id;
       ctx.fillStyle = hovered ? 'rgba(255,255,255,0.16)' : 'rgba(10,14,22,0.72)';
-      ctx.fillRect(bx, Y(by), bw, U(h));
+      ctx.fillRect(bx, Y(by), bw, U(bh));
       ctx.strokeStyle = 'rgba(255,255,255,0.16)';
       ctx.lineWidth = Math.max(1, s);
-      ctx.strokeRect(bx, Y(by), bw, U(h));
-      ctx.font = `700 ${U(13)}px ${UI_FONT}`;
+      ctx.strokeRect(bx, Y(by), bw, U(bh));
+      ctx.font = `700 ${U(16)}px ${UI_FONT}`;
       ctx.textAlign = 'center';
-      ctx.fillStyle = spec.back.danger ? '#ffb0a0' : '#ffffff';
-      const label = spec.back.label;
-      if (ctx.measureText(label).width > bw - U(14)) {
-        const words = label.split(' ');
-        const mid = Math.ceil(words.length / 2);
-        ctx.fillText(words.slice(0, mid).join(' '), bx + bw / 2, Y(by + h / 2) - U(7));
-        ctx.fillText(words.slice(mid).join(' '), bx + bw / 2, Y(by + h / 2) + U(8));
-      } else {
-        ctx.fillText(label, bx + bw / 2, Y(by + h / 2) + U(1));
-      }
+      ctx.fillStyle = a.danger ? '#ffb0a0' : '#ffffff';
+      ctx.fillText(a.label, bx + bw / 2, Y(by + bh / 2) + U(1));
       ctx.textAlign = 'left';
-      regions.push({ id: spec.back.id, x: bx, y: Y(by), w: bw, h: U(h) });
+      regions.push({ id: a.id, x: bx, y: Y(by), w: bw, h: U(bh) });
     }
   }
 
