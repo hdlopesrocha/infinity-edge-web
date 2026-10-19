@@ -299,6 +299,12 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
                 <input v-model="o.zoomBlur" type="checkbox" class="opt-check" @change="applyLive" />
               </label>
             </div>
+            <div class="opt-row">
+              <label class="opt-check-label">
+                <span>Frame time (ms): </span>
+                <input v-model="o.showMs" type="checkbox" class="opt-check" @change="applyLive" />
+              </label>
+            </div>
           </div>
           <div class="opt-list">
             <div class="opt-row">

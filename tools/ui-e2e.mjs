@@ -113,6 +113,12 @@ try {
   step('options checkbox click', { hit: p.hit, before, after: afterCheck });
   if (before === afterCheck) throw new Error('checkbox click did not toggle the option');
 
+  const msBefore = await page.evaluate('window.__ieStore.options.showMs');
+  p = await clickRegion(page, 'row:showMs', 'options frame-time toggle');
+  const msAfter = await page.evaluate('window.__ieStore.options.showMs');
+  step('options frame-time toggle', { hit: p.hit, before: msBefore, after: msAfter });
+  if (msBefore === msAfter) throw new Error('frame-time toggle did not change the option');
+
   const volBefore = await page.evaluate('window.__ieStore.options.musicVolume');
   const slider = await regionPoint(page, 'row:musicVolume');
   await page.drag(slider.x - 60, slider.y, slider.x + 60, slider.y);

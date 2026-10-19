@@ -117,6 +117,7 @@ export async function enterXr(
       fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array,
       center: vec3, right: vec3, up: vec3, halfW: number, halfH: number,
     ) => void;
+    sampleFrame: (dtMs: number) => void;
     beginFrame: () => void;
     endFrame: (hud?: typeof store.hud | null) => void;
     renderOptions: { zoom: number };
@@ -181,6 +182,8 @@ export async function enterXr(
     session.requestAnimationFrame(loop);
     const dt = last ? Math.min(50, time - last) : 16;
     last = time;
+    // The session's own cadence (the page rAF is paused/throttled in XR).
+    renderer.sampleFrame(dt);
     const instance = getInstance();
     const pose = frame.getViewerPose(refSpace);
     if (!instance || !pose) return;

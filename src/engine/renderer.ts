@@ -55,6 +55,8 @@ export class Renderer {
   camera = new Camera();
   frustum: FrustumPlanes = createFrustum();
   stats: RenderStats = { fps: 0, draws: 0, culled: 0 };
+  /** Smoothed display frame interval in milliseconds (HUD readout). */
+  frameMs = 0;
   renderOptions: RenderOptions = { flare: 0.9, flareTex: null, zoom: 0, zoomCenterX: 0.5, zoomCenterY: 0.5 };
   /** Composite target: null = whole canvas, or one eye's rectangle in stereo VR. */
   viewport: { x: number; y: number; w: number; h: number } | null = null;
@@ -283,6 +285,13 @@ export class Renderer {
     return this.camera.position;
   }
 
+  /** Feed a display frame interval (the XR session drives its own loop). */
+  sampleFrame(dtMs: number): void {
+    if (!(dtMs > 0)) return;
+    const ms = Math.min(100, dtMs);
+    this.frameMs = this.frameMs > 0 ? this.frameMs * 0.9 + ms * 0.1 : ms;
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -294,6 +303,7 @@ export class Renderer {
       if (dt > 100) dt = 100;
       if (dt > 0) {
         this.frameDtMs = dt;
+        if (!this.xrActive) this.sampleFrame(dt);
         this.onFrame?.(dt);
         this.frames++;
         this.fpsT += dt / 1000;

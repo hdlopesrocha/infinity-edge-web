@@ -165,6 +165,7 @@ export function optionsMenu(): MenuScreen {
         },
         { kind: 'check', id: 'billboards', label: 'Special Effects', value: o.billboards },
         { kind: 'check', id: 'zoomBlur', label: 'Speed Blur', value: o.zoomBlur },
+        { kind: 'check', id: 'showMs', label: 'Frame Time (ms)', value: o.showMs },
       ],
     },
     right: {

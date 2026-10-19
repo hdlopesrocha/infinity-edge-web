@@ -190,6 +190,7 @@ export default defineComponent({
           break;
         case 'billboards': o.billboards = Boolean(value); break;
         case 'zoomBlur': o.zoomBlur = Boolean(value); break;
+        case 'showMs': o.showMs = Boolean(value); break;
         case 'axisX': o.axisX = Boolean(value); break;
         case 'axisY': o.axisY = Boolean(value); break;
         default: break;

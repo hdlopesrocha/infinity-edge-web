@@ -438,6 +438,19 @@ export class HudOverlay {
       c.textBaseline = 'top';
     }
 
+    // Frame time (web addition): smoothed display interval, bottom centre of
+    // the plane. The setting lives in Options / pause settings.
+    if (store.options.showMs && h.frameMs > 0) {
+      c.textAlign = 'center';
+      c.textBaseline = 'bottom';
+      c.font = `${Math.round(16 * s)}px system-ui, sans-serif`;
+      c.fillStyle = 'rgba(255,255,255,0.6)';
+      shadow(4);
+      c.fillText(`${h.frameMs.toFixed(1)} ms`, W / 2, H - padY - 4 * sy);
+      c.textBaseline = 'top';
+      c.shadowBlur = 0;
+    }
+
     c.shadowBlur = 0;
     // Upload (sub-image keeps the same texture object the session uses).
     const gl = this.gl;

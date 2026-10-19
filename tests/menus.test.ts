@@ -53,7 +53,7 @@ describe('menu screens', () => {
       .filter((r) => r.kind !== 'info')
       .map((r) => (r.kind === 'info' ? '' : r.id));
     expect(ids).toEqual([
-      'username', 'distance', 'detail', 'musicVolume', 'billboards', 'zoomBlur',
+      'username', 'distance', 'detail', 'musicVolume', 'billboards', 'zoomBlur', 'showMs',
       'vr', 'axisX', 'axisY', 'music', 'clear',
     ]);
     expect(s.primary?.id).toBe('save');

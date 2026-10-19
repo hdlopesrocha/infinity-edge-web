@@ -20,6 +20,8 @@ export interface Options {
   billboards: boolean;
   /** Speed (zoom) blur behind the sharp models. */
   zoomBlur: boolean;
+  /** Show the smoothed WebGL frame time (ms) on the HUD. */
+  showMs: boolean;
   cheats: boolean;
   axisX: boolean;
   axisY: boolean;
@@ -55,7 +57,7 @@ export function defaultOptions(): Options {
     // port run show the special effects (star/cloud billboards + engine
     // flares), so the web build defaults to on.
     musicVolume: 0.5, billboards: true,
-  zoomBlur: true, cheats: false,
+    zoomBlur: true, showMs: true, cheats: false,
     axisX: false, axisY: false,
   };
 }
@@ -103,6 +105,7 @@ function loadOptionsStored(): Options {
       musicVolume: parseFloat(g('_musicVolume', '0.5')),
       billboards: b('_billboards', d.billboards),
       zoomBlur: b('_zoomBlur', d.zoomBlur),
+      showMs: b('_showMs', d.showMs),
       axisX: b('_axisX', d.axisX),
       axisY: b('_axisY', d.axisY),
       cheats: d.cheats,
@@ -118,7 +121,7 @@ export function saveOptions(o: Options): void {
       OPTIONS_KEY,
       `<Options _version="${OPTIONS_VERSION}" _userName="${o.username.replace(/"/g, '')}" ` +
         `_wireframe="${o.wireframe}" _detail="${o.detail}" _distance="${o.distance}" ` +
-        `_musicVolume="${o.musicVolume}" _billboards="${o.billboards}" ` +
+        `_musicVolume="${o.musicVolume}" _billboards="${o.billboards}" _showMs="${o.showMs}" ` +
         `_axisY="${o.axisY}" _axisX="${o.axisX}" />`,
     );
   } catch { /* ignore */ }

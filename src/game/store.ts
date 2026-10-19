@@ -85,6 +85,8 @@ export const store = reactive({
     canvasW: 1280,
     canvasH: 720,
     frame: 0,
+    /** Smoothed display frame interval (ms), shown on the GL HUD. */
+    frameMs: 0,
   },
 });
 

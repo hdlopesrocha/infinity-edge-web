@@ -63,5 +63,6 @@ export function syncHud(g: GameInstance): void {
   hud.pointers = g.pointers();
   hud.canvasW = g.canvasW;
   hud.canvasH = g.canvasH;
+  hud.frameMs = g.renderer.frameMs;
   hud.frame++;
 }
