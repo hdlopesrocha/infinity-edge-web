@@ -76,7 +76,7 @@ composition; the compiled XNB is exact. It is kept only for reference.
 
 | URL | Original |
 |---|---|
-| `#/` → `#/engine` → `#/start` | EngineScreen (wheel + logo, 3 s) → StartScreen (logo, 3 s) → MainMenu. Both boot screens show the Floating-Gear loading bar while every model, texture and level is preloaded; the sequence only advances to the menu once that finishes |
+| `#/` → `#/engine` → `#/start` | EngineScreen (floating-gear wheel + "Floating Gear" wordmark, 3 s) → StartScreen ("Infinity Edge" wordmark, 3 s) → MainMenu. The wordmarks are text in the bundled **Airstrike** face (`public/assets/fonts/airstrike.ttf`, by Daniel Zadorozny / Iconian Fonts), preloaded from `index.html` and started before the asset preload; the wheel model is fetched before the rest. Both boot screens show the Floating-Gear loading bar while every model, texture and level is preloaded; the sequence only advances to the menu once that finishes |
 | `#/menu` | MainMenu (SINGLE PLAYER / HANGAR / OPTIONS / ABOUT / MULTIPLAYER) |
 | `#/multiplayer` | Public rooms on Nostr + "create a room" — the whole view is painted into the WebGL frame (`src/game/mp/lobbyui.ts`), no HTML |
 | `#/room` | Browser-hosted waiting room: roster + per-pilot teams, chat, microphone toggle and the host's PLAY — painted into the same WebGL frame (`src/game/mp/roomui.ts`), no HTML |
@@ -98,7 +98,9 @@ routes above render no DOM at all — panels, the original icon/button art,
 sliders, checkboxes, text fields, score tables, the breadcrumb and the corner
 buttons are painted into the frame (the same overlay the multiplayer lobby
 uses), with a `_menubtn`-plated list, watermarked track menus and the
-Floating-Gear boot splash. Only the in-match HUD stays DOM-based.
+Floating-Gear boot splash — whose "Floating Gear" and "Infinity Edge"
+wordmarks are text in the Airstrike face now, not the old bitmap logos. Only
+the in-match HUD stays DOM-based.
 
 ## WebSocket asset channel (optional)
 

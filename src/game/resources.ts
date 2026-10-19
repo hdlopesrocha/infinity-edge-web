@@ -188,22 +188,21 @@ export class RC {
     await Promise.all(texAliases.map((t) => this.ensureTex(t)));
     // Models are independent: load them in parallel (the published build is
     // network-bound, so the sequential loop dominated the first-load time).
-    const jobs: Promise<void>[] = [];
-    for (const name of modelNames) {
-      if (this.models.has(name)) continue;
-      const pending = this.modelJobs.get(name);
-      if (pending) {
-        jobs.push(pending);
-        continue;
-      }
-      const job = this.loadModel(gl, name).finally(() => this.modelJobs.delete(name));
-      this.modelJobs.set(name, job);
-      jobs.push(job);
-    }
+    const jobs = modelNames.map((name) => this.modelJob(gl, name));
     await Promise.all(jobs);
   }
 
   private modelJobs = new Map<string, Promise<void>>();
+
+  /** Deduplicated model load: boot preloads and scene builds share the job. */
+  private modelJob(gl: WebGL2RenderingContext, name: string): Promise<void> {
+    if (this.models.has(name)) return Promise.resolve();
+    const pending = this.modelJobs.get(name);
+    if (pending) return pending;
+    const job = this.loadModel(gl, name).finally(() => this.modelJobs.delete(name));
+    this.modelJobs.set(name, job);
+    return job;
+  }
 
   private async loadModel(gl: WebGL2RenderingContext, name: string): Promise<void> {
     if (this.models.has(name)) return;
@@ -282,8 +281,14 @@ export class RC {
       done++;
       onProgress?.(done, total);
     };
+    // The floating-gear wheel is the first thing on screen after the boot
+    // splash (the engine screen), so fetch it and its metal texture before the
+    // bulk. The UI font is requested even earlier (index.html + GameCanvas).
+    await this.modelJob(gl, 'Wheel').then(bump, bump);
     const texJobs = texAliases.map((t) => this.ensureTex(t).then(bump, bump));
-    const modelJobs = modelNames.map((n) => this.loadModel(gl, n).then(bump, bump));
+    const modelJobs = modelNames
+      .filter((n) => n !== 'Wheel')
+      .map((n) => this.modelJob(gl, n).then(bump, bump));
     const levelJobs = levelKeys.map((k) => loadLevel(k).then(bump, bump));
     await Promise.all([...texJobs, ...modelJobs, ...levelJobs]);
     // Assets are in; the RC caches are warm, so rebuilds from now on are cheap.

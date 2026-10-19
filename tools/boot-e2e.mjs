@@ -119,6 +119,7 @@ try {
             scene: window.__ieStore.sceneKey,
             title: ui.screen ? ui.screen.title : null,
             regions: ui.regions.length,
+            font: !!(document.fonts && document.fonts.check('16px Airstrike')),
           };
         }
         await new Promise((r) => setTimeout(r, 50));
@@ -126,6 +127,24 @@ try {
       return null;
     })()`).catch(() => null);
     check(entry, 'main menu painted', !!painted && painted.title === 'MAIN MENU', painted);
+    check(entry, 'Airstrike wordmark font loaded', !!painted && painted.font === true);
+
+    // Priority loading: the floating-gear wheel is the first model fetched
+    // (it is what the engine screen shows), and the font request happened.
+    const order = await page.evaluate(`(() => {
+      const entries = performance.getEntriesByType('resource');
+      const isModel = (e) => e.name.includes('/assets/models/') && e.name.endsWith('.json') && !e.name.endsWith('/MANIFEST.json');
+      const models = entries.filter(isModel).sort((a, b) => a.startTime - b.startTime);
+      const font = entries.find((e) => e.name.includes('airstrike.ttf'));
+      return {
+        firstModel: models[0] ? models[0].name.split('/').pop() : null,
+        fontLoaded: !!font,
+        fontStart: font ? Math.round(font.startTime) : null,
+        firstModelStart: models[0] ? Math.round(models[0].startTime) : null,
+      };
+    })()`);
+    check(entry, 'wheel model loads before the rest', order.firstModel === 'Wheel.json', order);
+    check(entry, 'font request was made', order.fontLoaded === true, order);
     await page.screenshot(join(SHOTS, `boot-${entry.path === '' ? 'root' : entry.path.slice(2)}.png`));
   }
 } catch (e) {

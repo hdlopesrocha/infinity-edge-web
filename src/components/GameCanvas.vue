@@ -16,6 +16,7 @@ import { calibrateVr, dragLook, setVr, vrLook } from '../game/vr';
 import { enterXr, leaveXr } from '../game/xr';
 import { syncHud } from '../game/hud';
 import { audio } from '../game/audio';
+import { loadWordmarkFont } from '../game/fonts';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const glError = ref('');
@@ -303,6 +304,9 @@ onMounted(() => {
       building = '';
       void rebuild();
     };
+    // Boot wordmarks are text in Airstrike: start the face before the heavy
+    // assets (index.html also preloads it) so the first screens use it.
+    void loadWordmarkFont();
     // Boot: load every model, texture and level up front (the boot screens show
     // a Floating-Gear loading bar until this finishes).
     store.loading.active = true;
