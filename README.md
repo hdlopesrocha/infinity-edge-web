@@ -239,10 +239,11 @@ Two paths, in order:
   dropped (the head pose carries the view; the base view keeps a **level
   horizon**, so the head pose - yaw, pitch *and roll* - defines the up vector
   and the ship's roll never tilts it). The in-game HUD (score, clock,
-  speed, life pools, missile/nitro items, aim reticle and target markers) is
-  painted **once** with the base view and drawn as a **world-space panel** in
-  each eye, exactly like the menus: the panel matches the base camera's field
-  of view at the 3-unit distance, so projected aim/marker positions are exact
+  speed, life pools, missile/nitro items, aim reticle and target markers) is a
+  **head-locked panel at half the menu distance (1.5 units)**: it is painted
+  once with the cyclops/head-centre view and drawn in each eye, so the
+  score/time/items stay fixed to the head rotation. The panel matches that
+  same head view at its distance, so projected aim/marker positions are exact
   inside it and are pinned to the panel's edge when they fall outside (they
   stick to the plane instead of the eye's screen). On the 2D page the HUD
   stays a screen-space overlay. The menus, lobby and room menu are the **same
@@ -360,8 +361,9 @@ ancestry for cold deep links. Reload rebuilds the stack.
   level horizon; trigger/tap re-centres every time; the WebGL menus render on
   a world-space panel with a gaze
   crosshair (trigger click + 2 s dwell) instead of a separate VR menu, and the
-  in-game HUD is a world-space plane too (painted once from the base view;
-  projected positions clamp to its edges), both verified by the panel
+  in-game HUD is a head-locked plane at half the menu distance (painted once
+  from the cyclops view; projected positions clamp to its edges), both
+  verified by the panel
   math/pointer unit tests; enterable without a gamepad;
   the same Settings menu is shared with the pause panel (live apply,
   save/revert).

@@ -19,6 +19,7 @@ import { mat4, vec3 } from '../engine/math';
 import type { GameInstance } from './instance';
 import { store } from './store';
 import { syncHud } from './hud';
+import { extractFrustum } from '../engine/frustum';
 import {
   GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, hitPanel, panelBasis, withClipRect,
 } from '../engine/vrpanel';
@@ -55,8 +56,10 @@ function xr(): XrSystem | null {
   return n.xr ?? null;
 }
 
-/** Panel placement in world units (half the old distance: closer/readable). */
+/** Menu panel placement in world units. */
 const PANEL_DISTANCE = 3;
+/** The non-interactive HUD is closer: half the menu distance. */
+const HUD_DISTANCE = PANEL_DISTANCE / 2;
 const PANEL_WIDTH = 8;
 const PANEL_HEIGHT = PANEL_WIDTH * (PANEL_H / PANEL_W);
 
@@ -200,25 +203,72 @@ export async function enterXr(
     const inMenu = !store.interactive;
     // Background/menu scenes still orbit their camera; only real matches freeze.
     if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
-    // In-match HUD: paint it ONCE with the base view, then draw the same
-    // texture as a world-space panel in each eye (like the menu plane). The
-    // panel's extents match the base camera's view at the plane distance, so
-    // the aim/markers land exactly where the base view projects them; the
-    // painter pins anything past an edge to that edge of the panel.
+    // In-match HUD: a head-locked plane at half the menu distance. It is
+    // painted ONCE with the cyclops (head-centre) view and drawn in each eye,
+    // so the score/time/items stay fixed to the head rotation and the aim or
+    // target markers keep their correct positions on that plane. The panel
+    // extents match the same head view at HUD_DISTANCE; the painter pins
+    // anything outside to the panel edge.
     const inMatch = store.interactive && instance.gameType !== 'BACK';
-    let hudBasis: ReturnType<typeof panelBasis> | null = null;
+    // Level base for the scene and the menu panel (head roll is added per eye).
+    renderer.camera.levelView(chase);
+    let hudBoard: { center: vec3; right: vec3; up: vec3 } | null = null;
     let hudHalfW = 0;
     let hudHalfH = 0;
-    if (inMatch) {
+    if (inMatch && pose.views.length > 0) {
+      const cam = renderer.camera;
       const hudH = 900;
-      const hudW = Math.max(2, Math.round(hudH * Math.max(1, renderer.camera.aspect)));
+      const hudW = Math.max(2, Math.round(hudH * Math.max(1, cam.aspect)));
+      // The exact eye view for this frame (yaw re-centre + level chase), but
+      // positioned at the midpoint of the eyes: the cyclops HUD view.
+      const composed = mat4.create();
+      mat4.invert(composed, pose.views[0].transform.matrix);
+      mat4.rotateY(composed, composed, baselineYawAbs);
+      mat4.multiply(composed, composed, chase);
+      const inv = mat4.create();
+      let hx = 0, hy = 0, hz = 0;
+      for (const v of pose.views) {
+        mat4.invert(inv, v.transform.matrix);
+        hx += inv[12]; hy += inv[13]; hz += inv[14];
+      }
+      hx /= pose.views.length; hy /= pose.views.length; hz /= pose.views.length;
+      const hudView = mat4.clone(composed);
+      hudView[12] = hudView[13] = hudView[14] = 0;
+      const offset = vec3.transformMat4(vec3.create(), vec3.fromValues(hx, hy, hz), hudView);
+      hudView[12] = -offset[0]; hudView[13] = -offset[1]; hudView[14] = -offset[2];
+      const hudRight = vec3.fromValues(hudView[0], hudView[4], hudView[8]);
+      const hudUp = vec3.fromValues(hudView[1], hudView[5], hudView[9]);
+      const hudFwd = vec3.fromValues(-hudView[2], -hudView[6], -hudView[10]);
+
+      // Project the snapshot through that head view with the base perspective.
+      const basePos = vec3.clone(cam.position);
+      const baseLook = vec3.clone(cam.lookAt);
+      const baseUp = vec3.clone(cam.up);
+      const baseProj = mat4.clone(cam.proj);
+      vec3.set(cam.position, hx, hy, hz);
+      vec3.copy(cam.up, hudUp);
+      vec3.copy(cam.direction, hudFwd);
+      vec3.copy(cam.side, hudRight);
+      mat4.copy(cam.view, hudView);
+      mat4.copy(cam.proj, baseProj);
+      mat4.multiply(cam.viewProj, cam.proj, cam.view);
+      extractFrustum(cam.viewProj, renderer.frustum);
       instance.canvasW = hudW;
       instance.canvasH = hudH;
       syncHud(instance);
       renderer.prepareHud(store.hud);
-      hudBasis = panelBasis(renderer.camera.position, renderer.camera.direction, PANEL_DISTANCE);
-      hudHalfH = Math.tan(renderer.camera.fov / 2) * PANEL_DISTANCE;
+      hudHalfH = Math.tan(cam.fov / 2) * HUD_DISTANCE;
       hudHalfW = hudHalfH * (hudW / hudH);
+      hudBoard = {
+        center: vec3.scaleAndAdd(vec3.create(), vec3.fromValues(hx, hy, hz), hudFwd, HUD_DISTANCE),
+        right: hudRight,
+        up: hudUp,
+      };
+      // Restore the chase camera for the scene and the menu panel.
+      vec3.copy(cam.position, basePos);
+      vec3.copy(cam.lookAt, baseLook);
+      vec3.copy(cam.up, baseUp);
+      cam.updateMatrices();
     }
     // The new UI overlay (MenuUi/LobbyUi/RoomUi) becomes a texture + panel.
     const ui = renderer.uiOverlay;
@@ -237,10 +287,6 @@ export async function enterXr(
     // The panel follows the base view (not the head): the headset's gaze ray
     // then sweeps across a stable panel, which is what a crosshair needs.
     const basis = panelBasis(renderer.camera.position, renderer.camera.direction, PANEL_DISTANCE);
-    // Level base: the ship's roll must not tilt the horizon. The head pose
-    // (including roll) is composed on top, so the up vector follows the
-    // headset - that is what keeps the view aligned with head rotation.
-    renderer.camera.levelView(chase);
     const cam = renderer.camera;
     // Each eye goes through the whole normal pipeline (scene target, scene
     // draw, composite) but the composite blits into the WebXR base layer with
@@ -275,9 +321,9 @@ export async function enterXr(
       }
       const eyeView = cam.view as unknown as Float32Array;
       const eyeProj = cam.proj as unknown as Float32Array;
-      // HUD panel over the scene, in this eye, with that eye's projection.
-      if (hudBasis) {
-        const board = hudBasis;
+      // HUD panel over the scene, in this eye, head-locked at HUD_DISTANCE.
+      if (hudBoard) {
+        const board = hudBoard;
         withClipRect(gl, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, () => {
           renderer.drawHudPlane(
             layer.framebuffer, eyeView, eyeProj,
