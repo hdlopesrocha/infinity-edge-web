@@ -17,6 +17,8 @@ export async function launchChrome({ port = 9334, windowSize = '1000,620', profi
     '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     '--no-first-run', '--no-default-browser-check',
     '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+    // Dev server runs HTTPS with its self-signed cert; e2e pages must load it.
+    '--ignore-certificate-errors',
     // Voice-chat tests: a synthetic microphone that is granted without a prompt.
     '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     '--autoplay-policy=no-user-gesture-required',
