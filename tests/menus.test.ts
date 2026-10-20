@@ -56,8 +56,8 @@ describe('menu screens', () => {
       .filter((r) => r.kind !== 'info')
       .map((r) => (r.kind === 'info' ? '' : r.id));
     expect(ids).toEqual([
-      'username', 'distance', 'detail', 'musicVolume', 'billboards', 'zoomBlur', 'showMs',
-      'vr', 'dwellTime', 'axisX', 'axisY', 'music', 'clear',
+      'username', 'playerColor', 'enemyColor', 'distance', 'detail', 'musicVolume',
+      'billboards', 'zoomBlur', 'showMs', 'vr', 'dwellTime', 'axisX', 'axisY', 'music', 'clear',
     ]);
     const dwell = s.right?.rows?.find((r) => r.kind === 'slider' && r.id === 'dwellTime');
     expect(dwell && dwell.kind === 'slider' ? [dwell.min, dwell.max, dwell.step] : null)

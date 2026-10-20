@@ -151,6 +151,8 @@ export function optionsMenu(): MenuScreen {
       heading: 'SETTINGS',
       rows: [
         { kind: 'text', id: 'username', label: 'Username', value: o.username, maxLength: 12 },
+        { kind: 'color', id: 'playerColor', label: 'Player Colour', value: o.playerColor },
+        { kind: 'color', id: 'enemyColor', label: 'Enemy Colour', value: o.enemyColor },
         {
           kind: 'slider', id: 'distance', label: 'Draw Distance', value: o.distance,
           min: 128, max: 512, step: 1, display: (v) => String(Math.round(v)),

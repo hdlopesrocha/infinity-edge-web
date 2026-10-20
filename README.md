@@ -85,7 +85,7 @@ composition; the compiled XNB is exact. It is kept only for reference.
 | `#/ctf`, `#/tt`, `#/tt/{easy,normal,hard}` | Difficulty menus; TT lists Track 01.. / Demo Track |
 | `#/briefing/:level` | Level Menu.xml: scoreBoard (10 rows) + briefing textBox + "start" |
 | `#/game/:level` | Level.xml game (TT race or CTF 10v9) |
-| `#/options` (`#/settings`) | Options (ranges 128–512 / 4–0 / 0–1, frame-time readout toggle, VR dwell 0.5–5 s, saves on "save") |
+| `#/options` (`#/settings`) | Options (ranges 128–512 / 4–0 / 0–1, player/enemy colour palettes, frame-time readout toggle, VR dwell 0.5–5 s, saves on "save") |
 | `#/about` | Credits (verbatim) |
 | `#/victory/:level`, `#/defeat/:level` | "Congratulations <user>!" + medal / defeat message |
 | unknown | empty chrome, no invented text |

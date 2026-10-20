@@ -19,6 +19,7 @@
 import { mat4, vec3 } from '../engine/math';
 import type { GameInstance } from './instance';
 import { store } from './store';
+import { applyTeamColors, hexToRgb } from './colors';
 import { syncHud } from './hud';
 import { extractFrustum } from '../engine/frustum';
 import {
@@ -208,6 +209,13 @@ export async function enterXr(
     // The session's own cadence (the page rAF is paused/throttled in XR).
     renderer.sampleFrame(dt);
     const instance = getInstance();
+    if (instance) applyTeamColors(instance, store.options);
+    // Keep the focus veil on the chosen player colour even when the page rAF
+    // is throttled by the headset.
+    const tint = instance?.selectedObject?.team?.color ?? hexToRgb(store.options.playerColor);
+    renderer.focusTint[0] = tint[0];
+    renderer.focusTint[1] = tint[1];
+    renderer.focusTint[2] = tint[2];
     const pose = frame.getViewerPose(refSpace);
     if (!instance || !pose) return;
     // Re-centering: the head yaw that maps to "forward" is the one recorded

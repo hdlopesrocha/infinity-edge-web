@@ -119,6 +119,27 @@ try {
   step('options frame-time toggle', { hit: p.hit, before: msBefore, after: msAfter });
   if (msBefore === msAfter) throw new Error('frame-time toggle did not change the option');
 
+  const colourBefore = await page.evaluate('window.__ieStore.options.playerColor');
+  p = await clickRegion(page, 'row:playerColor', 'options player colour');
+  const swatch = await regionPoint(page, 'color:playerColor:#ff8000');
+  if (!swatch) throw new Error('the player colour palette did not open');
+  await page.click(swatch.x, swatch.y);
+  await sleep(200);
+  await page.evaluate(`(() => { const r = window.__ieRenderer; if (r) for (let i = 0; i < 3; i++) r.onFrame(33); return true; })()`);
+  const colourAfter = await page.evaluate('window.__ieStore.options.playerColor');
+  step('options player colour picker', { hit: p.hit, before: colourBefore, after: colourAfter });
+  if (colourAfter !== '#ff8000') throw new Error('the colour swatch did not update the option');
+
+  const enemyBefore = await page.evaluate('window.__ieStore.options.enemyColor');
+  p = await clickRegion(page, 'row:enemyColor', 'options enemy colour');
+  const enemySwatch = await regionPoint(page, 'color:enemyColor:#00ffff');
+  if (!enemySwatch) throw new Error('the enemy colour palette did not open');
+  await page.click(enemySwatch.x, enemySwatch.y);
+  await sleep(200);
+  const enemyAfter = await page.evaluate('window.__ieStore.options.enemyColor');
+  step('options enemy colour picker', { hit: p.hit, before: enemyBefore, after: enemyAfter });
+  if (enemyAfter !== '#00ffff') throw new Error('the enemy colour swatch did not update the option');
+
   const volBefore = await page.evaluate('window.__ieStore.options.musicVolume');
   const slider = await regionPoint(page, 'row:musicVolume');
   await page.drag(slider.x - 60, slider.y, slider.x + 60, slider.y);
@@ -138,7 +159,12 @@ try {
   p = await clickRegion(page, 'primary', 'options save');
   const saved = await page.evaluate(`(() => {
     const raw = localStorage.getItem('options.ie3d') || '';
-    return { hash: location.hash, stored: !!raw, dwell: /_dwellTime="([^"]+)"/.exec(raw)?.[1] ?? null };
+    return {
+      hash: location.hash, stored: !!raw,
+      dwell: /_dwellTime="([^"]+)"/.exec(raw)?.[1] ?? null,
+      playerColor: /_playerColor="([^"]+)"/.exec(raw)?.[1] ?? null,
+      enemyColor: /_enemyColor="([^"]+)"/.exec(raw)?.[1] ?? null,
+    };
   })()`);
   step('options save click', { hit: p.hit, ...saved });
   // Back is LIFO: the save returns to wherever the options screen was opened
@@ -146,6 +172,8 @@ try {
   if (saved.hash.includes('options')) throw new Error('save did not leave the options screen');
   if (!saved.stored) throw new Error('save did not persist the options');
   if (!saved.dwell) throw new Error('save did not persist the VR dwell setting');
+  if (saved.playerColor !== '#ff8000') throw new Error('save did not persist the player colour');
+  if (saved.enemyColor !== '#00ffff') throw new Error('save did not persist the enemy colour');
   await page.screenshot(join(SHOT_DIR, 'ui-e2e-menu.png'));
 
   // --------------------------------------------------------------- console

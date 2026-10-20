@@ -9,6 +9,7 @@
 // as `onSelect` / `onChange` callbacks.
 
 import { nextUiVersion } from '../../engine/overlay';
+import { COLOR_PALETTE, DEFAULT_PLAYER_COLOR, normalizeHexColor } from '../colors';
 import { FS_REGION } from './fullscreen';
 import { wordmarkFont } from '../fonts';
 import {
@@ -53,6 +54,7 @@ export type MenuRow =
     }
   | { kind: 'check'; id: string; label: string; value: boolean }
   | { kind: 'text'; id: string; label: string; value: string; maxLength: number }
+  | { kind: 'color'; id: string; label: string; value: string }
   | { kind: 'button'; id: string; label: string; value?: string }
   | { kind: 'info'; text: string; small?: boolean };
 
@@ -127,6 +129,7 @@ export class MenuUi implements ScreenUi {
   private pressed: string | null = null;
   private dragging: string | null = null;
   private focus: string | null = null;
+  private colorPicker: { id: string; label: string; value: string } | null = null;
   private caretOn = true;
   private scroll = 0;
   private contentBottom = 0;
@@ -146,6 +149,7 @@ export class MenuUi implements ScreenUi {
     this.pressed = null;
     this.dragging = null;
     this.focus = null;
+    if (this.colorPicker && !this.rowById(this.colorPicker.id)) this.colorPicker = null;
     this.bump();
   }
 
@@ -249,6 +253,7 @@ export class MenuUi implements ScreenUi {
       chrome: !this.screen.hideChrome,
     }));
     this.paintCrumbs(ctx, s, X, Y, U);
+    if (this.colorPicker) this.paintColorPicker(ctx, s, X, Y, U);
   }
 
   /** Breadcrumbs, bottom centre of the content area. */
@@ -280,6 +285,83 @@ export class MenuUi implements ScreenUi {
         x += ctx.measureText(sep).width;
       }
     }
+  }
+
+  /** Palette modal for a `color` row. The swatch regions are published after
+   *  the normal screen regions, so they win hit-testing over the row beneath. */
+  private paintColorPicker(
+    ctx: CanvasRenderingContext2D, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  ): void {
+    const picker = this.colorPicker;
+    if (!picker) return;
+    // Full-screen backdrop: clicking outside the palette closes it and blocks
+    // the rows underneath.
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(0, 0, this.logical.w, this.logical.h);
+    this.regions.push({
+      id: 'color:backdrop', x: 0, y: 0, w: this.logical.w, h: this.logical.h,
+    });
+    const w = 520, h = 440;
+    const x = (DW - w) / 2, y = (DH - h) / 2;
+    const bx = X(x), by = Y(y), bw = U(w), bh = U(h);
+    ctx.fillStyle = 'rgba(7, 13, 21, 0.97)';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = 'rgba(127,232,216,0.5)';
+    ctx.lineWidth = Math.max(1, s);
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.font = `700 ${U(20)}px ${FONT}`;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText(picker.label.toUpperCase(), X(x + 26), Y(y + 36));
+    ctx.font = `${U(13)}px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText('choose a colour swatch', X(x + 26), Y(y + 59));
+    // Close cross.
+    const cbx = X(x + w - 42), cby = Y(y + 18), cbs = U(24);
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = Math.max(1, U(2));
+    ctx.beginPath();
+    ctx.moveTo(cbx + U(6), cby + U(6));
+    ctx.lineTo(cbx + cbs - U(6), cby + cbs - U(6));
+    ctx.moveTo(cbx + cbs - U(6), cby + U(6));
+    ctx.lineTo(cbx + U(6), cby + cbs - U(6));
+    ctx.stroke();
+    this.regions.push({ id: 'color:close', x: cbx, y: cby, w: cbs, h: cbs });
+    // Six columns of six swatches.
+    const cols = 6, sw = 48, gap = 8;
+    const gridW = cols * sw + (cols - 1) * gap;
+    const gx = x + (w - gridW) / 2;
+    const gy = y + 84;
+    const selected = normalizeHexColor(picker.value, '');
+    for (let i = 0; i < COLOR_PALETTE.length; i++) {
+      const color = COLOR_PALETTE[i];
+      const cx = gx + (i % cols) * (sw + gap);
+      const cy = gy + Math.floor(i / cols) * (sw + gap);
+      const sx = X(cx), sy = Y(cy), size = U(sw);
+      ctx.fillStyle = color;
+      ctx.fillRect(sx, sy, size, size);
+      const isSelected = color === selected;
+      const hovered = this.hover === `color:${picker.id}:${color}`;
+      ctx.strokeStyle = isSelected ? '#ffffff' : hovered ? '#7fe8d8' : 'rgba(255,255,255,0.22)';
+      ctx.lineWidth = Math.max(1, U(isSelected ? 3 : 1));
+      ctx.strokeRect(sx, sy, size, size);
+      if (isSelected) {
+        ctx.beginPath();
+        ctx.arc(sx + size / 2, sy + size / 2, U(6), 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1, U(2));
+        ctx.stroke();
+      }
+      this.regions.push({ id: `color:${picker.id}:${color}`, x: sx, y: sy, w: size, h: size });
+    }
+    ctx.font = `${U(12)}px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.textAlign = 'center';
+    ctx.fillText('click outside to cancel', X(x + w / 2), Y(y + h - 20));
+    ctx.textAlign = 'left';
   }
 
   private paintTitle(
@@ -629,6 +711,28 @@ export class MenuUi implements ScreenUi {
         this.regions.push({ id: 'row:' + row.id, x: bx, y: by, w, h });
         return y + rowH;
       }
+      case 'color': {
+        const hovered = this.hover === 'row:' + row.id;
+        ctx.font = `${U(14)}px ${FONT}`;
+        ctx.fillStyle = hovered ? '#7fe8d8' : 'rgba(255,255,255,0.72)';
+        ctx.fillText(row.label, labelX, Y(y));
+        const sw = U(24), sh = U(16);
+        const sx = valueRight - sw, sy = Y(y) - sh / 2;
+        ctx.fillStyle = normalizeHexColor(row.value, DEFAULT_PLAYER_COLOR);
+        ctx.fillRect(sx, sy, sw, sh);
+        ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+        ctx.lineWidth = Math.max(1, s);
+        ctx.strokeRect(sx, sy, sw, sh);
+        ctx.font = `${U(12)}px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.textAlign = 'right';
+        ctx.fillText(normalizeHexColor(row.value, DEFAULT_PLAYER_COLOR), sx - U(9), Y(y));
+        ctx.textAlign = 'left';
+        this.regions.push({
+          id: 'row:' + row.id, x: labelX, y: Y(y) - U(14), w: valueRight - labelX, h: U(28),
+        });
+        return y + rowH;
+      }
       case 'button': {
         const bh = U(32);
         const bw = U(col.w - 48);
@@ -729,6 +833,11 @@ export class MenuUi implements ScreenUi {
 
   /** Keyboard: returns true when the menu consumed the key. */
   key(e: KeyboardEvent): boolean {
+    if (this.colorPicker) {
+      if (e.key === 'Escape') this.closeColorPicker();
+      // Modal: never let the keys reach the screen behind the palette.
+      return true;
+    }
     if (this.focus) {
       const row = this.rowById(this.focus);
       if (e.key === 'Escape' || e.key === 'Enter') {
@@ -771,6 +880,13 @@ export class MenuUi implements ScreenUi {
     return null;
   }
 
+  private closeColorPicker(): void {
+    if (!this.colorPicker) return;
+    this.colorPicker = null;
+    this.hover = null;
+    this.bump();
+  }
+
   private dragSlider(id: string, lx: number): void {
     const row = this.rowById(id);
     if (row?.kind !== 'slider') return;
@@ -794,6 +910,18 @@ export class MenuUi implements ScreenUi {
   }
 
   private activate(id: string): void {
+    if (id === 'color:backdrop' || id === 'color:close') {
+      this.closeColorPicker();
+      return;
+    }
+    if (id.startsWith('color:')) {
+      const [, rowId, color] = id.split(':');
+      if (rowId && color) {
+        this.closeColorPicker();
+        this.cb.onChange(rowId, color);
+      }
+      return;
+    }
     if (id === FS_REGION) {
       this.cb.onSelect('fs');
       return;
@@ -815,6 +943,11 @@ export class MenuUi implements ScreenUi {
       const row = this.rowById(rowId);
       if (row?.kind === 'check') this.cb.onChange(rowId, !row.value);
       else if (row?.kind === 'button') this.cb.onSelect(rowId);
+      else if (row?.kind === 'color') {
+        this.colorPicker = { id: row.id, label: row.label, value: row.value };
+        this.hover = null;
+        this.bump();
+      }
       return;
     }
     this.cb.onSelect(id);

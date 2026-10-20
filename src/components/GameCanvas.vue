@@ -12,6 +12,7 @@ import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
 import { store, syncOptionsFromRC } from '../game/store';
+import { applyTeamColors, hexToRgb } from '../game/colors';
 import { calibrateVr, dragLook, vrLook } from '../game/vr';
 import { enterXr, leaveXr, setXrMatchEndHandler } from '../game/xr';
 import { takeMatchResult } from '../game/matchresult';
@@ -71,6 +72,7 @@ async function rebuild(): Promise<void> {
     const grace = previous && (previous.finished || previous.result) ? 1200 : 0;
     const joinIntent = mp.consumeJoin();
     let gi: GameInstance | null = null;
+    let hostIntent: ReturnType<typeof mp.consumeHostIntent> = null;
     if (joinIntent) {
       // A guest loads nothing: the host's Scene frame carries the map, the
       // model table, teams and decor, and the snapshots carry every object.
@@ -92,7 +94,7 @@ async function rebuild(): Promise<void> {
       // A room this browser created and is opening right now: consume the
       // intent before the old session is torn down (it must not clear the
       // new room).
-      const hostIntent = store.route === 'game' ? mp.consumeHostIntent() : null;
+      hostIntent = store.route === 'game' ? mp.consumeHostIntent() : null;
       mp.endSession(grace, !!hostIntent);
       // With a game server configured the C++ side owns the match: the client
       // renders its frames and streams the player's input. A missing or dead
@@ -106,9 +108,12 @@ async function rebuild(): Promise<void> {
         }
       }
       if (!gi) gi = await GameInstance.create(renderer, rc, def, store.levelText);
-      // A room this browser created and is now opening: become its host.
-      if (!(gi instanceof NetGame) && hostIntent) mp.attachHost(gi);
     }
+    // Colour preferences are presentation-only: apply them before a browser
+    // host publishes its Scene so guests inherit the host's chosen colours.
+    applyTeamColors(gi, store.options);
+    // A room this browser created and is now opening: become its host.
+    if (!(gi instanceof NetGame) && hostIntent) mp.attachHost(gi);
     // Stale-build drop: a newer rebuild started while we were loading.
     if (gen !== buildGen) {
       if (gi instanceof NetGame) gi.dispose();
@@ -164,11 +169,11 @@ function setHudFocus(cssW: number, cssH: number): void {
   renderer.focusRect = { x: px, y: py, w: Math.max(0.1, 1 - px * 2), h: Math.max(0.1, 1 - py * 2) };
 }
 
-/** The live player's team colour, remembered across result/menu routes. */
+/** The player's chosen colour, remembered across result/menu routes. */
 function syncFocusTint(): void {
-  if (!renderer || !store.interactive) return;
-  const color = instance?.selectedObject?.team?.color;
-  if (!color) return;
+  if (!renderer) return;
+  const color = instance?.selectedObject?.team?.color
+    ?? hexToRgb(store.options.playerColor);
   renderer.focusTint[0] = color[0];
   renderer.focusTint[1] = color[1];
   renderer.focusTint[2] = color[2];
@@ -358,8 +363,12 @@ onMounted(() => {
       // Result observed on the previous frame (or by the XR session loop):
       // hand over before drawing another match frame.
       if (finishMatch()) return;
+      // Colour options apply live to the current instance (including paused
+      // frames, menu backgrounds and NetGame's late-arriving player ship).
+      applyTeamColors(instance, store.options);
       // The focus veil follows the live ship's team colour; menus keep the
-      // last colour and use their ScreenUi rectangle instead of a HUD inset.
+      // chosen player colour and use their ScreenUi rectangle instead of a HUD
+      // inset.
       syncFocusTint();
       if (!store.interactive) renderer.focusRect = null;
       // Live render options: the post chain reads them every frame, so the

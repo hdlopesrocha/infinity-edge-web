@@ -8,6 +8,7 @@ import { createCloudTextures } from '../engine/noise';
 import type { Renderer } from '../engine/renderer';
 import type { ModelData } from './objects';
 import { MODELS, TEXTURES } from './config';
+import { DEFAULT_ENEMY_COLOR, DEFAULT_PLAYER_COLOR, normalizeHexColor } from './colors';
 import { LEVEL_FILES, loadLevel } from './levels';
 import { ensureManifests, modelFiles, textureFiles } from './assetmanifest';
 import { audio } from './audio';
@@ -25,6 +26,9 @@ export interface Options {
   showMs: boolean;
   /** VR gaze dwell before a click, in seconds. */
   dwellTime: number;
+  /** #rrggbb colours for the player's team and every enemy team. */
+  playerColor: string;
+  enemyColor: string;
   cheats: boolean;
   axisX: boolean;
   axisY: boolean;
@@ -60,8 +64,9 @@ export function defaultOptions(): Options {
     // port run show the special effects (star/cloud billboards + engine
     // flares), so the web build defaults to on.
     musicVolume: 0.5, billboards: true,
-    zoomBlur: true, showMs: true, dwellTime: 2, cheats: false,
-    axisX: false, axisY: false,
+    zoomBlur: true, showMs: true, dwellTime: 2,
+    playerColor: DEFAULT_PLAYER_COLOR, enemyColor: DEFAULT_ENEMY_COLOR,
+    cheats: false, axisX: false, axisY: false,
   };
 }
 
@@ -111,6 +116,8 @@ function loadOptionsStored(): Options {
       zoomBlur: b('_zoomBlur', d.zoomBlur),
       showMs: b('_showMs', d.showMs),
       dwellTime: Number.isFinite(dwell) ? Math.max(0.5, Math.min(5, dwell)) : d.dwellTime,
+      playerColor: normalizeHexColor(g('_playerColor', d.playerColor), d.playerColor),
+      enemyColor: normalizeHexColor(g('_enemyColor', d.enemyColor), d.enemyColor),
       axisX: b('_axisX', d.axisX),
       axisY: b('_axisY', d.axisY),
       cheats: d.cheats,
@@ -127,7 +134,10 @@ export function saveOptions(o: Options): void {
       `<Options _version="${OPTIONS_VERSION}" _userName="${o.username.replace(/"/g, '')}" ` +
         `_wireframe="${o.wireframe}" _detail="${o.detail}" _distance="${o.distance}" ` +
         `_musicVolume="${o.musicVolume}" _billboards="${o.billboards}" _showMs="${o.showMs}" ` +
-        `_dwellTime="${o.dwellTime}" _axisY="${o.axisY}" _axisX="${o.axisX}" />`,
+        `_dwellTime="${o.dwellTime}" ` +
+        `_playerColor="${normalizeHexColor(o.playerColor, DEFAULT_PLAYER_COLOR)}" ` +
+        `_enemyColor="${normalizeHexColor(o.enemyColor, DEFAULT_ENEMY_COLOR)}" ` +
+        `_axisY="${o.axisY}" _axisX="${o.axisX}" />`,
     );
   } catch { /* ignore */ }
 }

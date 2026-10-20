@@ -114,7 +114,8 @@ function closeSettings(): void {
   applyLive();
 }
 function saveSettings(): void {
-  if (snapshot.value) Object.assign(o, snapshot.value);
+  // Changes are applied live; saving keeps the current values and drops the
+  // rollback snapshot. Copying the snapshot back here would undo the edit.
   snapshot.value = null;
   saveOptions(o);
   applyLive();
@@ -271,6 +272,14 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
             <div class="opt-row">
               <label>Username: </label>
               <input v-model="o.username" class="opt-input" maxlength="12" />
+            </div>
+            <div class="opt-row">
+              <label>Ship colour: </label>
+              <input v-model="o.playerColor" type="color" class="opt-color" @input="applyLive" />
+            </div>
+            <div class="opt-row">
+              <label>Enemy colour: </label>
+              <input v-model="o.enemyColor" type="color" class="opt-color" @input="applyLive" />
             </div>
             <div class="opt-row">
               <label>Draw Distance: </label>

@@ -16,6 +16,7 @@ import { trail } from '../game/trail';
 import { pickMusicFile } from '../game/musicfile';
 import { toggleFullscreen } from '../game/ui/fullscreen';
 import { loadWordmarkFont } from '../game/fonts';
+import { normalizeHexColor } from '../game/colors';
 import { enableVr, setVr } from '../game/vr';
 import { leaveXr } from '../game/xr';
 import type { Options } from '../game/resources';
@@ -192,6 +193,8 @@ export default defineComponent({
         case 'zoomBlur': o.zoomBlur = Boolean(value); break;
         case 'showMs': o.showMs = Boolean(value); break;
         case 'dwellTime': o.dwellTime = Math.max(0.5, Math.min(5, Math.round(Number(value) * 10) / 10)); break;
+        case 'playerColor': o.playerColor = normalizeHexColor(value, o.playerColor); break;
+        case 'enemyColor': o.enemyColor = normalizeHexColor(value, o.enemyColor); break;
         case 'axisX': o.axisX = Boolean(value); break;
         case 'axisY': o.axisY = Boolean(value); break;
         default: break;

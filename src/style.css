@@ -119,6 +119,7 @@ body {
 .opt-check-label { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
 .opt-check-label > span { white-space: pre; }
 .opt-input { font-size: 16px; font-family: inherit; pointer-events: auto; min-width: 60px; }
+.opt-color { width: 48px; height: 26px; padding: 0; border: 1px solid var(--hairline); border-radius: 6px; background: transparent; pointer-events: auto; cursor: pointer; }
 .opt-value { font-size: 16px; white-space: pre; }
 /* The controls keep the browser's native widgets; only the layout is ours. */
 input[type='range'].drag { width: 192px; margin: 0; pointer-events: auto; }
