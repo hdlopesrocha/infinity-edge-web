@@ -21,7 +21,7 @@ import { store } from './store';
 import { syncHud } from './hud';
 import { extractFrustum } from '../engine/frustum';
 import {
-  GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, hitPanel, panelBasis, withClipRect,
+  GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, cyclopsView, hitPanel, panelBasis, withClipRect,
 } from '../engine/vrpanel';
 import type { ScreenUi } from '../engine/overlay';
 
@@ -222,23 +222,14 @@ export async function enterXr(
       const cam = renderer.camera;
       const hudH = 900;
       const hudW = Math.max(2, Math.round(hudH * Math.max(1, cam.aspect)));
-      // The exact eye view for this frame (yaw re-centre + level chase), but
-      // positioned at the midpoint of the eyes: the cyclops HUD view.
-      const composed = mat4.create();
-      mat4.invert(composed, pose.views[0].transform.matrix);
-      mat4.rotateY(composed, composed, baselineYawAbs);
-      mat4.multiply(composed, composed, chase);
-      const inv = mat4.create();
-      let hx = 0, hy = 0, hz = 0;
-      for (const v of pose.views) {
-        mat4.invert(inv, v.transform.matrix);
-        hx += inv[12]; hy += inv[13]; hz += inv[14];
-      }
-      hx /= pose.views.length; hy /= pose.views.length; hz /= pose.views.length;
-      const hudView = mat4.clone(composed);
-      hudView[12] = hudView[13] = hudView[14] = 0;
-      const offset = vec3.transformMat4(vec3.create(), vec3.fromValues(hx, hy, hz), hudView);
-      hudView[12] = -offset[0]; hudView[13] = -offset[1]; hudView[14] = -offset[2];
+      // The rendered eye views (head compose + level chase) averaged into the
+      // cyclops HUD view. This must use the *composed* positions: the raw room
+      // poses are not where the chase camera renders the head.
+      const cyclops = cyclopsView(
+        pose.views.map((v) => v.transform.matrix), baselineYawAbs, chase,
+      );
+      const hudView = cyclops.view;
+      const hx = cyclops.center[0], hy = cyclops.center[1], hz = cyclops.center[2];
       const hudRight = vec3.fromValues(hudView[0], hudView[4], hudView[8]);
       const hudUp = vec3.fromValues(hudView[1], hudView[5], hudView[9]);
       const hudFwd = vec3.fromValues(-hudView[2], -hudView[6], -hudView[10]);

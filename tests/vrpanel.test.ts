@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { vec3 } from 'gl-matrix';
+import { mat4, vec3 } from 'gl-matrix';
 import {
-  DWELL_MS, GazePointer, PANEL_H, PANEL_W, hitPanel, panelBasis, withClipRect,
+  DWELL_MS, GazePointer, PANEL_H, PANEL_W, cyclopsView, hitPanel, panelBasis, withClipRect,
 } from '../src/engine/vrpanel';
 import type { ScreenUi } from '../src/engine/overlay';
 
@@ -98,6 +98,35 @@ describe('hitPanel', () => {
     const hit = hitPanel(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, -1), basis, W, H, 800, 450)!;
     expect(hit.x).toBeCloseTo(400, 5);
     expect(hit.y).toBeCloseTo(225, 5);
+  });
+});
+
+describe('cyclopsView', () => {
+  it('sits at the midpoint of the composed eye positions', () => {
+    // Same composition as the eye loop (inverse eye view * chase); the inverse
+    // of the resulting view is where the eye actually renders.
+    const chase = mat4.create();
+    const left = mat4.fromTranslation(mat4.create(), [0.03, 0, 5]);
+    const right = mat4.fromTranslation(mat4.create(), [-0.03, 0, 5]);
+    const c = cyclopsView([left, right], 0, chase);
+    expect(c.center[0]).toBeCloseTo(0, 5);
+    expect(c.center[2]).toBeCloseTo(5, 5);
+    // The returned view maps the rendered head centre to the origin.
+    const p = vec3.transformMat4(vec3.create(), c.center, c.view);
+    expect(p[0]).toBeCloseTo(0, 5);
+    expect(p[1]).toBeCloseTo(0, 5);
+    expect(p[2]).toBeCloseTo(0, 5);
+    expect(c.view[14]).toBeCloseTo(-5, 5);
+  });
+
+  it('uses the composed chase view, not the raw room pose', () => {
+    // The chase composition moves the rendered eye away from the raw pose.
+    const chase = mat4.fromTranslation(mat4.create(), [0, 0, 4]);
+    const eye = mat4.fromTranslation(mat4.create(), [0, 0, 5]);
+    const raw = cyclopsView([eye, eye], 0, mat4.create());
+    const composed = cyclopsView([eye, eye], 0, chase);
+    expect(composed.center[2]).not.toBeCloseTo(raw.center[2], 5);
+    expect(composed.center[2]).toBeCloseTo(1, 5);
   });
 });
 

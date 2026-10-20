@@ -14,7 +14,7 @@
 // click, so a freshly opened screen cannot auto-click whatever happens to sit
 // under the crosshair.
 
-import { vec3 } from './math';
+import { mat4, vec3 } from './math';
 import type { ScreenUi } from './overlay';
 
 /** Painted panel size: 16:9, the menus' design aspect (crisp in a headset). */
@@ -108,6 +108,43 @@ export function hitPanel(
     y: (0.5 - v * 0.5) * uiH,
     u, v, distance, point,
   };
+}
+
+/**
+ * Cyclops view for the head-locked HUD. The eye views are composed exactly as
+ * the renderer does it (head pose -> yaw re-centre -> level chase), inverted to
+ * world space and averaged into one head-centre position. The returned view
+ * keeps the first eye's rotation but maps that rendered head centre to the
+ * origin.
+ *
+ * Using the raw room-space eye poses here is wrong: the chase camera is not at
+ * the room origin, so the HUD plane would sit far away from the actual view
+ * (and usually outside the frustum). The composition must include the chase.
+ */
+export function cyclopsView(
+  eyeViewMatrices: Float32Array[], baselineYawAbs: number, chase: mat4,
+): { view: mat4; center: vec3 } {
+  const view = mat4.create();
+  const first = mat4.create();
+  const eye = mat4.create();
+  let cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i < eyeViewMatrices.length; i++) {
+    mat4.invert(view, eyeViewMatrices[i]);
+    mat4.rotateY(view, view, baselineYawAbs);
+    mat4.multiply(view, view, chase);
+    if (i === 0) mat4.copy(first, view);
+    mat4.invert(eye, view);
+    cx += eye[12]; cy += eye[13]; cz += eye[14];
+  }
+  const n = Math.max(1, eyeViewMatrices.length);
+  cx /= n; cy /= n; cz /= n;
+  const out = mat4.clone(first);
+  out[12] = out[13] = out[14] = 0;
+  const offset = vec3.transformMat4(vec3.create(), vec3.fromValues(cx, cy, cz), out);
+  out[12] = -offset[0];
+  out[13] = -offset[1];
+  out[14] = -offset[2];
+  return { view: out, center: vec3.fromValues(cx, cy, cz) };
 }
 
 /**
