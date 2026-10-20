@@ -23,6 +23,8 @@ export interface Options {
   zoomBlur: boolean;
   /** Show the smoothed WebGL frame time (ms) on the HUD. */
   showMs: boolean;
+  /** VR gaze dwell before a click, in seconds. */
+  dwellTime: number;
   cheats: boolean;
   axisX: boolean;
   axisY: boolean;
@@ -58,7 +60,7 @@ export function defaultOptions(): Options {
     // port run show the special effects (star/cloud billboards + engine
     // flares), so the web build defaults to on.
     musicVolume: 0.5, billboards: true,
-    zoomBlur: true, showMs: true, cheats: false,
+    zoomBlur: true, showMs: true, dwellTime: 2, cheats: false,
     axisX: false, axisY: false,
   };
 }
@@ -98,6 +100,7 @@ function loadOptionsStored(): Options {
       const v = el.getAttribute(n);
       return v == null ? fb : v === 'True' || v === 'true';
     };
+    const dwell = parseFloat(g('_dwellTime', String(d.dwellTime)));
     return {
       username: g('_userName', d.username),
       wireframe: b('_wireframe', d.wireframe),
@@ -107,6 +110,7 @@ function loadOptionsStored(): Options {
       billboards: b('_billboards', d.billboards),
       zoomBlur: b('_zoomBlur', d.zoomBlur),
       showMs: b('_showMs', d.showMs),
+      dwellTime: Number.isFinite(dwell) ? Math.max(0.5, Math.min(5, dwell)) : d.dwellTime,
       axisX: b('_axisX', d.axisX),
       axisY: b('_axisY', d.axisY),
       cheats: d.cheats,
@@ -123,7 +127,7 @@ export function saveOptions(o: Options): void {
       `<Options _version="${OPTIONS_VERSION}" _userName="${o.username.replace(/"/g, '')}" ` +
         `_wireframe="${o.wireframe}" _detail="${o.detail}" _distance="${o.distance}" ` +
         `_musicVolume="${o.musicVolume}" _billboards="${o.billboards}" _showMs="${o.showMs}" ` +
-        `_axisY="${o.axisY}" _axisX="${o.axisX}" />`,
+        `_dwellTime="${o.dwellTime}" _axisY="${o.axisY}" _axisX="${o.axisX}" />`,
     );
   } catch { /* ignore */ }
 }

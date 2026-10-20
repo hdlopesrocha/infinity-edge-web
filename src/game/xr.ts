@@ -14,7 +14,8 @@
 //   once into a texture and drawn as a world-space panel in front of the base
 //   view (src/engine/vrpanel.ts). The headset's gaze ray sweeps that panel and
 //   drives the UI's own pointer handler; trigger clicks instantly, dwelling
-//   (~2 s) selects without a controller. There is no separate VR menu.
+//   (2 s by default, configurable in Options) selects without a controller.
+//   There is no separate VR menu.
 import { mat4, vec3 } from '../engine/math';
 import type { GameInstance } from './instance';
 import { store } from './store';
@@ -302,7 +303,7 @@ export async function enterXr(
       panel.update(ui);
       if (ui !== gazeUi) {
         gazeUi = ui;
-        gaze = new GazePointer(ui, panel.width, panel.height);
+        gaze = new GazePointer(ui, panel.width, panel.height, store.options.dwellTime * 1000);
       }
     } else if (gaze) {
       // A match has no ScreenUi (the HUD is drawn separately): drop the hover.
@@ -393,6 +394,8 @@ export async function enterXr(
           const hit = hitPanel(origin, ray, basis, PANEL_WIDTH, PANEL_HEIGHT, board.width, board.height);
           if (vi === 0) {
             // One pointer/dwell state for the UI; the left eye aims it.
+            // Options can change while the panel is open, so refresh live.
+            aim.setDwellMs(store.options.dwellTime * 1000);
             aim.update(hit, dt);
             if (selectQueued) {
               aim.click();

@@ -127,13 +127,25 @@ try {
   step('options slider drag', { hit: slider.hit, before: volBefore, after: volAfter });
   if (Math.abs(volAfter - volBefore) < 0.01) throw new Error('slider drag did not change the value');
 
+  const dwellBefore = await page.evaluate('window.__ieStore.options.dwellTime');
+  const dwellSlider = await regionPoint(page, 'row:dwellTime');
+  await page.drag(dwellSlider.x - 60, dwellSlider.y, dwellSlider.x + 60, dwellSlider.y);
+  await sleep(200);
+  const dwellAfter = await page.evaluate('window.__ieStore.options.dwellTime');
+  step('options VR dwell drag', { hit: dwellSlider.hit, before: dwellBefore, after: dwellAfter });
+  if (Math.abs(dwellAfter - dwellBefore) < 0.05) throw new Error('VR dwell slider did not change the value');
+
   p = await clickRegion(page, 'primary', 'options save');
-  const saved = await page.evaluate(`(() => ({ hash: location.hash, stored: !!localStorage.getItem('options.ie3d') }))()`);
+  const saved = await page.evaluate(`(() => {
+    const raw = localStorage.getItem('options.ie3d') || '';
+    return { hash: location.hash, stored: !!raw, dwell: /_dwellTime="([^"]+)"/.exec(raw)?.[1] ?? null };
+  })()`);
   step('options save click', { hit: p.hit, ...saved });
   // Back is LIFO: the save returns to wherever the options screen was opened
   // from (here the briefing), never staying on the options screen.
   if (saved.hash.includes('options')) throw new Error('save did not leave the options screen');
   if (!saved.stored) throw new Error('save did not persist the options');
+  if (!saved.dwell) throw new Error('save did not persist the VR dwell setting');
   await page.screenshot(join(SHOT_DIR, 'ui-e2e-menu.png'));
 
   // --------------------------------------------------------------- console

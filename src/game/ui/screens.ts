@@ -30,11 +30,11 @@ export function mainMenu(): MenuScreen {
     left: {
       icons: [
         icon('/single-player', 'SINGLE PLAYER', '_singlePlayer.png'),
+        icon('/multiplayer', 'MULTIPLAYER', '_multiPlayer.png'),
         icon('/hangar', 'HANGAR', 'Fighter3_icon.png'),
         icon('/options', 'OPTIONS', '_optionsIcon.png'),
         icon('/about', 'ABOUT', '_about.png'),
       ],
-      buttons: [{ id: '/multiplayer', label: 'MULTIPLAYER' }],
     },
   };
 }
@@ -172,6 +172,10 @@ export function optionsMenu(): MenuScreen {
       heading: 'CONTROLS & DATA',
       rows: [
         { kind: 'button', id: 'vr', label: 'VR Mode', value: store.vr ? 'ON' : 'OFF' },
+        {
+          kind: 'slider', id: 'dwellTime', label: 'VR Dwell Time', value: o.dwellTime,
+          min: 0.5, max: 5, step: 0.1, display: (v) => v.toFixed(1) + ' s',
+        },
         { kind: 'check', id: 'axisX', label: 'Invert X axis', value: o.axisX },
         { kind: 'check', id: 'axisY', label: 'Invert Y axis', value: o.axisY },
         {

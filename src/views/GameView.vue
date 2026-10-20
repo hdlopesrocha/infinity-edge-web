@@ -325,6 +325,11 @@ function markerStyle(m: { color: [number, number, number]; x: number; y: number 
                       title="Move the device to look; tap the scene to re-centre"
                       @click="toggleVr">{{ vr ? 'ON' : 'OFF' }}</button>
             </div>
+            <div class="opt-row">
+              <label>VR dwell: </label>
+              <input v-model.number="o.dwellTime" type="range" class="drag" min="0.5" max="5" step="0.1" @input="applyLive" />
+              <span class="opt-value">{{ ' ' + o.dwellTime.toFixed(1) + ' s' }}</span>
+            </div>
             <div v-if="vr" class="opt-row">
               <span class="c-white50">{{ vrStatusText() }}
             <div v-if="store.vr" class="opt-row">

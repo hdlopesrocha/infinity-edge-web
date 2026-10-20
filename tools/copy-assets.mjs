@@ -22,7 +22,7 @@ const TEXTURE_ALIASES = {
   _flare1: 'System/flare1', _flare2: 'System/flare2',
   _gold: 'System/gold', _silver: 'System/silver', _bronze: 'System/bronze',
   _backWindow: 'System/backWindow',
-  _singlePlayer: 'System/singlePlayer',
+  _singlePlayer: 'System/singlePlayer', _multiPlayer: 'System/multiPlayer',
   _optionsIcon: 'System/options', _about: 'System/about', _back: 'System/back',
   _timeTrial: 'System/timeTrial', _ctf: 'System/ctf',
   _easy: 'System/easy',
@@ -36,10 +36,11 @@ const TEXTURE_ALIASES = {
   _pixel: 'System/pixel',
 };
 
-// The UI is built in Vue/CSS, so the original's menu-sprite leftovers
-// (arcade/challenge/multiPlayer/hex/hex1/aim2/flag/flare3/corner buttons/
-// backGame) are never drawn and no longer copied; see the SKIP note in
-// tools/convert-xnb.mjs for the model side of the same cleanup.
+// The UI is built in Vue/CSS, so the original's unused menu-sprite leftovers
+// (arcade/challenge/hex/hex1/aim2/flag/flare3/corner buttons/backGame) are
+// never drawn and no longer copied; see the SKIP note in tools/convert-xnb.mjs
+// for the model side of the same cleanup. The multiplayer icon is still used
+// by the main menu.
 const SKIP_FOLDERS = new Set([
   'Fighter1', 'Fighter2', 'HomingMissile',
   'Planet1', 'Planet2', 'Planet3',

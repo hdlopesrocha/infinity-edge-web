@@ -77,7 +77,7 @@ composition; the compiled XNB is exact. It is kept only for reference.
 | URL | Original |
 |---|---|
 | `#/` → `#/engine` → `#/start` | EngineScreen (floating-gear wheel + "Floating Gear" wordmark, 3 s) → StartScreen ("Infinity Edge" wordmark, 3 s) → MainMenu. The wordmarks are text in the bundled **Airstrike** face (`public/assets/fonts/airstrike.ttf`, by Daniel Zadorozny / Iconian Fonts), preloaded from `index.html` and started before the asset preload; the wheel model is fetched before the rest. Both boot screens show the Floating-Gear loading bar while every model, texture and level is preloaded; the sequence only advances to the menu once that finishes |
-| `#/menu` | MainMenu (SINGLE PLAYER / HANGAR / OPTIONS / ABOUT / MULTIPLAYER) |
+| `#/menu` | MainMenu (SINGLE PLAYER / MULTIPLAYER / HANGAR / OPTIONS / ABOUT, one original icon each) |
 | `#/multiplayer` | Public rooms on Nostr + "create a room" — the whole view is painted into the WebGL frame (`src/game/mp/lobbyui.ts`), no HTML |
 | `#/room` | Browser-hosted waiting room: roster + per-pilot teams, chat, microphone toggle and the host's PLAY — painted into the same WebGL frame (`src/game/mp/roomui.ts`), no HTML |
 | `?username=<name>` | sets and saves the pilot name (search string or hash query), e.g. `#/menu?username=Bob` |
@@ -85,7 +85,7 @@ composition; the compiled XNB is exact. It is kept only for reference.
 | `#/ctf`, `#/tt`, `#/tt/{easy,normal,hard}` | Difficulty menus; TT lists Track 01.. / Demo Track |
 | `#/briefing/:level` | Level Menu.xml: scoreBoard (10 rows) + briefing textBox + "start" |
 | `#/game/:level` | Level.xml game (TT race or CTF 10v9) |
-| `#/options` (`#/settings`) | Options (ranges 128–512 / 4–0 / 0–1, frame-time readout toggle, saves on "save") |
+| `#/options` (`#/settings`) | Options (ranges 128–512 / 4–0 / 0–1, frame-time readout toggle, VR dwell 0.5–5 s, saves on "save") |
 | `#/about` | Credits (verbatim) |
 | `#/victory/:level`, `#/defeat/:level` | "Congratulations <user>!" + medal / defeat message |
 | unknown | empty chrome, no invented text |
@@ -261,9 +261,10 @@ Two paths, in order:
   into a texture and drawn as a plane in the scene (16:9, 8 world units wide,
   3 in front of the base view). A crosshair with a dwell ring follows the headset's gaze ray on
   that plane; the controller trigger (session `select`) clicks the item under
-  it, and dwelling ~2 s selects without a controller. The dwell only restarts
-  when the crosshair acquires a different clickable target, so head corrections
-  inside the same button do not reset the timer. Hover/keyboard/click
+  it, and dwelling selects without a controller (2 s by default, configurable
+  as **VR Dwell Time** in Options). The dwell only restarts when the crosshair
+  acquires a different clickable target, so head corrections inside the same
+  button do not reset the timer. Hover/keyboard/click
   behaviour comes from the screens' own pointer handlers, so every menu and
   every future screen works in the headset with no VR-specific items.
 - **Split-screen fallback** (no WebXR or refused): two eyes side by side
@@ -376,7 +377,7 @@ ancestry for cold deep links. Reload rebuilds the stack.
   up vector with gyro yaw/pitch/roll composed on top; trigger/tap re-centres
   every time; the WebGL menus render on
   a world-space panel with a gaze
-  crosshair (trigger click + 2 s dwell) instead of a separate VR menu, and the
+  crosshair (trigger click + configurable dwell, 2 s default) instead of a separate VR menu, and the
   in-game HUD is a head-locked plane at a quarter of the menu distance,
   close to the camera (painted once
   from the cyclops view; projected positions clamp to its edges), both

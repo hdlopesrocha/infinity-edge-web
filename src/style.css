@@ -124,10 +124,6 @@ body {
 input[type='range'].drag { width: 192px; margin: 0; pointer-events: auto; }
 input[type='checkbox'].opt-check { width: 20px; height: 20px; margin: 0; pointer-events: auto; cursor: pointer; }
 .opt-clear { align-self: flex-start; width: 90%; }
-/* Main menu: MULTIPLAYER entry under the icon row (web addition). */
-.multi-btn { align-self: center; width: 320px; margin-top: 18px; }
-
-
 /* Boot loading bar (Floating-Gear chrome: Black40 panel, black `_pixel` bar
    with a white fill, DejaVu labels). */
 

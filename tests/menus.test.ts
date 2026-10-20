@@ -14,11 +14,14 @@ describe('menu screens', () => {
     expect('logo' in screens.bootScreen('engine', null)).toBe(false);
   });
 
-  it('main menu: four icons plus the multiplayer entry', () => {
+  it('main menu: one icon per entry, including multiplayer', () => {
     const s = screens.mainMenu();
-    expect(s.left?.icons?.map((i) => i.id)).toEqual(['/single-player', '/hangar', '/options', '/about']);
+    expect(s.left?.icons?.map((i) => i.id)).toEqual([
+      '/single-player', '/multiplayer', '/hangar', '/options', '/about',
+    ]);
     expect(s.left?.icons?.every((i) => !!i.icon)).toBe(true);
-    expect(s.left?.buttons?.map((b) => b.id)).toEqual(['/multiplayer']);
+    expect(s.left?.icons?.find((i) => i.id === '/multiplayer')?.icon).toBe('_multiPlayer.png');
+    expect(s.left?.buttons).toBeUndefined();
     expect(s.title).toBe('MAIN MENU');
   });
 
@@ -54,8 +57,11 @@ describe('menu screens', () => {
       .map((r) => (r.kind === 'info' ? '' : r.id));
     expect(ids).toEqual([
       'username', 'distance', 'detail', 'musicVolume', 'billboards', 'zoomBlur', 'showMs',
-      'vr', 'axisX', 'axisY', 'music', 'clear',
+      'vr', 'dwellTime', 'axisX', 'axisY', 'music', 'clear',
     ]);
+    const dwell = s.right?.rows?.find((r) => r.kind === 'slider' && r.id === 'dwellTime');
+    expect(dwell && dwell.kind === 'slider' ? [dwell.min, dwell.max, dwell.step] : null)
+      .toEqual([0.5, 5, 0.1]);
     expect(s.primary?.id).toBe('save');
     const username = s.left?.rows?.find((r) => r.kind === 'text');
     expect(username && username.kind === 'text' && username.maxLength).toBe(12);

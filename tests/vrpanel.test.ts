@@ -302,7 +302,7 @@ describe('GazePointer', () => {
     expect(g.size).toEqual({ w: PANEL_W, h: PANEL_H });
   });
 
-  it('uses the dwell constant it advertises', () => {
+  it('uses the default dwell time it advertises', () => {
     const { ui } = fakeUi();
     const g = new GazePointer(ui);
     g.update({ x: 0, y: 0 }, 10);      // enter
@@ -312,6 +312,27 @@ describe('GazePointer', () => {
     for (let i = 0; i < steps; i++) expect(g.update({ x: 100, y: 0 }, 10)).toBe(false);
     expect(g.progress).toBeLessThan(1);
     expect(g.update({ x: 100, y: 0 }, 10)).toBe(true);
+  });
+
+  it('honours a configured dwell time and can change it live', () => {
+    const { ui } = fakeUi();
+    const g = new GazePointer(ui, PANEL_W, PANEL_H, 500);
+    g.update({ x: 0, y: 0 }, 16);      // enter
+    g.update({ x: 100, y: 0 }, 16);    // arm
+    for (let i = 0; i < 30; i++) expect(g.update({ x: 100, y: 0 }, 16)).toBe(false); // 480 ms
+    expect(g.update({ x: 100, y: 0 }, 16)).toBe(false); // 496 ms
+    expect(g.update({ x: 100, y: 0 }, 16)).toBe(true);  // 512 ms
+    // Changing the setting resets a partial dwell and applies immediately.
+    const h = new GazePointer(ui);
+    h.update({ x: 0, y: 0 }, 16);
+    h.update({ x: 100, y: 0 }, 16);
+    for (let i = 0; i < 20; i++) h.update({ x: 100, y: 0 }, 16);
+    expect(h.progress).toBeGreaterThan(0);
+    h.setDwellMs(500);
+    expect(h.progress).toBe(0);
+    for (let i = 0; i < 30; i++) expect(h.update({ x: 100, y: 0 }, 16)).toBe(false);
+    expect(h.update({ x: 100, y: 0 }, 16)).toBe(false); // 496 ms
+    expect(h.update({ x: 100, y: 0 }, 16)).toBe(true);  // 512 ms
   });
 
   it('needs a move before dwelling on a freshly shown screen', () => {

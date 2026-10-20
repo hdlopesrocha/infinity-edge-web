@@ -1,8 +1,8 @@
 <!-- VR gaze cursor: in VR mode a dot follows the head (yaw/pitch from the
-     gyroscope, mapped across the screen) and dwelling on a button for one
-     second clicks it, with a ring that fills as the second passes. Menus keep
-     the 3D view still, so the dot sweeps a fixed screen and staring at a
-     button is unambiguous. -->
+     gyroscope, mapped across the screen) and dwelling on a button clicks it,
+     with a ring that fills over the configured time. Menus keep the 3D view
+     still, so the dot sweeps a fixed screen and staring at a button is
+     unambiguous. The dwell lives in Options (VR Dwell Time, 2 s default). -->
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { store } from '../game/store';
@@ -10,9 +10,13 @@ import { vrLook } from '../game/vr';
 
 /** Pixels of screen travel per degree of head turn. */
 const PX_PER_DEG = 9;
-/** Dwell needed to click, in ms. */
-const DWELL_MS = 1000;
 const RADIUS = 18;
+
+/** Current dwell from Options, clamped to the same range as the menu. */
+function dwellMs(): number {
+  const seconds = Number(store.options.dwellTime);
+  return (Number.isFinite(seconds) ? Math.max(0.5, Math.min(5, seconds)) : 2) * 1000;
+}
 
 const x = ref(-100);
 const y = ref(-100);
@@ -73,8 +77,9 @@ function loop(now: number): void {
     return;
   }
   heldFor += dt;
-  progress.value = Math.min(1, heldFor / DWELL_MS);
-  if (heldFor >= DWELL_MS) {
+  const dwell = dwellMs();
+  progress.value = Math.min(1, heldFor / dwell);
+  if (heldFor >= dwell) {
     heldFor = 0;
     held = null;
     progress.value = 0;

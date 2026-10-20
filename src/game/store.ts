@@ -115,7 +115,10 @@ export function syncSceneState(routeName: string, param?: string): void {
 }
 
 export function syncOptionsFromRC(o: Options): void {
-  store.options = { ...o };
+  // Mutate the reactive mirror instead of replacing it: views such as the
+  // pause settings capture `store.options` during setup and must see values
+  // loaded by the game canvas after mount.
+  Object.assign(store.options, o);
   store.username = o.username;
 }
 

@@ -22,7 +22,7 @@ import type { ScreenUi } from './overlay';
 export const PANEL_W = 1600;
 export const PANEL_H = 900;
 
-/** Dwell needed to select without a controller: exactly two seconds. */
+/** Default dwell needed to select without a controller (2 s). */
 export const DWELL_MS = 2000;
 /**
  * Movement needed to arm the dwell after a fresh screen or a click (UI px).
@@ -208,7 +208,17 @@ export class GazePointer {
     private ui: ScreenUi,
     private w = PANEL_W,
     private h = PANEL_H,
+    private dwellMs = DWELL_MS,
   ) {}
+
+  /** Change the click dwell live (settings slider). Resets a partial dwell. */
+  setDwellMs(ms: number): void {
+    const next = Number.isFinite(ms) ? Math.max(250, Math.min(10000, ms)) : DWELL_MS;
+    if (next !== this.dwellMs) {
+      this.dwellMs = next;
+      this.dwell = 0;
+    }
+  }
 
   /** Painted size the pointer coordinates refer to. */
   get size(): { w: number; h: number } {
@@ -221,7 +231,7 @@ export class GazePointer {
 
   /** 0..1 dwell progress for the crosshair ring. */
   get progress(): number {
-    return this.armed ? Math.min(1, this.dwell / DWELL_MS) : 0;
+    return this.armed ? Math.min(1, this.dwell / this.dwellMs) : 0;
   }
 
   /**
@@ -274,7 +284,7 @@ export class GazePointer {
     if (target !== undefined) {
       if (target !== this.target) {
         // The crosshair moved to another clickable region (or off one): this
-        // is a new pointing task, so start its 2 s dwell from zero.
+        // is a new pointing task, so start its dwell from zero.
         this.target = target;
         this.anchorX = hit.x;
         this.anchorY = hit.y;
@@ -291,7 +301,7 @@ export class GazePointer {
       this.dwell = 0;
     }
     this.dwell += Math.max(0, Math.min(100, dtMs));
-    if (this.dwell >= DWELL_MS) {
+    if (this.dwell >= this.dwellMs) {
       this.click();
       return true;
     }
