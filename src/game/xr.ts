@@ -79,6 +79,17 @@ let baselineYawAbs = 0;
 let latestHeadYawAbs = 0;
 let initialized = false;
 
+/**
+ * The XR session owns the simulation loop, so a match can finish without the
+ * page's requestAnimationFrame callback running. GameCanvas registers the
+ * handler that stores the result and navigates to victory/defeat.
+ */
+let onMatchEnd: (() => void) | null = null;
+
+export function setXrMatchEndHandler(handler: (() => void) | null): void {
+  onMatchEnd = handler;
+}
+
 export function xrActive(): boolean {
   return session !== null;
 }
@@ -214,6 +225,14 @@ export async function enterXr(
     const inMenu = !store.interactive;
     // Background/menu scenes still orbit their camera; only real matches freeze.
     if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
+    // The session loop, not the page rAF, produced this frame: hand a finished
+    // match to GameCanvas so it can leave VR and route to the results screen.
+    // Without this the world stays frozen on the last match frame with no
+    // accessible menu.
+    if (instance.result && store.route === 'game' && onMatchEnd) {
+      onMatchEnd();
+      return;
+    }
     // In-match HUD: a head-locked plane at a quarter of the menu distance
     // (0.75 units), close to the camera. It is painted ONCE with the cyclops
     // (head-centre) view and drawn in each eye, so the score/time/items stay

@@ -13,7 +13,8 @@ import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
 import { store, syncOptionsFromRC } from '../game/store';
 import { calibrateVr, dragLook, setVr, vrLook } from '../game/vr';
-import { enterXr, leaveXr } from '../game/xr';
+import { enterXr, leaveXr, setXrMatchEndHandler } from '../game/xr';
+import { takeMatchResult } from '../game/matchresult';
 import { syncHud } from '../game/hud';
 import { audio } from '../game/audio';
 import { loadWordmarkFont } from '../game/fonts';
@@ -248,6 +249,24 @@ function exitVr(): void {
   }
 }
 
+/**
+ * Consume a finished match exactly once and hand over to the result route.
+ * The page loop and the WebXR session loop can both observe the finish, so the
+ * shared takeMatchResult clears `instance.result` before navigating.
+ */
+function finishMatch(): boolean {
+  const result = takeMatchResult(instance, store.route, store.levelKey);
+  if (!result) return false;
+  // A finished match must not leave a head-tracked camera over the result
+  // screens: leave VR, then hand over to the menu route.
+  exitVr();
+  store.result = result;
+  // Replace: a finished match must not stay in the stack, or back from the
+  // result screen would re-enter the game.
+  void router.replace((result.won ? '/victory/' : '/defeat/') + result.level);
+  return true;
+}
+
 function tryImmersive(): void {
   if (!renderer || !instance) return;
   if (!store.vr || !store.interactive || store.paused || renderer.xrActive) return;
@@ -277,6 +296,9 @@ onMounted(() => {
     if (!canvasRef.value) return;
     renderer = new Renderer(canvasRef.value);
     rc = new RC(renderer);
+    // The XR session loop owns simulation while a headset is active; let it
+    // hand a finished match back to this page so the result route can run.
+    setXrMatchEndHandler(finishMatch);
     warmManifests();
     syncOptionsFromRC(rc.options);
     audio.setMusicVolume(rc.options.musicVolume);
@@ -321,6 +343,9 @@ onMounted(() => {
       });
     renderer.onFrame = (dtMs) => {
       if (!renderer || !rc) return;
+      // Result observed on the previous frame (or by the XR session loop):
+      // hand over before drawing another match frame.
+      if (finishMatch()) return;
       // Live render options: the post chain reads them every frame, so the
       // Options screen changes take effect immediately (and roll back on
       // cancel).
@@ -406,6 +431,9 @@ onMounted(() => {
         // While paused only the simulation stops; the eyes keep drawing so the
         // background, the world and the HUD stay visible in the headset.
         if (!store.paused) instance.update(dtMs);
+        // The match can finish in this update; leave VR and show the result
+        // menu instead of drawing and looping on a frozen final frame.
+        if (finishMatch()) return;
         // Stereo VR draws with the same far view distance as the settings.
         renderer.camera.far = store.options.distance;
         const gl = renderer.gl;
@@ -485,6 +513,8 @@ onMounted(() => {
       mp.preTick(dtMs);
       instance.update(dtMs);
       mp.postTick(dtMs);
+      // Same-frame result: do not draw another frame before the route changes.
+      if (finishMatch()) return;
       renderer.beginFrame();
       instance.draw();
       renderer.endFrame(null);
@@ -497,18 +527,6 @@ onMounted(() => {
       // After all movements of the frame: publish the HUD snapshot the DOM
       // overlay renders from.
       syncHud(instance);
-      if (instance.result && store.route === 'game') {
-        const lv = store.levelKey;
-        const won = instance.result.won;
-        // A finished match must not leave a head-tracked camera over the
-        // result screens: leave VR, then hand over to the menu route.
-        exitVr();
-        store.result = { ...instance.result, level: lv };
-        instance.result = null;
-        // Replace: a finished match must not stay in the stack, or back
-        // from the result screen would re-enter the game.
-        void router.replace((won ? '/victory/' : '/defeat/') + lv);
-      }
     };
     void rebuild();
     renderer.start();
@@ -533,6 +551,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  setXrMatchEndHandler(null);
   window.clearInterval(sceneTimer);
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
