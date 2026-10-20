@@ -245,7 +245,8 @@ Two paths, in order:
   and the ship's roll never tilts it). The in-game HUD (score, clock,
   speed, life pools, missile/nitro items, aim reticle and target markers) is a
   **head-locked panel at a quarter of the menu distance (0.75 units, half
-  the previous HUD distance) close to the camera**: it is painted
+  the previous HUD distance) close to the camera, keeping its old world
+  size so it is twice as large on screen**: it is painted
   once with the cyclops/head-centre view and drawn in each eye, so the
   score/time/items stay fixed to the head rotation. The panel matches that
   same head view at its distance, so projected aim/marker positions are exact

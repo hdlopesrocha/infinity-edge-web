@@ -61,6 +61,14 @@ const PANEL_DISTANCE = 3;
 /** The non-interactive HUD is close to the camera: a quarter of the menu
  *  distance (half of its previous 1.5-unit placement). */
 const HUD_DISTANCE = PANEL_DISTANCE / 4;
+/**
+ * The HUD keeps the world size it had at 1.5 units while sitting at half that
+ * distance, so it subtends twice the angle: a 45-degree panel at 1.5 m becomes
+ * a 79-degree panel at 0.75 m and is visibly larger in the headset. The
+ * projection used to paint it is widened by the same factor, so the painted
+ * aim/markers still land at the correct angle on the quieter, bigger panel.
+ */
+const HUD_FOV_SCALE = 2;
 const PANEL_WIDTH = 8;
 const PANEL_HEIGHT = PANEL_WIDTH * (PANEL_H / PANEL_W);
 
@@ -208,12 +216,11 @@ export async function enterXr(
     // Background/menu scenes still orbit their camera; only real matches freeze.
     if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
     // In-match HUD: a head-locked plane at a quarter of the menu distance
-    // (0.75 units), close to the camera. It is
-    // painted ONCE with the cyclops (head-centre) view and drawn in each eye,
-    // so the score/time/items stay fixed to the head rotation and the aim or
-    // target markers keep their correct positions on that plane. The panel
-    // extents match the same head view at HUD_DISTANCE; the painter pins
-    // anything outside to the panel edge.
+    // (0.75 units), close to the camera. It is painted ONCE with the cyclops
+    // (head-centre) view and drawn in each eye, so the score/time/items stay
+    // fixed to the head rotation and the aim/markers keep their positions.
+    // At half distance it keeps its old world size, so it is twice as large
+    // on screen; the projection is widened by the same amount to match.
     const inMatch = store.interactive && instance.gameType !== 'BACK';
     // Level base for the scene and the menu panel (head roll is added per eye).
     renderer.camera.levelView(chase);
@@ -236,24 +243,25 @@ export async function enterXr(
       const hudUp = vec3.fromValues(hudView[1], hudView[5], hudView[9]);
       const hudFwd = vec3.fromValues(-hudView[2], -hudView[6], -hudView[10]);
 
-      // Project the snapshot through that head view with the base perspective.
+      // Project the snapshot through that head view with a widened
+      // perspective: the plane fills the same angles as the painted texture.
+      const hudFov = 2 * Math.atan(Math.tan(cam.fov / 2) * HUD_FOV_SCALE);
       const basePos = vec3.clone(cam.position);
       const baseLook = vec3.clone(cam.lookAt);
       const baseUp = vec3.clone(cam.up);
-      const baseProj = mat4.clone(cam.proj);
       vec3.set(cam.position, hx, hy, hz);
       vec3.copy(cam.up, hudUp);
       vec3.copy(cam.direction, hudFwd);
       vec3.copy(cam.side, hudRight);
       mat4.copy(cam.view, hudView);
-      mat4.copy(cam.proj, baseProj);
+      mat4.perspective(cam.proj, hudFov, hudW / hudH, cam.near, cam.far);
       mat4.multiply(cam.viewProj, cam.proj, cam.view);
       extractFrustum(cam.viewProj, renderer.frustum);
       instance.canvasW = hudW;
       instance.canvasH = hudH;
       syncHud(instance);
       renderer.prepareHud(store.hud);
-      hudHalfH = Math.tan(cam.fov / 2) * HUD_DISTANCE;
+      hudHalfH = Math.tan(hudFov / 2) * HUD_DISTANCE;
       hudHalfW = hudHalfH * (hudW / hudH);
       hudBoard = {
         center: vec3.scaleAndAdd(vec3.create(), vec3.fromValues(hx, hy, hz), hudFwd, HUD_DISTANCE),
