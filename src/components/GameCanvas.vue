@@ -394,7 +394,6 @@ onMounted(() => {
       // Gyroscope look for the non-XR VR paths (the split view below and the
       // normal frame). The XR session supplies its own head pose.
       const look = store.vr ? vrLook() : { yaw: 0, pitch: 0, roll: 0, tracking: false };
-      renderer.camera.vrActive = store.vr;
       renderer.camera.vrYaw = look.tracking ? look.yaw : 0;
       renderer.camera.vrPitch = look.tracking ? look.pitch : 0;
       renderer.camera.vrRoll = look.tracking ? look.roll : 0;
@@ -466,7 +465,6 @@ onMounted(() => {
         renderer.camera.vrYaw = 0;
         renderer.camera.vrPitch = 0;
         renderer.camera.vrRoll = 0;
-        renderer.camera.vrActive = true;   // level base, head pose adds roll
         return;
       }
       if (store.paused) {

@@ -148,9 +148,8 @@ export async function enterXr(
   entering = false;
   session = s;
   renderer.xrActive = true;
-  // Head-tracked view: the base camera keeps a level horizon so the HUD
-  // projection and the world-space HUD/menu planes agree with the eyes.
-  renderer.camera.vrActive = true;
+  // Head-tracked view: the chase base follows the ship's up vector, so the
+  // headset rotates with the spaceship (including its roll).
   const gl = renderer.gl;
   await (gl as unknown as { makeXRCompatible(): Promise<void> }).makeXRCompatible();
   const layer = new XRWebGLLayer(s, gl);
@@ -222,8 +221,9 @@ export async function enterXr(
     // At half distance it keeps its old world size, so it is twice as large
     // on screen; the projection is widened by the same amount to match.
     const inMatch = store.interactive && instance.gameType !== 'BACK';
-    // Level base for the scene and the menu panel (head roll is added per eye).
-    renderer.camera.levelView(chase);
+    // Ship-up chase base for the scene and the menu panel; the head pose is
+    // composed per eye, so head rotation follows the spaceship's rotation.
+    renderer.camera.chaseView(chase);
     let hudBoard: { center: vec3; right: vec3; up: vec3 } | null = null;
     let hudHalfW = 0;
     let hudHalfH = 0;
@@ -231,9 +231,9 @@ export async function enterXr(
       const cam = renderer.camera;
       const hudH = 900;
       const hudW = Math.max(2, Math.round(hudH * Math.max(1, cam.aspect)));
-      // The rendered eye views (head compose + level chase) averaged into the
-      // cyclops HUD view. This must use the *composed* positions: the raw room
-      // poses are not where the chase camera renders the head.
+      // The rendered eye views (head compose + ship-up chase) averaged into
+      // the cyclops HUD view. This must use the *composed* positions: the raw
+      // room poses are not where the chase camera renders the head.
       const cyclops = cyclopsView(
         pose.views.map((v) => v.transform.matrix), baselineYawAbs, chase,
       );
@@ -404,7 +404,6 @@ export async function enterXr(
     cursor?.dispose();
     session = null;
     renderer.xrActive = false;
-    renderer.camera.vrActive = false;
     renderer.presentBounds = null;
     baselineYawAbs = 0;
     latestHeadYawAbs = 0;

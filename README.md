@@ -240,10 +240,12 @@ Two paths, in order:
 
 - **Immersive WebXR** (`navigator.xr` immersive-vr): per-eye pose and
   projection rendered straight into the XR framebuffer, gyroscope look is
-  dropped (the head pose carries the view; the base view keeps a **level
-  horizon**, so the head pose - yaw, pitch *and roll* - defines the up vector
-  and the ship's roll never tilts it). The in-game HUD (score, clock,
-  speed, life pools, missile/nitro items, aim reticle and target markers) is a
+  dropped (the head pose carries the view). The chase base uses the
+  **spaceship's up vector**, so the head and camera rotate with the ship -
+  including its roll - instead of being stabilized against a world horizon.
+  The head pose adds yaw, pitch and roll on top of that ship-relative base.
+  The in-game HUD (score, clock, speed, life pools, missile/nitro items, aim
+  reticle and target markers) is a
   **head-locked panel at a quarter of the menu distance (0.75 units, half
   the previous HUD distance) close to the camera, keeping its old world
   size so it is twice as large on screen**: it is painted
@@ -269,8 +271,10 @@ Two paths, in order:
 
 VR input: gyroscope (DeviceOrientationEvent, iOS permission requested when
 present but never blocking) with a drag-to-look fallback on the scene. The
-view keeps a level horizon and applies the gyro **roll** too, so the up vector
-follows the head rather than the ship. A reactive diagnostic readout
+chase view uses the **spaceship's up vector**; the gyro yaw, pitch and roll
+are applied relative to that ship-relative base, so the head rotates with the
+ship and the camera looks at it with the ship's up vector. A reactive
+diagnostic readout
 (`sensor: N events · yaw … · pitch … · roll … · drag look`) proves the mode is
 alive. Every controller trigger/hand tap re-centres the view, in menus and in
 a match; in menus the click is applied first, so the item under the crosshair
@@ -366,8 +370,9 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - **Motion blur was removed** at the user's request (velocity buffer, MB shader,
   debug view, config, option, tests and `src/engine/motion.ts` all deleted).
 - **VR**: WebXR immersive session (per-eye pose/projection into the XR
-  framebuffer) with a split-screen fallback; gyro look (yaw/pitch/roll) on a
-  level horizon; trigger/tap re-centres every time; the WebGL menus render on
+  framebuffer) with a split-screen fallback; the chase base follows the ship's
+  up vector with gyro yaw/pitch/roll composed on top; trigger/tap re-centres
+  every time; the WebGL menus render on
   a world-space panel with a gaze
   crosshair (trigger click + 2 s dwell) instead of a separate VR menu, and the
   in-game HUD is a head-locked plane at a quarter of the menu distance,

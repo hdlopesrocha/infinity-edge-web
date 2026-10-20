@@ -112,8 +112,8 @@ export function hitPanel(
 
 /**
  * Cyclops view for the head-locked HUD. The eye views are composed exactly as
- * the renderer does it (head pose -> yaw re-centre -> level chase), inverted to
- * world space and averaged into one head-centre position. The returned view
+ * the renderer does it (head pose -> yaw re-centre -> ship-up chase), inverted
+ * to world space and averaged into one head-centre position. The returned view
  * keeps the first eye's rotation but maps that rendered head centre to the
  * origin.
  *
