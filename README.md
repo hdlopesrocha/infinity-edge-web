@@ -99,12 +99,12 @@ sliders, checkboxes, text fields, score tables and the breadcrumb are painted
 into the frame (the same overlay the multiplayer lobby uses), with a
 `_menubtn`-plated list, watermarked track menus and the Floating-Gear boot
 splash — whose "Floating Gear" and "Infinity Edge" wordmarks are text in the
-Airstrike face now, not the old bitmap logos. Every menu reserves the **right
+Airstrike face now, not the old bitmap logos. Every menu reserves the **left
 eighth of the design width** for an actions column (fullscreen toggle, primary
 action such as save/start/create/play, context actions and back) and gives the
-remaining seven eighths to content; `src/game/ui/layout.ts` owns that split and
-is shared by the menus, the lobby and the room. Only the in-match HUD stays
-DOM-based.
+remaining seven eighths (to its right) to content; `src/game/ui/layout.ts`
+owns that split and is shared by the menus, the lobby and the room. Only the
+in-match HUD stays DOM-based.
 
 ## WebSocket asset channel (optional)
 

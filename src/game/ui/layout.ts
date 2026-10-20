@@ -1,7 +1,7 @@
 // Shared geometry and chrome for the WebGL menus.
 //
 // Every menu-like screen (MenuUi, the multiplayer lobby and the waiting room)
-// reserves the right eighth of the 1280x720 design for actions and keeps the
+// reserves the left eighth of the 1280x720 design for actions and keeps the
 // remaining seven eighths for content. This module owns that split, the action
 // column painter (fullscreen, primary, context actions, back) and the panel
 // box, so the three UIs cannot drift apart.
@@ -14,15 +14,17 @@ export const UI_FONT = "'DejaVu Sans','Segoe UI',Verdana,sans-serif";
 export const MENU_W = 1280;
 export const MENU_H = 720;
 
-/** Actions column: exactly one eighth of the design width. */
+/** Actions column: exactly one eighth of the design width, on the left. */
 export const ACTIONS_W = MENU_W / 8;           // 160
+/** Content starts right of the action column. */
+export const CONTENT_X = ACTIONS_W;            // 160
 export const CONTENT_W = MENU_W - ACTIONS_W;   // 1120
 /** Centre of the content area (the title and status lines use it). */
-export const CONTENT_CX = CONTENT_W / 2;       // 560
+export const CONTENT_CX = CONTENT_X + CONTENT_W / 2;   // 720
 
 export const CONTENT_MARGIN = 40;
 export const PANEL_GAP = 24;
-/** Two equal content panels side by side in the left seven eighths. */
+/** Two equal content panels side by side in the content area. */
 export const PANEL_W = (CONTENT_W - CONTENT_MARGIN * 2 - PANEL_GAP) / 2;   // 508
 export const PANEL_Y = 104;
 export const PANEL_H = 512;
@@ -38,11 +40,11 @@ export interface UiRegion {
 }
 
 export function leftPanelX(index: 0 | 1): number {
-  return CONTENT_MARGIN + index * (PANEL_W + PANEL_GAP);
+  return CONTENT_X + CONTENT_MARGIN + index * (PANEL_W + PANEL_GAP);
 }
 
 export function singlePanelX(width = SINGLE_W): number {
-  return Math.round((CONTENT_W - width) / 2);
+  return CONTENT_X + Math.round((CONTENT_W - width) / 2);
 }
 
 /** The translucent panel used by every menu screen (device pixels). */
@@ -86,7 +88,8 @@ export function paintActionColumn(
   spec: ActionColumnSpec,
 ): UiRegion[] {
   const regions: UiRegion[] = [];
-  const x0 = CONTENT_W;
+  // Left edge of the design; the content area starts after the column.
+  const x0 = 0;
   ctx.save();
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
@@ -96,7 +99,7 @@ export function paintActionColumn(
     ctx.fillStyle = 'rgba(6,10,16,0.55)';
     ctx.fillRect(X(x0), Y(0), U(ACTIONS_W), U(MENU_H));
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
-    ctx.fillRect(X(x0), Y(0), Math.max(1, s), U(MENU_H));
+    ctx.fillRect(X(ACTIONS_W - 1), Y(0), Math.max(1, s), U(MENU_H));
     // Compact header: label on the left, fullscreen toggle on the right.
     ctx.font = `700 ${U(11)}px ${UI_FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
@@ -105,7 +108,7 @@ export function paintActionColumn(
 
   // Fullscreen toggle, top right of the column (present on every screen).
   const fsSize = U(44);
-  const fsX = X(MENU_W - 60);
+  const fsX = X(ACTIONS_W - 60);
   const fsY = Y(6);
   paintFullscreenButton(ctx, fsX, fsY, fsSize, s, spec.hover === FS_REGION);
   regions.push({ id: FS_REGION, x: fsX, y: fsY, w: fsSize, h: fsSize });
