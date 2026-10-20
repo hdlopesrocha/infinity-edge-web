@@ -783,7 +783,8 @@ SpaceObject* GameMap::buildObject(const LevelObject& def, Game& gi) {
     }
     obj = nullptr;
   }
-  // 'cloud': the procedural smoke system replaced the old holoSmoke billboards.
+  // 'cloud': client-only scenery; the web renderer regenerates the deleted
+  // holoSmoke billboards from procedural Perlin sprites.
   if (obj && !def.name.empty()) gi.objects[def.name] = obj;
   return obj;
 }

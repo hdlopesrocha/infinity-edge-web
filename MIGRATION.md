@@ -292,7 +292,10 @@ blur and replaces the sprite-based effects with geometry/procedural versions:
   "boils"), grow ~5x over their lifetime, drift with drag + buoyancy and fade
   against the scene depth (soft particles). Ship trails, missile trails and
   bullet impacts spawn these instead of `holoSmoke` sprite billboards; the level
-  scenery billboards (miniStar / cloud) still use the original textures.
+  `cloud` scenery is rebuilt from seven runtime Perlin sprite textures
+  (`createCloudTextures`), replacing the deleted `_holoSmoke*.png` assets with
+  the same additive billboards, size and alpha. `miniStar` still uses its
+  original texture.
 - **Options live + rollback**: the Options screen edits a live copy — renderer
   post options (motion blur, flare), camera far plane, LOD detail, music volume
   and the scene rebuild for Special Effects all react immediately; "save"
@@ -302,8 +305,8 @@ blur and replaces the sprite-based effects with geometry/procedural versions:
 **Boot preload + loading bar (web addition).** The original loaded content from
 the local store per scene; the web build now preloads *everything* up front
 (`RC.preloadAll`: all 30 models with their LODs/textures/icons, every texture
-alias incl. `holoSmoke*`/`hexagon`/`aim`/`over`, and the 14 level JSONs — 94
-items) and the boot screens (`/engine`, `/start`) show a Floating-Gear styled
+alias incl. `hexagon`/`aim`/`over`, the generated Perlin cloud sprites, and the
+14 level JSONs — the full asset set) and the boot screens (`/engine`, `/start`) show a Floating-Gear styled
 progress bar (Black40 panel, black `_pixel` track, white fill, DejaVu labels,
 `done / total`). The engine/start screens keep their original 3 s / 1.5 s
 minimums but the transition to the menu is gated on the preload finishing, so

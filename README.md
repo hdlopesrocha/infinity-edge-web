@@ -296,7 +296,8 @@ ancestry for cold deep links. Reload rebuilds the stack.
   CullNone like `Draws.DrawBillBoard`, billboards gated on Special Effects),
   `post.ts` (six-stage pipeline: 1 sky / 2 models / 3 billboards / 4 blur /
   5 UI / 6 final, zoom blur + lens flare), `noise.ts` (tileable 3D Perlin
-  field for smoke/plume), `hud3d.ts` (WebGL HUD overlay for stage 5),
+  field for smoke/plume + runtime Perlin cloud sprites for the level scenery),
+  `hud3d.ts` (WebGL HUD overlay for stage 5),
   `vrpanel.ts` (the same ScreenUi on a world-space VR panel + gaze cursor).
 - `src/game/` — math (GetH/GetV verbatim), life pools (Life1/Life3 quirks),
   physics presets + NextPosition + PreviewDirection, Team/Score/Reward/

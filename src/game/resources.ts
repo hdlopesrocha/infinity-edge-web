@@ -4,6 +4,7 @@ import { loadModelOptional } from '../engine/model';
 import type { GpuModel } from '../engine/model';
 import { loadTextureAny, peekTexture } from '../engine/texture';
 import type { TexEntry } from '../engine/texture';
+import { createCloudTextures } from '../engine/noise';
 import type { Renderer } from '../engine/renderer';
 import type { ModelData } from './objects';
 import { MODELS, TEXTURES } from './config';
@@ -150,6 +151,7 @@ export class RC {
   seed = 123456789;
   private models = new Map<string, ModelData>();
   private texCache = new Map<string, TexEntry | null>();
+  private cloudTexs: TexEntry[] | null = null;
   musicStarted = false;
 
   constructor(renderer: Renderer) {
@@ -294,6 +296,9 @@ export class RC {
       .map((n) => this.modelJob(gl, n).then(bump, bump));
     const levelJobs = levelKeys.map((k) => loadLevel(k).then(bump, bump));
     await Promise.all([...texJobs, ...modelJobs, ...levelJobs]);
+    // The old holoSmoke PNGs were removed; generate their Perlin replacements
+    // now, on the loading screen, so the first map build does not hitch.
+    this.cloudTextures();
     // Assets are in; the RC caches are warm, so rebuilds from now on are cheap.
     onProgress?.(total, total);
   }
@@ -308,6 +313,17 @@ export class RC {
   clearCaches(): void {
     this.models.clear();
     this.texCache.clear();
+    this.cloudTexs = null;
+  }
+
+  /**
+   * Procedural cloud sprites replacing the removed `_holoSmoke1..7.png` assets.
+   * Generated once from Perlin noise and reused by every level's 'cloud'
+   * scenery objects; they carry no URL and live until the context is rebuilt.
+   */
+  cloudTextures(): TexEntry[] {
+    if (!this.cloudTexs) this.cloudTexs = createCloudTextures(this.renderer.gl);
+    return this.cloudTexs;
   }
 
   model(name: string): ModelData | null {

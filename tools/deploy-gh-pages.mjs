@@ -8,8 +8,8 @@
 //    origin push URL (SSH by default — HTTPS needs a stored token).
 //
 // `.nojekyll` is part of the published tree: GitHub Pages' Jekyll pass would
-// otherwise skip every `_*.png` texture (the game's `_flare*`, `_holoSmoke*`,
-// `_aim`, `_over`, ... files).
+// otherwise skip every `_*.png` texture (the game's `_flare*`, `_aim`,
+// `_over`, ... files; the cloud sprites are generated at runtime).
 //
 // GitHub Pages must be set to "Deploy from a branch: gh-pages / (root)" once in
 // the repository settings; later deploys just replace the branch.
