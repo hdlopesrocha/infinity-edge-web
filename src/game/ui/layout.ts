@@ -47,6 +47,37 @@ export function singlePanelX(width = SINGLE_W): number {
   return CONTENT_X + Math.round((CONTENT_W - width) / 2);
 }
 
+/**
+ * The painted menu content that must stay sharp in the focus veil. The action
+ * column and the title still draw over the veil, but the two content panels
+ * are the visual "island": everything beyond them - including the space
+ * around the column - is blurred and tinted by the post-process.
+ * Coordinates are design pixels; use contentFocusRect() for a canvas.
+ */
+export const FOCUS_X = CONTENT_X + CONTENT_MARGIN;      // 200
+export const FOCUS_Y = PANEL_Y;                         // 104
+export const FOCUS_W = PANEL_W * 2 + PANEL_GAP;         // 1040
+export const FOCUS_H = PANEL_H;                         // 512
+
+/**
+ * Map the menu content rectangle into a canvas of `w` x `h` pixels. Menus are
+ * authored at 1280x720 and letterboxed, so the focus must follow the same
+ * scale/offset as the painter.
+ */
+export function contentFocusRect(
+  w: number, h: number,
+): { x: number; y: number; w: number; h: number } {
+  const s = Math.min(w / MENU_W, h / MENU_H);
+  const ox = (w - MENU_W * s) / 2;
+  const oy = (h - MENU_H * s) / 2;
+  return {
+    x: ox + FOCUS_X * s,
+    y: oy + FOCUS_Y * s,
+    w: FOCUS_W * s,
+    h: FOCUS_H * s,
+  };
+}
+
 /** The translucent panel used by every menu screen (device pixels). */
 export function paintPanelBox(
   ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, s: number,

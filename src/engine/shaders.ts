@@ -391,6 +391,25 @@ void main() {
   oColor = sum;
 }`;
 
+// Low-resolution copy of the composed world, used only for the UI focus veil.
+// Keeping it separate from the readable full-resolution buffer is what lets
+// the veil blur the sky and billboards too, not merely the 3D models.
+export const POST_FOCUS_SCENE_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uSky; uniform sampler2D uModels;
+uniform sampler2D uBloom; uniform sampler2D uBillboards;
+out vec4 oColor;
+void main() {
+  vec3 col = texture(uSky, vUV).rgb;
+  vec4 blurred = texture(uBloom, vUV);
+  vec4 models = texture(uModels, vUV);
+  col = col * (1.0 - blurred.a) + blurred.rgb;
+  col = col * (1.0 - models.a) + models.rgb;
+  col += texture(uBillboards, vUV).rgb;
+  oColor = vec4(col, 1.0);
+}`;
+
 // Final pass (stage 6): 1 + 4 + 2 + 3 + 5, in that order. The zoom blur taps
 // the world layers (sky, models, billboards) but never the UI, which stays
 // readable at any speed. Billboards carry premultiplied colour with zero
@@ -402,6 +421,12 @@ uniform sampler2D uSky; uniform sampler2D uModels;
 uniform sampler2D uBloom; uniform sampler2D uFlareSrc;
 uniform sampler2D uBillboards; uniform sampler2D uUI;
 uniform vec4 uUIRect;  // normalized UI sub-rect sampled for this view (one eye)
+uniform sampler2D uSceneBlur; // world-only low-res copy for the focus veil
+uniform vec4 uFocusRect;      // UI rectangle in this view's UV (bottom-left)
+uniform vec3 uFocusTint;      // player/team colour
+uniform float uFocusAspect;   // view aspect, so the feather is round
+uniform float uFocusFeather;  // UV height where the veil reaches full strength
+uniform float uFocusStrength; // 0 disables the veil
 uniform sampler2D uFlareTex;
 uniform float uFlare; uniform float uExposureKnee;
 uniform vec2 uZoomCenter;  // screen point the ship is flying toward (UV)
@@ -449,6 +474,26 @@ void main() {
     }
     // The flare now reads the blurred layer, so keep its weight subtle.
     col += flare * uFlare * 0.35;
+  }
+  // Focus veil: outside the UI rectangle the world is blurred and washed with
+  // the player's colour. The signed distance starts at zero on the rectangle
+  // edge, so the menu/HUD itself sits in a sharp island and the effect ramps in
+  // over uFocusFeather; inside the rectangle the scene is untouched.
+  if (uFocusStrength > 0.0) {
+    vec2 halfSize = max(uFocusRect.zw * 0.5, vec2(1e-4));
+    vec2 p = vUV - (uFocusRect.xy + uFocusRect.zw * 0.5);
+    p.x *= uFocusAspect;
+    halfSize.x *= uFocusAspect;
+    vec2 outside = max(abs(p) - halfSize, vec2(0.0));
+    float mask = smoothstep(0.0, max(1e-4, uFocusFeather), length(outside)) * uFocusStrength;
+    if (mask > 0.0) {
+      vec3 soft = texture(uSceneBlur, vUV).rgb;
+      float lum = dot(soft, vec3(0.2126, 0.7152, 0.0722));
+      // Keep the scene's luminance but pull its hue toward the team colour;
+      // a little additive tint keeps dark space from going muddy grey.
+      vec3 tinted = mix(soft, uFocusTint * (0.18 + lum * 1.45), 0.52) + uFocusTint * 0.025;
+      col = mix(col, tinted, mask);
+    }
   }
   // 5: the UI on top, unblurred - sampled from this view's own sub-rect so
   // each eye gets its undistorted copy at the same relative position.

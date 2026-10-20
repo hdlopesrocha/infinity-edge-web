@@ -13,7 +13,10 @@
 // The depth is copied out right before the transparent pass so soft-particle
 // smoke can fade against the opaque geometry without a feedback loop.
 
-import { FS_VERT, POST_BLUR_FRAG, POST_BRIGHT_FRAG, POST_COMPOSITE_FRAG, linkProgram, uniforms } from './shaders';
+import {
+  FS_VERT, POST_BLUR_FRAG, POST_BRIGHT_FRAG, POST_COMPOSITE_FRAG, POST_FOCUS_SCENE_FRAG,
+  linkProgram, uniforms,
+} from './shaders';
 import type { TexEntry } from './texture';
 
 interface Target {
@@ -39,6 +42,18 @@ export interface PresentOptions {
   /** Screen point (UV) the ship is flying toward. */
   zoomCenterX: number;
   zoomCenterY: number;
+  /**
+   * UI rectangle for this view in UV (bottom-left origin). The world outside
+   * it is blurred and tinted toward `focusTint`, with zero blur on the edge.
+   * null/omitted disables the veil.
+   */
+  focus?: { x: number; y: number; w: number; h: number } | null;
+  /** Player/team colour used by the focus veil (linear 0..1 RGB). */
+  focusTint?: [number, number, number];
+  /** UV height over which the veil ramps from the rectangle edge to full. */
+  focusFeather?: number;
+  /** 0..1; 0 disables the veil even when a rectangle is present. */
+  focusStrength?: number;
 }
 
 /** Zoom-blur tunables. */
@@ -77,13 +92,18 @@ export class Post {
   private flareA: Target = { fbo: null, tex: null, w: 0, h: 0 };
   private flareB: Target = { fbo: null, tex: null, w: 0, h: 0 };
   private blurB: Target = { fbo: null, tex: null, w: 0, h: 0 };
+  /** Quarter-resolution world copy + ping-pong blur for the UI focus veil. */
+  private focusA: Target = { fbo: null, tex: null, w: 0, h: 0 };
+  private focusB: Target = { fbo: null, tex: null, w: 0, h: 0 };
   private quadVao: WebGLVertexArrayObject | null = null;
 
   private progBright: WebGLProgram;
   private progBlur: WebGLProgram;
+  private progFocusScene: WebGLProgram;
   private progComposite: WebGLProgram;
   private uBright: Record<string, WebGLUniformLocation | null>;
   private uBlur: Record<string, WebGLUniformLocation | null>;
+  private uFocusScene: Record<string, WebGLUniformLocation | null>;
   private uComposite: Record<string, WebGLUniformLocation | null>;
 
   constructor(gl: WebGL2RenderingContext) {
@@ -91,10 +111,16 @@ export class Post {
     this.floatTargets = !!gl.getExtension('EXT_color_buffer_float');
     this.progBright = linkProgram(gl, FS_VERT, POST_BRIGHT_FRAG);
     this.progBlur = linkProgram(gl, FS_VERT, POST_BLUR_FRAG);
+    this.progFocusScene = linkProgram(gl, FS_VERT, POST_FOCUS_SCENE_FRAG);
     this.progComposite = linkProgram(gl, FS_VERT, POST_COMPOSITE_FRAG);
     this.uBright = uniforms(gl, this.progBright, ['uColor', 'uThreshold']);
     this.uBlur = uniforms(gl, this.progBlur, ['uTex', 'uDir']);
-    this.uComposite = uniforms(gl, this.progComposite, ['uSky', 'uModels', 'uBloom', 'uFlareSrc', 'uBillboards', 'uUI', 'uUIRect', 'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples']);
+    this.uFocusScene = uniforms(gl, this.progFocusScene, ['uSky', 'uModels', 'uBloom', 'uBillboards']);
+    this.uComposite = uniforms(gl, this.progComposite, [
+      'uSky', 'uModels', 'uBloom', 'uFlareSrc', 'uBillboards', 'uUI', 'uUIRect',
+      'uSceneBlur', 'uFocusRect', 'uFocusTint', 'uFocusAspect', 'uFocusFeather', 'uFocusStrength',
+      'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples',
+    ]);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -139,6 +165,8 @@ export class Post {
     disposeTarget(this.blurB);
     disposeTarget(this.flareA);
     disposeTarget(this.flareB);
+    disposeTarget(this.focusA);
+    disposeTarget(this.focusB);
     if (this.sceneFbo) gl.deleteFramebuffer(this.sceneFbo);
     if (this.bbFbo) gl.deleteFramebuffer(this.bbFbo);
     if (this.uiFbo) gl.deleteFramebuffer(this.uiFbo);
@@ -225,6 +253,10 @@ export class Post {
     mk(this.blurB, halfW, halfH);
     mk(this.flareA, Math.max(1, w >> 2), Math.max(1, h >> 2));
     mk(this.flareB, Math.max(1, w >> 2), Math.max(1, h >> 2));
+    // Quarter-res is intentional: the veil only shows a soft, low-frequency
+    // world behind the UI, so the extra passes stay cheap even in stereo XR.
+    mk(this.focusA, Math.max(1, w >> 2), Math.max(1, h >> 2));
+    mk(this.focusB, Math.max(1, w >> 2), Math.max(1, h >> 2));
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
@@ -376,9 +408,32 @@ export class Post {
         gl.uniform2f(this.uBlur.uDir, 6 / this.blurB.w, 6 / this.blurB.h);
       }, this.blurB.w, this.blurB.h);
     }
-    // 6. final, in order: sky + blur + models + billboards + UI.
     const bloom = flare > 0 ? this.blurB.tex : this.blurA.tex;
+    // A quarter-res world copy for the UI focus veil. It is blurred
+    // horizontally then vertically so the veil has a soft, even falloff; the
+    // full-resolution scene still supplies the sharp island inside the UI.
+    const focus = opts.focus;
+    const focusStrength = focus ? Math.max(0, Math.min(1, opts.focusStrength ?? 0.9)) : 0;
+    if (focus && focusStrength > 0) {
+      this.blitPass(this.progFocusScene, this.focusA, () => {
+        this.bindTex(this.uFocusScene.uSky, 0, this.skyTex);
+        this.bindTex(this.uFocusScene.uModels, 1, models);
+        this.bindTex(this.uFocusScene.uBloom, 2, bloom);
+        this.bindTex(this.uFocusScene.uBillboards, 3, this.bbTex);
+      }, this.focusA.w, this.focusA.h);
+      this.blitPass(this.progBlur, this.focusB, () => {
+        this.bindTex(this.uBlur.uTex, 0, this.focusA.tex);
+        gl.uniform2f(this.uBlur.uDir, 2.6 / this.focusB.w, 0);
+      }, this.focusB.w, this.focusB.h);
+      this.blitPass(this.progBlur, this.focusA, () => {
+        this.bindTex(this.uBlur.uTex, 0, this.focusB.tex);
+        gl.uniform2f(this.uBlur.uDir, 0, 2.6 / this.focusA.h);
+      }, this.focusA.w, this.focusA.h);
+    }
+    // 6. final, in order: sky + blur + models + billboards + UI.
     const vp = opts.viewport;
+    const viewW = vp ? vp.w : gl.drawingBufferWidth;
+    const viewH = vp ? vp.h : gl.drawingBufferHeight;
     this.blitPass(this.progComposite, null, () => {
       this.bindTex(this.uComposite.uSky, 0, this.skyTex);
       this.bindTex(this.uComposite.uModels, 1, models);
@@ -386,8 +441,16 @@ export class Post {
       this.bindTex(this.uComposite.uFlareSrc, 6, flare > 0 ? this.flareA.tex : null);
       this.bindTex(this.uComposite.uBillboards, 3, this.bbTex);
       this.bindTex(this.uComposite.uUI, 4, this.uiTex);
+      this.bindTex(this.uComposite.uSceneBlur, 7, this.focusA.tex);
       const ur = opts.uiRect ?? { x: 0, y: 0, w: 1, h: 1 };
       gl.uniform4f(this.uComposite.uUIRect, ur.x, ur.y, ur.w, ur.h);
+      const fr = focus ?? { x: 0, y: 0, w: 1, h: 1 };
+      gl.uniform4f(this.uComposite.uFocusRect, fr.x, fr.y, fr.w, fr.h);
+      const tint = opts.focusTint ?? [0.25, 0.878, 0.816];
+      gl.uniform3f(this.uComposite.uFocusTint, tint[0], tint[1], tint[2]);
+      gl.uniform1f(this.uComposite.uFocusAspect, viewW / Math.max(1, viewH));
+      gl.uniform1f(this.uComposite.uFocusFeather, Math.max(1e-4, opts.focusFeather ?? 0.16));
+      gl.uniform1f(this.uComposite.uFocusStrength, focusStrength);
       this.bindTex(this.uComposite.uFlareTex, 5, opts.flareTex ? opts.flareTex.tex : null);
       gl.uniform1f(this.uComposite.uFlare, flare);
       gl.uniform1f(this.uComposite.uExposureKnee, 0.55);
@@ -395,6 +458,6 @@ export class Post {
       gl.uniform1f(this.uComposite.uZoom, opts.zoom);
       gl.uniform1i(this.uComposite.uZoomSamples, ZOOM_BLUR.samples);
       if (vp) gl.viewport(vp.x, vp.y, vp.w, vp.h);
-    }, vp ? vp.w : gl.drawingBufferWidth, vp ? vp.h : gl.drawingBufferHeight, opts.fbo ?? null);
+    }, viewW, viewH, opts.fbo ?? null);
   }
 }

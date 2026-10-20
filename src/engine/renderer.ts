@@ -60,6 +60,19 @@ export class Renderer {
   renderOptions: RenderOptions = { flare: 0.9, flareTex: null, zoom: 0, zoomCenterX: 0.5, zoomCenterY: 0.5 };
   /** Composite target: null = whole canvas, or one eye's rectangle in stereo VR. */
   viewport: { x: number; y: number; w: number; h: number } | null = null;
+  /**
+   * Optional focus rectangle for the current view in normalized UV (bottom-
+   * left origin), set by the match/XR hosts. Flat menus leave this null and
+   * the active ScreenUi supplies its painted content rectangle instead.
+   */
+  focusRect: { x: number; y: number; w: number; h: number } | null = null;
+  /** Player/team colour used by the focus veil. Matches the human team until
+   *  a live ship supplies its own colour. */
+  focusTint: [number, number, number] = [64 / 255, 224 / 255, 208 / 255];
+  /** UV height over which the veil ramps from the UI edge to full strength. */
+  focusFeather = 0.16;
+  /** 0..1 overall veil strength (menus/game use the default). */
+  focusStrength = 0.9;
   /** Composite framebuffer: null = the canvas; WebXR sets its base layer here. */
   presentFbo: WebGLFramebuffer | null = null;
   /** Pixel size of the presentation target. null = the canvas; WebXR sets its
@@ -247,6 +260,25 @@ export class Renderer {
     }
   }
 
+  /**
+   * Focus rectangle supplied by the flat ScreenUi. It is expressed in the
+   * view's pixels and converted to bottom-left UV (the composite's convention)
+   * for the current eye/viewport.
+   */
+  private uiFocusRect(): { x: number; y: number; w: number; h: number } | null {
+    const ui = this.uiOverlay;
+    if (!ui?.focusRect) return null;
+    const vp = this.viewport ?? { x: 0, y: 0, w: this.post.w, h: this.post.h };
+    const r = ui.focusRect(Math.max(1, vp.w), Math.max(1, vp.h));
+    if (!r || r.w <= 0 || r.h <= 0) return null;
+    return {
+      x: r.x / Math.max(1, vp.w),
+      y: 1 - (r.y + r.h) / Math.max(1, vp.h),
+      w: r.w / Math.max(1, vp.w),
+      h: r.h / Math.max(1, vp.h),
+    };
+  }
+
   /** Composite the targets (call after the scene draw and drawUI). */
   endFrame(hud?: HudSnapshot | null): void {
     mat4.copy(this.lastViewProj, this.camera.viewProj);
@@ -265,6 +297,10 @@ export class Renderer {
       zoom: this.renderOptions.zoom,
       zoomCenterX: this.renderOptions.zoomCenterX,
       zoomCenterY: this.renderOptions.zoomCenterY,
+      focus: this.focusRect ?? this.uiFocusRect(),
+      focusTint: this.focusTint,
+      focusFeather: this.focusFeather,
+      focusStrength: this.focusStrength,
     });
   }
 

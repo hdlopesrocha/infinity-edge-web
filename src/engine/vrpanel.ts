@@ -111,6 +111,39 @@ export function hitPanel(
 }
 
 /**
+ * Project a world-space rectangle (the menu/HUD panel) into one eye's UV.
+ * The returned rectangle is in the composite's bottom-left UV convention, so
+ * the post-process can keep the panel sharp and blur/tint everything outside
+ * it with zero blur on the edge. Returns null when the panel is not in front
+ * of this eye or the projection is degenerate.
+ */
+export function projectedPlaneRect(
+  view: Float32Array, proj: Float32Array,
+  center: vec3, right: vec3, up: vec3, halfW: number, halfH: number,
+): { x: number; y: number; w: number; h: number } | null {
+  const m = mat4.multiply(mat4.create(), proj, view);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let sy = -1; sy <= 1; sy += 2) {
+    for (let sx = -1; sx <= 1; sx += 2) {
+      const x = center[0] + right[0] * halfW * sx + up[0] * halfH * sy;
+      const y = center[1] + right[1] * halfW * sx + up[1] * halfH * sy;
+      const z = center[2] + right[2] * halfW * sx + up[2] * halfH * sy;
+      const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+      if (!(w > 1e-5)) continue;
+      const nx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+      const ny = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+      if (!Number.isFinite(nx) || !Number.isFinite(ny)) continue;
+      const u = nx * 0.5 + 0.5;
+      const v = ny * 0.5 + 0.5;
+      minX = Math.min(minX, u); maxX = Math.max(maxX, u);
+      minY = Math.min(minY, v); maxY = Math.max(maxY, v);
+    }
+  }
+  if (!(maxX > minX) || !(maxY > minY)) return null;
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+/**
  * Cyclops view for the head-locked HUD. The eye views are composed exactly as
  * the renderer does it (head pose -> yaw re-centre -> ship-up chase), inverted
  * to world space and averaged into one head-centre position. The returned view
