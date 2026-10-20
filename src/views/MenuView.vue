@@ -363,7 +363,12 @@ export default defineComponent({
         },
         onCrumb: crumb,
       }, () => ui?.bump());
-      if (r) r.uiOverlay = ui;
+      if (r) {
+        r.uiOverlay = ui;
+        // Menus let the ScreenUi supply the content island; a rect left over
+        // from a previous match must not override it.
+        r.focusRect = null;
+      }
       rebuild();
       void audio.refreshCustomMusic().then(() => rebuild());
       // The boot wordmarks are text now; repaint once the face is available.

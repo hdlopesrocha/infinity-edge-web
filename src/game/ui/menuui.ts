@@ -13,7 +13,7 @@ import { FS_REGION } from './fullscreen';
 import { wordmarkFont } from '../fonts';
 import {
   UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, SINGLE_W,
-  leftPanelX, singlePanelX, paintActionColumn, paintPanelBox,
+  leftPanelX, singlePanelX, paintActionColumn, paintPanelBox, contentFocusRect,
 } from './layout';
 import type { ScreenUi } from '../../engine/overlay';
 
@@ -164,6 +164,11 @@ export class MenuUi implements ScreenUi {
   /** Re-render on external state changes (options values, loading, …). */
   bump(): void {
     this.version = nextUiVersion();
+  }
+
+  /** Content-panel strip kept sharp by the renderer's focus veil. */
+  focusRect(w: number, h: number): { x: number; y: number; w: number; h: number } {
+    return contentFocusRect(w, h);
   }
 
   // -------------------------------------------------------------- textures

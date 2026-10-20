@@ -33,6 +33,12 @@ export interface ScreenUi {
    * where the UI is shown inside the headset (coordinates are UI pixels).
    */
   pointer?(kind: 'move' | 'down' | 'up', x: number, y: number, cssW: number, cssH: number): boolean;
+  /**
+   * Optional rectangle (canvas pixels, top-left origin) that the focus veil
+   * must keep sharp. The world outside it is blurred/tinted. Flat menus use
+   * their content panels; the VR path projects its own world-space panel.
+   */
+  focusRect?(w: number, h: number): { x: number; y: number; w: number; h: number } | null;
 }
 
 const VERT = `#version 300 es

@@ -10,7 +10,7 @@ import type { RoomSnapshot } from './manager';
 import { FS_REGION, toggleFullscreen } from '../ui/fullscreen';
 import {
   UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
-  paintActionColumn, paintPanelBox,
+  paintActionColumn, paintPanelBox, contentFocusRect,
 } from '../ui/layout';
 
 const DW = 1280;
@@ -72,6 +72,11 @@ export class RoomUi implements ScreenUi {
 
   bump(): void {
     this.version = nextUiVersion();
+  }
+
+  /** Content-panel strip kept sharp by the renderer's focus veil. */
+  focusRect(w: number, h: number): { x: number; y: number; w: number; h: number } {
+    return contentFocusRect(w, h);
   }
 
   // -------------------------------------------------------------- painting

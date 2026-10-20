@@ -261,21 +261,21 @@ export class Renderer {
   }
 
   /**
-   * Focus rectangle supplied by the flat ScreenUi. It is expressed in the
-   * view's pixels and converted to bottom-left UV (the composite's convention)
-   * for the current eye/viewport.
+   * Focus rectangle supplied by the flat ScreenUi. The UI texture is authored
+   * over the full post canvas, so its design rectangle is normalized against
+   * that canvas even when the composite writes it into one stereo eye.
    */
   private uiFocusRect(): { x: number; y: number; w: number; h: number } | null {
     const ui = this.uiOverlay;
     if (!ui?.focusRect) return null;
-    const vp = this.viewport ?? { x: 0, y: 0, w: this.post.w, h: this.post.h };
-    const r = ui.focusRect(Math.max(1, vp.w), Math.max(1, vp.h));
+    const w = Math.max(1, this.post.w), h = Math.max(1, this.post.h);
+    const r = ui.focusRect(w, h);
     if (!r || r.w <= 0 || r.h <= 0) return null;
     return {
-      x: r.x / Math.max(1, vp.w),
-      y: 1 - (r.y + r.h) / Math.max(1, vp.h),
-      w: r.w / Math.max(1, vp.w),
-      h: r.h / Math.max(1, vp.h),
+      x: r.x / w,
+      y: 1 - (r.y + r.h) / h,
+      w: r.w / w,
+      h: r.h / h,
     };
   }
 

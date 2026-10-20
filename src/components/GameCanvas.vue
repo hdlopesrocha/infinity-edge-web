@@ -16,6 +16,7 @@ import { calibrateVr, dragLook, setVr, vrLook } from '../game/vr';
 import { enterXr, leaveXr, setXrMatchEndHandler } from '../game/xr';
 import { takeMatchResult } from '../game/matchresult';
 import { syncHud } from '../game/hud';
+import { HUD_PADDING } from '../engine/hud3d';
 import { audio } from '../game/audio';
 import { loadWordmarkFont } from '../game/fonts';
 
@@ -148,6 +149,29 @@ function onVisibilityChange(): void {
 /** Stage 5 gets the live HUD in matches; menus keep the DOM UI. */
 function uiHud(): typeof store.hud | null {
   return instance && instance.gameType !== 'BACK' ? store.hud : null;
+}
+
+/**
+ * The HUD's painting island: everything inside the same 64px padding the HUD
+ * painter uses. The post-process blurs/tints only the border outside it, with
+ * zero blur at the rectangle edge. Coordinates are normalized per view.
+ */
+function setHudFocus(cssW: number, cssH: number): void {
+  if (!renderer) return;
+  const w = Math.max(1, cssW), h = Math.max(1, cssH);
+  const px = Math.min(0.45, HUD_PADDING / w);
+  const py = Math.min(0.45, HUD_PADDING / h);
+  renderer.focusRect = { x: px, y: py, w: Math.max(0.1, 1 - px * 2), h: Math.max(0.1, 1 - py * 2) };
+}
+
+/** The live player's team colour, remembered across result/menu routes. */
+function syncFocusTint(): void {
+  if (!renderer || !store.interactive) return;
+  const color = instance?.selectedObject?.team?.color;
+  if (!color) return;
+  renderer.focusTint[0] = color[0];
+  renderer.focusTint[1] = color[1];
+  renderer.focusTint[2] = color[2];
 }
 
 function onVrTap(): void {
@@ -346,6 +370,10 @@ onMounted(() => {
       // Result observed on the previous frame (or by the XR session loop):
       // hand over before drawing another match frame.
       if (finishMatch()) return;
+      // The focus veil follows the live ship's team colour; menus keep the
+      // last colour and use their ScreenUi rectangle instead of a HUD inset.
+      syncFocusTint();
+      if (!store.interactive) renderer.focusRect = null;
       // Live render options: the post chain reads them every frame, so the
       // Options screen changes take effect immediately (and roll back on
       // cancel).
@@ -468,6 +496,10 @@ onMounted(() => {
           instance.canvasW = eyeCssW;
           instance.canvasH = fullH;
           syncHud(instance);
+          // In a match the HUD owns the eye's padded inset. Menus keep the
+          // ScreenUi content island (rendered per eye) instead.
+          if (store.interactive) setHudFocus(eyeCssW, fullH);
+          else renderer.focusRect = null;
           renderer.endFrame(null);
           if (renderer.renderOptions.zoom > 0) {
             instance.drawShipsSharp(null, { x: eye * half, y: 0, w: half, h });
@@ -500,6 +532,7 @@ onMounted(() => {
         // pause panel can show live option changes behind it.
         instance.canvasW = canvasRef.value?.clientWidth || 1280;
         instance.canvasH = canvasRef.value?.clientHeight || 720;
+        setHudFocus(instance.canvasW, instance.canvasH);
         renderer.beginFrame();
         instance.draw();
         renderer.endFrame(uiHud());
@@ -515,6 +548,8 @@ onMounted(() => {
       mp.postTick(dtMs);
       // Same-frame result: do not draw another frame before the route changes.
       if (finishMatch()) return;
+      if (store.interactive) setHudFocus(instance.canvasW, instance.canvasH);
+      else renderer.focusRect = null;
       renderer.beginFrame();
       instance.draw();
       renderer.endFrame(null);

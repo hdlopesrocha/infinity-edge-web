@@ -21,7 +21,8 @@ import { store } from './store';
 import { syncHud } from './hud';
 import { extractFrustum } from '../engine/frustum';
 import {
-  GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, cyclopsView, hitPanel, panelBasis, withClipRect,
+  GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, cyclopsView, hitPanel, panelBasis,
+  projectedPlaneRect, withClipRect,
 } from '../engine/vrpanel';
 import type { ScreenUi } from '../engine/overlay';
 
@@ -131,6 +132,8 @@ export async function enterXr(
     presentFbo: WebGLFramebuffer | null;
     presentBounds: { w: number; h: number } | null;
     uiOverlay: ScreenUi | null;
+    focusRect: { x: number; y: number; w: number; h: number } | null;
+    focusTint: [number, number, number];
     drawHudTo: (fbo: WebGLFramebuffer | null, rect: { x: number; y: number; w: number; h: number }, hud: typeof store.hud | null) => void;
     prepareHud: (hud: typeof store.hud | null) => void;
     drawHudPlane: (
@@ -332,6 +335,24 @@ export async function enterXr(
       mat4.multiply(cam.viewProj, cam.proj, cam.view);
       renderer.viewport = { x: vp.x, y: vp.y, w: vp.width, h: vp.height };
       renderer.presentFbo = layer.framebuffer;
+      const eyeView = cam.view as unknown as Float32Array;
+      const eyeProj = cam.proj as unknown as Float32Array;
+      // World-space UI panels are the sharp island: project the menu panel (or
+      // the head-locked HUD board) into this eye and blur/tint the scene
+      // outside it. The panel is drawn after the composite, so its pixels are
+      // never touched by the veil.
+      const panelFocus = ui && panel
+        ? projectedPlaneRect(
+          eyeView, eyeProj, basis.center, basis.right, basis.up,
+          PANEL_WIDTH * 0.5, PANEL_HEIGHT * 0.5,
+        )
+        : null;
+      const hudFocus = hudBoard
+        ? projectedPlaneRect(
+          eyeView, eyeProj, hudBoard.center, hudBoard.right, hudBoard.up, hudHalfW, hudHalfH,
+        )
+        : null;
+      renderer.focusRect = panelFocus ?? hudFocus ?? null;
       // The per-eye UI rect is applied where the pixels land (see below), so
       // the composite itself carries no UI.
       renderer.beginFrame();   // scene target + frustum for this eye
@@ -342,8 +363,6 @@ export async function enterXr(
       if (renderer.renderOptions.zoom > 0) {
         instance.drawShipsSharp(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
       }
-      const eyeView = cam.view as unknown as Float32Array;
-      const eyeProj = cam.proj as unknown as Float32Array;
       // HUD panel over the scene, in this eye, head-locked at HUD_DISTANCE.
       if (hudBoard) {
         const board = hudBoard;
@@ -405,6 +424,9 @@ export async function enterXr(
     if (!ui) selectQueued = false;
     renderer.viewport = null;
     renderer.presentFbo = null;
+    // The per-eye focus rect belongs to the frame just drawn; do not let it
+    // leak into the page's non-XR fallback renderer.
+    renderer.focusRect = null;
     instance.canvasW = fullW;
     instance.canvasH = fullH;
   };

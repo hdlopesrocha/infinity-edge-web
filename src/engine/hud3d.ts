@@ -12,6 +12,10 @@ import type { vec3 } from './math';
 
 type Hud = typeof store.hud;
 
+/** Screen/CSS pixels of padding around the painted HUD. The focus veil uses
+ *  the same inset so the border it blurs is exactly the non-UI margin. */
+export const HUD_PADDING = 64;
+
 /** Largest HUD texture edge (the texture itself takes the view's aspect). */
 const MAX_HUD = 1600;
 
@@ -187,9 +191,9 @@ export class HudOverlay {
     const sx = W / Math.max(1, h.canvasW);
     const sy = H / Math.max(1, h.canvasH);
     const s = Math.min(sx, sy);
-    // 64 screen px of padding: no UI hugs the border, only the 3D game does.
-    const padX = 64 * sx;
-    const padY = 64 * sy;
+    // No UI hugs the border, only the 3D game does.
+    const padX = HUD_PADDING * sx;
+    const padY = HUD_PADDING * sy;
     c.textAlign = 'center';
     c.textBaseline = 'top';
     const shadow = (blur: number): void => {

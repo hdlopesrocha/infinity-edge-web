@@ -13,7 +13,7 @@ import { nextUiVersion } from '../../engine/overlay';
 import { FS_REGION, toggleFullscreen } from '../ui/fullscreen';
 import {
   UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
-  paintActionColumn, paintPanelBox,
+  paintActionColumn, paintPanelBox, contentFocusRect,
 } from '../ui/layout';
 import type { ScreenUi } from '../../engine/overlay';
 
@@ -105,6 +105,11 @@ export class LobbyUi implements ScreenUi {
   /** Called on any external state change (manager notify, hover, …). */
   bump(): void {
     this.version = nextUiVersion();
+  }
+
+  /** Content-panel strip kept sharp by the renderer's focus veil. */
+  focusRect(w: number, h: number): { x: number; y: number; w: number; h: number } {
+    return contentFocusRect(w, h);
   }
 
   // -------------------------------------------------------------- painting
