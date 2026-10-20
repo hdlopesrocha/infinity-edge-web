@@ -54,6 +54,8 @@ export interface PresentOptions {
   focusFeather?: number;
   /** 0..1; 0 disables the veil even when a rectangle is present. */
   focusStrength?: number;
+  /** Player-colour boundary stroke width, in physical target pixels. */
+  focusBorderPx?: number;
 }
 
 /** Zoom-blur tunables. */
@@ -119,6 +121,7 @@ export class Post {
     this.uComposite = uniforms(gl, this.progComposite, [
       'uSky', 'uModels', 'uBloom', 'uFlareSrc', 'uBillboards', 'uUI', 'uUIRect',
       'uSceneBlur', 'uFocusRect', 'uFocusTint', 'uFocusAspect', 'uFocusFeather', 'uFocusStrength',
+      'uFocusView', 'uFocusBorderPx',
       'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples',
     ]);
     const vao = gl.createVertexArray();
@@ -451,6 +454,8 @@ export class Post {
       gl.uniform1f(this.uComposite.uFocusAspect, viewW / Math.max(1, viewH));
       gl.uniform1f(this.uComposite.uFocusFeather, Math.max(1e-4, opts.focusFeather ?? 0.16));
       gl.uniform1f(this.uComposite.uFocusStrength, focusStrength);
+      gl.uniform2f(this.uComposite.uFocusView, viewW, viewH);
+      gl.uniform1f(this.uComposite.uFocusBorderPx, Math.max(1, opts.focusBorderPx ?? 2));
       this.bindTex(this.uComposite.uFlareTex, 5, opts.flareTex ? opts.flareTex.tex : null);
       gl.uniform1f(this.uComposite.uFlare, flare);
       gl.uniform1f(this.uComposite.uExposureKnee, 0.55);

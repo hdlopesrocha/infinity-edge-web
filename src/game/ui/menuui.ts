@@ -170,8 +170,10 @@ export class MenuUi implements ScreenUi {
     this.version = nextUiVersion();
   }
 
-  /** Content-panel strip kept sharp by the renderer's focus veil. */
-  focusRect(w: number, h: number): { x: number; y: number; w: number; h: number } {
+  /** Content-panel strip kept sharp by the renderer's focus veil. Boot
+   *  wordmarks have no panels, so they have no UI island (and no frame). */
+  focusRect(w: number, h: number): { x: number; y: number; w: number; h: number } | null {
+    if (this.screen.empty || this.screen.wordmark) return null;
     return contentFocusRect(w, h);
   }
 

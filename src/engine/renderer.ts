@@ -15,6 +15,7 @@ import { createNoiseTexture } from './noise';
 import type { NoiseTexture } from './noise';
 import { Post } from './post';
 import { HudOverlay } from './hud3d';
+import { focusBorderStrips } from './focusborder';
 import { ScreenOverlay } from './overlay';
 import type { ScreenUi } from './overlay';
 import type { store } from '../game/store';
@@ -73,6 +74,8 @@ export class Renderer {
   focusFeather = 0.16;
   /** 0..1 overall veil strength (menus/game use the default). */
   focusStrength = 0.9;
+  /** Player-colour boundary stroke just inside the sharp UI island, CSS px. */
+  focusBorderCssPx = 2;
   /** Composite framebuffer: null = the canvas; WebXR sets its base layer here. */
   presentFbo: WebGLFramebuffer | null = null;
   /** Pixel size of the presentation target. null = the canvas; WebXR sets its
@@ -301,7 +304,67 @@ export class Renderer {
       focusTint: this.focusTint,
       focusFeather: this.focusFeather,
       focusStrength: this.focusStrength,
+      focusBorderPx: this.focusBorderPx(),
     });
+  }
+
+  /** 2 CSS px in the target's physical pixels (the canvas may be HiDPI). */
+  private focusBorderPx(): number {
+    const cssW = this.canvas.clientWidth;
+    const dpr = cssW > 0
+      ? this.gl.drawingBufferWidth / cssW
+      : (globalThis.devicePixelRatio || 1);
+    return Math.max(1, this.focusBorderCssPx * dpr);
+  }
+
+  /**
+   * Draw the player-colour focus frame after UI/HUD/world-space panel passes.
+   * The composite shader already paints it under the flat UI and the HUD; this
+   * clears the same four inside strips on top, so an immersive panel or an
+   * opaque HUD pixel can never hide the boundary. `view` is one eye's target
+   * rectangle in physical pixels; the focus rectangle is normalized to it.
+   */
+  drawFocusBorder(
+    fbo: WebGLFramebuffer | null = this.presentFbo,
+    view: { x: number; y: number; w: number; h: number } | null = this.viewport,
+  ): void {
+    const rect = this.focusRect ?? this.uiFocusRect();
+    if (!rect || this.focusStrength <= 0) return;
+    const bounds = this.presentBounds ?? {
+      w: this.gl.drawingBufferWidth,
+      h: this.gl.drawingBufferHeight,
+    };
+    const vp = view ?? { x: 0, y: 0, w: bounds.w, h: bounds.h };
+    if (vp.w <= 0 || vp.h <= 0) return;
+    // Keep the stroke wholly inside the focus rectangle. Values stay
+    // unclamped here: an edge that is off-viewport must not turn into a line
+    // along the viewport border.
+    const strips = focusBorderStrips(rect, vp, this.focusBorderPx());
+    if (strips.length === 0) return;
+    const gl = this.gl;
+    const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+    const scissorOn = gl.isEnabled(gl.SCISSOR_TEST);
+    const prevScissor = gl.getParameter(gl.SCISSOR_BOX) as Int32Array;
+    const prevClear = gl.getParameter(gl.COLOR_CLEAR_VALUE) as Float32Array;
+    const prevMask = gl.getParameter(gl.COLOR_WRITEMASK) as boolean[];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.colorMask(true, true, true, true);
+    gl.clearColor(this.focusTint[0], this.focusTint[1], this.focusTint[2], 1);
+    for (const strip of strips) {
+      const cx = Math.max(strip.x, vp.x);
+      const cy = Math.max(strip.y, vp.y);
+      const cw = Math.min(strip.x + strip.w, vp.x + vp.w) - cx;
+      const ch = Math.min(strip.y + strip.h, vp.y + vp.h) - cy;
+      if (cw <= 0 || ch <= 0) continue;
+      gl.scissor(cx, cy, cw, ch);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    gl.clearColor(prevClear[0], prevClear[1], prevClear[2], prevClear[3]);
+    gl.colorMask(prevMask[0], prevMask[1], prevMask[2], prevMask[3]);
+    if (scissorOn) gl.scissor(prevScissor[0], prevScissor[1], prevScissor[2], prevScissor[3]);
+    else gl.disable(gl.SCISSOR_TEST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
   }
 
   trackDraws(n = 1): void {

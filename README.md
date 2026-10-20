@@ -362,6 +362,10 @@ ancestry for cold deep links. Reload rebuilds the stack.
      border so only the 3D game touches the edges)
   6. Final = 1 + 4 + 2 + 3 + 5, in that order, plus lens-flare ghosts and the
      exposure knee. Ships are re-drawn sharp on top of the blurred frame.
+- **Focus frame**: the exact boundary where the focus veil reaches zero carries
+  a 2 CSS px player-colour stroke just inside the sharp UI rectangle. It follows
+  flat menus/lobby/room, the HUD inset, split-screen eyes, and the projected
+  immersive menu/HUD planes.
 - **Deferred depth test**: the opaque model pass runs depth-only first (colour
   masked off), then the colour pass resolves with LEQUAL, so occlusion is
   independent of draw order (the arena walls render correctly again).

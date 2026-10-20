@@ -137,6 +137,10 @@ export async function enterXr(
     focusRect: { x: number; y: number; w: number; h: number } | null;
     focusTint: [number, number, number];
     drawHudTo: (fbo: WebGLFramebuffer | null, rect: { x: number; y: number; w: number; h: number }, hud: typeof store.hud | null) => void;
+    drawFocusBorder: (
+      fbo?: WebGLFramebuffer | null,
+      view?: { x: number; y: number; w: number; h: number } | null,
+    ) => void;
     prepareHud: (hud: typeof store.hud | null) => void;
     drawHudPlane: (
       fbo: WebGLFramebuffer | null, view: Float32Array, proj: Float32Array,
@@ -426,6 +430,11 @@ export async function enterXr(
           pointer.draw(layer.framebuffer, eyeView, eyeProj, point, right, up, radius, aim.progress);
         });
       }
+      // The world-space panel/HUD is drawn after the composite, so its own
+      // pass must carry the player-colour focus frame as well.
+      renderer.drawFocusBorder(layer.framebuffer, {
+        x: vp.x, y: vp.y, w: vp.width, h: vp.height,
+      });
     }
     // Apply a queued trigger/tap recalibration once both eyes are done: the
     // click used the current view, and the next frame faces the head's

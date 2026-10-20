@@ -427,6 +427,8 @@ uniform vec3 uFocusTint;      // player/team colour
 uniform float uFocusAspect;   // view aspect, so the feather is round
 uniform float uFocusFeather;  // UV height where the veil reaches full strength
 uniform float uFocusStrength; // 0 disables the veil
+uniform vec2 uFocusView;      // view size in physical pixels
+uniform float uFocusBorderPx; // player-colour stroke just inside the UI edge
 uniform sampler2D uFlareTex;
 uniform float uFlare; uniform float uExposureKnee;
 uniform vec2 uZoomCenter;  // screen point the ship is flying toward (UV)
@@ -479,6 +481,7 @@ void main() {
   // the player's colour. The signed distance starts at zero on the rectangle
   // edge, so the menu/HUD itself sits in a sharp island and the effect ramps in
   // over uFocusFeather; inside the rectangle the scene is untouched.
+  float uiBorder = 0.0;
   if (uFocusStrength > 0.0) {
     vec2 halfSize = max(uFocusRect.zw * 0.5, vec2(1e-4));
     vec2 p = vUV - (uFocusRect.xy + uFocusRect.zw * 0.5);
@@ -494,11 +497,23 @@ void main() {
       vec3 tinted = mix(soft, uFocusTint * (0.18 + lum * 1.45), 0.52) + uFocusTint * 0.025;
       col = mix(col, tinted, mask);
     }
+    // The veil is zero on the rectangle edge and ramps outward. Mark that
+    // exact boundary with a player-colour stroke just inside it, so every UI
+    // plane/menu/HUD island has a visible 2 CSS px frame. Pixel distances keep
+    // the stroke even on the X and Y axes.
+    vec2 rectMax = uFocusRect.xy + uFocusRect.zw;
+    vec2 pxFromEdge = min(vUV - uFocusRect.xy, rectMax - vUV) * uFocusView;
+    float inside = step(uFocusRect.x, vUV.x) * step(vUV.x, rectMax.x) *
+                   step(uFocusRect.y, vUV.y) * step(vUV.y, rectMax.y);
+    uiBorder = inside * step(min(pxFromEdge.x, pxFromEdge.y), uFocusBorderPx);
   }
   // 5: the UI on top, unblurred - sampled from this view's own sub-rect so
   // each eye gets its undistorted copy at the same relative position.
   vec4 ui = texture(uUI, uUIRect.xy + vUV * uUIRect.zw);
   col = mix(col, ui.rgb, ui.a);
+  // The frame belongs on top of the UI, not under it, so the exact boundary
+  // stays legible even when a panel border reaches the rectangle edge.
+  col = mix(col, uFocusTint, uiBorder);
   // gentle knee above 1.0 so additive highlights roll off instead of clipping
   vec3 over = max(vec3(0.0), col - 1.0);
   col = col - over * uExposureKnee;
