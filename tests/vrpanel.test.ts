@@ -211,6 +211,51 @@ describe('GazePointer', () => {
     expect(g.progress).toBeLessThan(0.05);
   });
 
+  it('keeps dwelling while the head rotates inside the same target', () => {
+    let target = 'button:a';
+    const { ui } = fakeUi();
+    ui.gazeTarget = () => target;
+    const g = new GazePointer(ui);
+    g.update({ x: 400, y: 450 }, 16);   // enter
+    g.update({ x: 440, y: 450 }, 16);   // arm
+    for (let i = 0; i < 60; i++) g.update({ x: 440, y: 450 }, 16); // ~1 s
+    const before = g.progress;
+    expect(before).toBeGreaterThan(0.4);
+    // 100 px is far beyond the old reset box, but it is still the same button.
+    g.update({ x: 540, y: 450 }, 16);
+    expect(g.progress).toBeGreaterThan(before);
+    // The 2 s timer is not restarted by that rotation.
+    let fired = false;
+    for (let i = 0; i < 120 && !fired; i++) fired = g.update({ x: 540, y: 450 }, 16);
+    expect(fired).toBe(true);
+  });
+
+  it('restarts the dwell when the crosshair acquires another target', () => {
+    let target = 'button:a';
+    const { ui } = fakeUi();
+    ui.gazeTarget = () => target;
+    const g = new GazePointer(ui);
+    g.update({ x: 400, y: 450 }, 16);
+    g.update({ x: 440, y: 450 }, 16);
+    for (let i = 0; i < 60; i++) g.update({ x: 440, y: 450 }, 16);
+    expect(g.progress).toBeGreaterThan(0.4);
+    target = 'button:b';
+    expect(g.update({ x: 520, y: 450 }, 16)).toBe(false);
+    expect(g.progress).toBe(0);
+  });
+
+  it('does not accumulate dwell while the crosshair is off a target', () => {
+    let target: string | null = null;
+    const { ui, calls } = fakeUi();
+    ui.gazeTarget = () => target;
+    const g = new GazePointer(ui);
+    g.update({ x: 400, y: 450 }, 16);
+    g.update({ x: 440, y: 450 }, 16);
+    for (let i = 0; i < 300; i++) expect(g.update({ x: 440, y: 450 }, 16)).toBe(false);
+    expect(g.progress).toBe(0);
+    expect(calls.filter((c) => c[0] === 'down')).toHaveLength(0);
+  });
+
   it('clears the hover when the gaze leaves the panel', () => {
     const { ui, calls } = fakeUi();
     const g = new GazePointer(ui);

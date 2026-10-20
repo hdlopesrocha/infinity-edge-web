@@ -261,7 +261,9 @@ Two paths, in order:
   into a texture and drawn as a plane in the scene (16:9, 8 world units wide,
   3 in front of the base view). A crosshair with a dwell ring follows the headset's gaze ray on
   that plane; the controller trigger (session `select`) clicks the item under
-  it, and dwelling ~2 s selects without a controller. Hover/keyboard/click
+  it, and dwelling ~2 s selects without a controller. The dwell only restarts
+  when the crosshair acquires a different clickable target, so head corrections
+  inside the same button do not reset the timer. Hover/keyboard/click
   behaviour comes from the screens' own pointer handlers, so every menu and
   every future screen works in the headset with no VR-specific items.
 - **Split-screen fallback** (no WebXR or refused): two eyes side by side

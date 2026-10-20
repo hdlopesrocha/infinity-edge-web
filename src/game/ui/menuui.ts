@@ -711,6 +711,13 @@ export class MenuUi implements ScreenUi {
     return !!id;
   }
 
+  /** Stable clickable-region id for VR dwell target changes. */
+  gazeTarget(x: number, y: number, cssW: number, cssH: number): string | null {
+    const lx = x * (this.logical.w / Math.max(1, cssW));
+    const ly = y * (this.logical.h / Math.max(1, cssH));
+    return this.hit(lx, ly)?.id ?? null;
+  }
+
   wheel(deltaY: number): boolean {
     const overflow = this.contentBottom - (104 + 512);
     if (overflow <= 6) return false;

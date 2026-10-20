@@ -12,7 +12,8 @@
 // trigger (session "select") clicks immediately. The dwell ring is drawn by
 // GazeCursor. Dwell only arms after a deliberate move and disarms after every
 // click, so a freshly opened screen cannot auto-click whatever happens to sit
-// under the crosshair.
+// under the crosshair. Once armed, acquiring another clickable target resets
+// the 2 s timer; rotating inside the same target does not.
 
 import { mat4, vec3 } from './math';
 import type { ScreenUi } from './overlay';
@@ -21,13 +22,20 @@ import type { ScreenUi } from './overlay';
 export const PANEL_W = 1600;
 export const PANEL_H = 900;
 
-/** Dwell needed to select without a controller (ms). */
+/** Dwell needed to select without a controller: exactly two seconds. */
 export const DWELL_MS = 2000;
 /**
- * Moving further than this resets the dwell (UI pixels). ~1.2 degrees on the
- * panel, so ordinary head-tracking jitter does not starve the timer.
+ * Movement needed to arm the dwell after a fresh screen or a click (UI px).
+ * A small deliberate look is enough; the target-change rule below prevents
+ * that from becoming an accidental click when a screen first appears.
  */
-export const DWELL_SLOP_PX = 28;
+export const DWELL_ARM_PX = 20;
+/**
+ * Fallback reset distance for ScreenUis that do not expose gaze targets.
+ * 48 px is about 3.2 degrees on the 8-unit panel, up from the old ~1.9
+ * degree box, so normal head corrections do not restart the timer.
+ */
+export const DWELL_SLOP_PX = 48;
 
 const WORLD_UP: vec3 = vec3.fromValues(0, 1, 0);
 
@@ -193,6 +201,8 @@ export class GazePointer {
   private dwell = 0;
   private armed = false;
   private entered = false;
+  /** Clickable region currently under the gaze (null = empty UI area). */
+  private target: string | null = null;
 
   constructor(
     private ui: ScreenUi,
@@ -226,6 +236,7 @@ export class GazePointer {
         this.ui.pointer?.('move', -1, -1, this.w, this.h);
       }
       this.dwell = 0;
+      this.target = null;
       return false;
     }
     if (this.lastX < 0 || Math.abs(hit.x - this.lastX) > 0.5 || Math.abs(hit.y - this.lastY) > 0.5) {
@@ -233,6 +244,12 @@ export class GazePointer {
       this.lastY = hit.y;
       this.ui.pointer?.('move', hit.x, hit.y, this.w, this.h);
     }
+    // Target-aware UIs let the dwell continue while the head rotates inside
+    // the same button; only acquiring a different button restarts the timer.
+    // ScreenUis without this hook fall back to the movement radius below.
+    const target = this.ui.gazeTarget
+      ? this.ui.gazeTarget(hit.x, hit.y, this.w, this.h)
+      : undefined;
     // A fresh screen must not click whatever happens to sit under the
     // crosshair when it appears: dwell only arms after a deliberate move.
     if (!this.entered) {
@@ -241,18 +258,34 @@ export class GazePointer {
       this.anchorY = hit.y;
       this.armed = false;
       this.dwell = 0;
+      this.target = target ?? null;
       return false;
     }
     if (!this.armed) {
-      if (Math.abs(hit.x - this.anchorX) > DWELL_SLOP_PX || Math.abs(hit.y - this.anchorY) > DWELL_SLOP_PX) {
+      if (Math.abs(hit.x - this.anchorX) > DWELL_ARM_PX || Math.abs(hit.y - this.anchorY) > DWELL_ARM_PX) {
         this.armed = true;
         this.anchorX = hit.x;
         this.anchorY = hit.y;
         this.dwell = 0;
+        this.target = target ?? null;
       }
       return false;
     }
-    if (Math.abs(hit.x - this.anchorX) > DWELL_SLOP_PX || Math.abs(hit.y - this.anchorY) > DWELL_SLOP_PX) {
+    if (target !== undefined) {
+      if (target !== this.target) {
+        // The crosshair moved to another clickable region (or off one): this
+        // is a new pointing task, so start its 2 s dwell from zero.
+        this.target = target;
+        this.anchorX = hit.x;
+        this.anchorY = hit.y;
+        this.dwell = 0;
+        return false;
+      }
+      if (target === null) {
+        this.dwell = 0;
+        return false;
+      }
+    } else if (Math.abs(hit.x - this.anchorX) > DWELL_SLOP_PX || Math.abs(hit.y - this.anchorY) > DWELL_SLOP_PX) {
       this.anchorX = hit.x;
       this.anchorY = hit.y;
       this.dwell = 0;
@@ -286,6 +319,7 @@ export class GazePointer {
     this.dwell = 0;
     this.armed = false;
     this.entered = false;
+    this.target = null;
   }
 }
 

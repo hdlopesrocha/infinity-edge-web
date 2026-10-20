@@ -34,6 +34,12 @@ export interface ScreenUi {
    */
   pointer?(kind: 'move' | 'down' | 'up', x: number, y: number, cssW: number, cssH: number): boolean;
   /**
+   * Optional stable id of the clickable region under a gaze point, in the
+   * same coordinates as pointer(). VR dwell uses it to restart only when the
+   * crosshair acquires another target, instead of on every head movement.
+   */
+  gazeTarget?(x: number, y: number, cssW: number, cssH: number): string | null;
+  /**
    * Optional rectangle (canvas pixels, top-left origin) that the focus veil
    * must keep sharp. The world outside it is blurred/tinted. Flat menus use
    * their content panels; the VR path projects its own world-space panel.
