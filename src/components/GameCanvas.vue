@@ -12,7 +12,7 @@ import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
 import { store, syncOptionsFromRC } from '../game/store';
-import { calibrateVr, dragLook, setVr, vrLook } from '../game/vr';
+import { calibrateVr, dragLook, vrLook } from '../game/vr';
 import { enterXr, leaveXr, setXrMatchEndHandler } from '../game/xr';
 import { takeMatchResult } from '../game/matchresult';
 import { syncHud } from '../game/hud';
@@ -260,30 +260,19 @@ function onPointerUp(e: PointerEvent): void {
  * with the split view: pausing ends the session, resuming or starting a match
  * opens a new one. Both happen inside a user gesture, as requestSession needs.
  */
-/** Leave VR and go back to the menus: ends the session, drops the head-look
- *  offsets and clears the flag, so the screens that follow behave exactly
- *  like they do outside VR (no stuck, tilted camera). */
-function exitVr(): void {
-  if (!store.vr && !renderer?.xrActive) return;
-  leaveXr();
-  setVr(false);
-  if (renderer) {
-    renderer.camera.vrYaw = 0;
-    renderer.camera.vrPitch = 0;
-  }
-}
-
 /**
  * Consume a finished match exactly once and hand over to the result route.
  * The page loop and the WebXR session loop can both observe the finish, so the
  * shared takeMatchResult clears `instance.result` before navigating.
+ *
+ * VR deliberately survives the hand-over: the routed result screen is another
+ * ScreenUi, so the XR loop draws it on the same world-space panel as every
+ * other menu. Leaving the headset is the player's decision (the VR toggle or
+ * taking the headset off), never a side effect of the match ending.
  */
 function finishMatch(): boolean {
   const result = takeMatchResult(instance, store.route, store.levelKey);
   if (!result) return false;
-  // A finished match must not leave a head-tracked camera over the result
-  // screens: leave VR, then hand over to the menu route.
-  exitVr();
   store.result = result;
   // Replace: a finished match must not stay in the stack, or back from the
   // result screen would re-enter the game.
@@ -306,13 +295,12 @@ watch(() => store.paused, (p) => {
   else tryImmersive();
 });
 watch(() => store.interactive, (on) => {
-  if (!renderer) return;
-  if (on) {
-    if (store.vr && !store.paused) tryImmersive();
-  } else {
-    // The match is over (or the player left): VR ends with it.
-    exitVr();
-  }
+  if (!renderer || !on) return;
+  // Entering a match from a VR menu opens the session. Leaving a match (the
+  // result screen or any menu route) keeps it alive: those screens are drawn
+  // by the same XR UI panel, so VR only ends on an explicit toggle or when the
+  // headset ends the session.
+  if (store.vr && !store.paused) tryImmersive();
 });
 
 onMounted(() => {

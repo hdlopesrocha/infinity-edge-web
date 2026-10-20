@@ -230,9 +230,11 @@ export async function enterXr(
     // Background/menu scenes still orbit their camera; only real matches freeze.
     if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
     // The session loop, not the page rAF, produced this frame: hand a finished
-    // match to GameCanvas so it can leave VR and route to the results screen.
-    // Without this the world stays frozen on the last match frame with no
-    // accessible menu.
+    // match to GameCanvas so it can route to the results screen. The session
+    // stays live across that route: the result menu is a ScreenUi like every
+    // other menu, so the next frame draws it on the world-space panel. Without
+    // this the world stays frozen on the last match frame with no accessible
+    // menu.
     if (instance.result && store.route === 'game' && onMatchEnd) {
       onMatchEnd();
       return;
