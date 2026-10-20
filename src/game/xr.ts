@@ -58,8 +58,9 @@ function xr(): XrSystem | null {
 
 /** Menu panel placement in world units. */
 const PANEL_DISTANCE = 3;
-/** The non-interactive HUD is closer: half the menu distance. */
-const HUD_DISTANCE = PANEL_DISTANCE / 2;
+/** The non-interactive HUD is close to the camera: a quarter of the menu
+ *  distance (half of its previous 1.5-unit placement). */
+const HUD_DISTANCE = PANEL_DISTANCE / 4;
 const PANEL_WIDTH = 8;
 const PANEL_HEIGHT = PANEL_WIDTH * (PANEL_H / PANEL_W);
 
@@ -206,7 +207,8 @@ export async function enterXr(
     const inMenu = !store.interactive;
     // Background/menu scenes still orbit their camera; only real matches freeze.
     if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
-    // In-match HUD: a head-locked plane at half the menu distance. It is
+    // In-match HUD: a head-locked plane at a quarter of the menu distance
+    // (0.75 units), close to the camera. It is
     // painted ONCE with the cyclops (head-centre) view and drawn in each eye,
     // so the score/time/items stay fixed to the head rotation and the aim or
     // target markers keep their correct positions on that plane. The panel
