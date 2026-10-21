@@ -176,35 +176,99 @@ try {
   if (saved.enemyColor !== '#00ffff') throw new Error('save did not persist the enemy colour');
   await page.screenshot(join(SHOT_DIR, 'ui-e2e-menu.png'));
 
+  // The compact path replaces the old title bar and its earlier crumbs are
+  // real click targets, not decoration.
+  const path = await clickRegion(page, 'crumb:0', 'menu path');
+  await page.evaluate(`(async () => { ${HELPERS} await until(() => location.hash.startsWith('#/menu'), 20000); return true; })()`);
+  const pathHash = await page.evaluate('location.hash');
+  step('clickable menu path', { hit: path.hit, hash: pathHash });
+  if (!pathHash.startsWith('#/menu')) throw new Error('the path did not navigate to the main menu');
+
   // --------------------------------------------------------------- console
-  // (the in-match chrome must stay clickable with the DOM layer transparent)
-  await page.evaluate(`location.hash = '#/game/tt-easy-01'`);
-  const paused = await page.evaluate(`(async () => {
+  // START is a real briefing click, not a direct game URL: this is the flow
+  // that must keep working after every menu-layout change.
+  await page.evaluate(`location.hash = '#/briefing/tt-easy-01'`);
+  await page.evaluate(`(async () => {
     ${HELPERS}
+    await until(() => R().uiOverlay && R().uiOverlay.regions.some((r) => r.id === 'primary'), 30000);
+    await until(() => window.__ieStore.scoreboard, 30000);
+    pump(4);
+    return true;
+  })()`);
+  p = await clickRegion(page, 'primary', 'briefing START');
+  const started = await page.evaluate(`(async () => {
+    ${HELPERS}
+    await until(() => location.hash.includes('/game/'), 30000);
     await until(() => window.__ieGame && window.__ieGame.gameType !== 'BACK', 90000);
     pump(4);
-    const r = R();
+    return location.hash;
+  })()`);
+  step('briefing START click', { hit: p.hit, hash: started });
+  if (!started.includes('/game/')) throw new Error('briefing START did not open the match');
+
+  // Back in a live match opens the WebGL pause menu over the frozen game. It
+  // is a ScreenUi like every other menu, so the DOM has no pause panel at all.
+  const paused = await page.evaluate(`(() => {
+    const r = window.__ieRenderer;
     const rect = r.canvas.getBoundingClientRect();
     return { x: rect.left + 80, y: rect.top + 24 };
   })()`);
   await page.click(paused.x, paused.y);
-  await sleep(300);
-  const isPaused = await page.evaluate('window.__ieStore.paused');
-  step('in-match back button (pause overlay)', { paused: isPaused });
-  if (!isPaused) throw new Error('the in-match back button did not open the pause panel');
-  const canResume = await page.evaluate(`(async () => {
+  await page.evaluate(`(async () => {
     ${HELPERS}
-    const btn = [...document.querySelectorAll('.pause-btn')].find((b) => b.textContent.trim() === 'RESUME');
-    if (!btn) return false;
-    const rect = btn.getBoundingClientRect();
-    window.__uiProbe = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    await until(() => window.__ieStore.paused
+      && R().uiOverlay && R().uiOverlay.regions.some((r) => r.id === 'pause:resume'), 10000);
+    pump(2);
     return true;
   })()`);
-  if (canResume) {
-    const pt = await page.evaluate('window.__uiProbe');
-    await page.click(pt.x, pt.y);
-    await sleep(250);
-    step('pause RESUME click', { paused: await page.evaluate('window.__ieStore.paused') });
+  const pauseState = await page.evaluate(`({
+    paused: window.__ieStore.paused,
+    domPanel: !!document.querySelector('.pause-backdrop'),
+    touchLayer: !!document.querySelector('.touch-layer'),
+    cornerButtons: document.querySelectorAll('.corner-btn').length,
+    fullscreenButton: !!document.querySelector('.fs-btn'),
+    regions: window.__ieRenderer.uiOverlay.regions.map((r) => r.id),
+  })`);
+  step('in-match back button (WebGL pause menu)', pauseState);
+  if (!pauseState.paused) throw new Error('the in-match back button did not pause');
+  if (pauseState.domPanel) throw new Error('the DOM pause panel is still rendered');
+  if (pauseState.touchLayer || pauseState.cornerButtons || pauseState.fullscreenButton) {
+    throw new Error('game HUD/chrome is still rendered while paused');
+  }
+  if (!pauseState.regions.includes('pause:resume')) throw new Error('the pause menu has no resume icon');
+
+  // The pause options screen is the same WebGL Options UI, not a DOM form.
+  p = await clickRegion(page, 'pause:options', 'pause options');
+  await page.evaluate(`(async () => {
+    ${HELPERS}
+    await until(() => R().uiOverlay.regions.some((r) => r.id === 'row:username'), 10000);
+    pump(2);
+    return true;
+  })()`);
+  const pauseOptions = await page.evaluate(`({
+    paused: window.__ieStore.paused,
+    hash: location.hash,
+    region: window.__ieRenderer.uiOverlay.regions.some((r) => r.id === 'row:username'),
+  })`);
+  step('pause options screen', { hit: p.hit, ...pauseOptions });
+  if (!pauseOptions.paused || !pauseOptions.hash.includes('/game/') || !pauseOptions.region) {
+    throw new Error('pause OPTIONS did not open the WebGL settings in-place');
+  }
+  p = await clickRegion(page, 'back', 'pause options back');
+  await page.evaluate(`(async () => { ${HELPERS} await until(() => R().uiOverlay.regions.some((r) => r.id === 'pause:resume'), 10000); pump(2); return true; })()`);
+  step('pause options back', { hit: p.hit, paused: await page.evaluate('window.__ieStore.paused') });
+
+  p = await clickRegion(page, 'pause:resume', 'pause resume');
+  await page.evaluate(`(async () => { ${HELPERS} await until(() => !window.__ieStore.paused, 10000); pump(2); return true; })()`);
+  const resumed = await page.evaluate(`({
+    paused: window.__ieStore.paused,
+    touchLayer: !!document.querySelector('.touch-layer'),
+    cornerButtons: document.querySelectorAll('.corner-btn').length,
+  })`);
+  step('pause RESUME click', { hit: p.hit, ...resumed });
+  if (resumed.paused) throw new Error('RESUME did not resume the match');
+  if (!resumed.touchLayer || resumed.cornerButtons < 4) {
+    throw new Error('resuming did not restore the in-match HUD/chrome');
   }
 
   // -------------------------------------------------------------- the lobby
@@ -244,5 +308,7 @@ try {
   if (!args.includes('--keep')) {
     chrome.kill('SIGKILL');
     await sleep(200);
+    // CDP sockets can keep Node's event loop alive after Chrome is gone.
+    process.exit(process.exitCode ?? 0);
   }
 }

@@ -10,6 +10,18 @@
 import { reactive } from 'vue';
 import { store } from './store';
 
+/**
+ * How long a trigger/tap must be held to become the VR pause gesture.
+ * Shared by the immersive WebXR path (selectstart/selectend) and the
+ * sensor/drag fallback (pointerdown/up), so both feel the same.
+ */
+export const VR_LONG_PRESS_MS = 700;
+
+/** A press is a long press once it reaches the shared threshold. */
+export function isVrLongPress(durationMs: number): boolean {
+  return durationMs >= VR_LONG_PRESS_MS;
+}
+
 /** Degrees, relative to the last calibration. */
 let yaw = 0;
 let pitch = 0;

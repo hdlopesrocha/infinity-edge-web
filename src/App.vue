@@ -4,6 +4,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
 import GameCanvas from './components/GameCanvas.vue';
 import { isFullscreen, toggleFullscreen } from './game/ui/fullscreen';
+import { store } from './game/store';
 
 const route = useRoute();
 const fullscreen = ref(false);
@@ -25,7 +26,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', onFullscr
       <RouterView :key="route.fullPath" />
     </div>
     <button
-      v-if="route.name === 'game'"
+      v-if="route.name === 'game' && !store.paused"
       class="fs-btn"
       type="button"
       :aria-label="fullscreen ? 'exit fullscreen' : 'fullscreen'"

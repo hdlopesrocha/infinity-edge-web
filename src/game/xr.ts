@@ -19,14 +19,16 @@
 import { mat4, vec3 } from '../engine/math';
 import type { GameInstance } from './instance';
 import { store } from './store';
-import { applyTeamColors, hexToRgb } from './colors';
+import { applyTeamColors } from './colors';
+import { partyPlayerColor, updateParty } from './party';
 import { syncHud } from './hud';
 import { extractFrustum } from '../engine/frustum';
 import {
   GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, cyclopsView, hitPanel, panelBasis,
-  projectedPlaneRect, withClipRect,
+  planeFitScale, projectedPlaneRect, withClipRect,
 } from '../engine/vrpanel';
 import type { ScreenUi } from '../engine/overlay';
+import { isVrLongPress, VR_LONG_PRESS_MS } from './vr';
 
 // Minimal WebXR typings: TypeScript's dom lib omits them and this module uses
 // only this surface, so we declare it locally instead of adding a dependency.
@@ -45,7 +47,11 @@ interface XRSession {
   requestAnimationFrame(cb: (time: number, frame: XRFrame) => void): number;
   requestReferenceSpace(type: string): Promise<unknown>;
   updateRenderState(state: Record<string, unknown>): void;
-  addEventListener(type: string, cb: () => void): void;
+  // selectstart/selectend bracket the trigger press that ends in `select`.
+  addEventListener(
+    type: 'select' | 'selectstart' | 'selectend' | 'end',
+    cb: () => void,
+  ): void;
   end(): Promise<void>;
 }
 
@@ -59,21 +65,39 @@ function xr(): XrSystem | null {
   return n.xr ?? null;
 }
 
-/** Menu panel placement in world units. */
-const PANEL_DISTANCE = 3;
-/** The non-interactive HUD is close to the camera: a quarter of the menu
- *  distance (half of its previous 1.5-unit placement). */
-const HUD_DISTANCE = PANEL_DISTANCE / 4;
+/** Menu panel placement in world units.
+ *
+ * The panel used to sit 3 m ahead at 8 x 4.5 m. Both distance and world size
+ * are now halved, so it is physically closer (more comfortable stereo depth
+ * and less vergence) while projecting exactly the same rectangle in each eye.
+ * Keep these two constants in step: changing only one changes the on-screen
+ * size and the focus rectangle with it. */
+const PANEL_DISTANCE = 1.5;
+/** The non-interactive HUD keeps its earlier 0.75 m placement: it is already
+ *  closer than the menu and its own focus rectangle must not move. */
+const HUD_DISTANCE = 0.75;
 /**
  * The HUD keeps the world size it had at 1.5 units while sitting at half that
- * distance, so it subtends twice the angle: a 45-degree panel at 1.5 m becomes
- * a 79-degree panel at 0.75 m and is visibly larger in the headset. The
- * projection used to paint it is widened by the same factor, so the painted
- * aim/markers still land at the correct angle on the quieter, bigger panel.
+ * distance, so it subtends twice the angle. The projection used to paint it is
+ * widened by the same factor, so the painted aim/markers still land at the
+ * correct angle on the quieter, bigger panel. The result is then fitted to the
+ * eye's projection so the focus frame and the world veil remain visible around
+ * it instead of running off the sides of the headset view.
  */
 const HUD_FOV_SCALE = 2;
-const PANEL_WIDTH = 8;
+const PANEL_WIDTH = 4;
 const PANEL_HEIGHT = PANEL_WIDTH * (PANEL_H / PANEL_W);
+/** Fraction of the eye's half-view a panel may occupy. The remaining margin
+ *  is what makes the 2 px frame and the blurred veil outside it visible. */
+const PANEL_FIT = 0.86;
+/** XR has only a thin margin around the fitted panel; a shorter ramp reaches
+ *  full veil strength before the eye edge instead of fading out.
+ *
+ * This is a screen-space feather, not a world-space width. Halving the panel
+ * distance and its world size together leaves `projectedPlaneRect()` and thus
+ * the focus rectangle unchanged, so the blur ramp keeps exactly its previous
+ * screen calibration. */
+const XR_FOCUS_FEATHER = 0.05;
 
 let session: XRSession | null = null;
 let keepVrOnEnd = false;
@@ -109,9 +133,9 @@ export async function xrSupported(): Promise<boolean> {
 }
 
 /**
- * End the session. `keepVr` keeps the app in VR mode (split view with the DOM
- * UI) - that is what pressing pause does, since an immersive session hides the
- * page DOM and the pause panel belongs to the DOM HUD.
+ * End the session. `keepVr` keeps the app in VR mode (split view without a
+ * headset session). Pausing no longer ends the session: the pause menu is the
+ * same world-space ScreenUi panel as every other menu.
  */
 export function leaveXr(keepVr = false): void {
   const s = session;
@@ -136,6 +160,7 @@ export async function enterXr(
     uiOverlay: ScreenUi | null;
     focusRect: { x: number; y: number; w: number; h: number } | null;
     focusTint: [number, number, number];
+    focusFeather: number;
     drawHudTo: (fbo: WebGLFramebuffer | null, rect: { x: number; y: number; w: number; h: number }, hud: typeof store.hud | null) => void;
     drawFocusBorder: (
       fbo?: WebGLFramebuffer | null,
@@ -173,6 +198,9 @@ export async function enterXr(
   const gl = renderer.gl;
   await (gl as unknown as { makeXRCompatible(): Promise<void> }).makeXRCompatible();
   const layer = new XRWebGLLayer(s, gl);
+  // The fitted panels need a shorter veil ramp than the flat screens. Keep the
+  // page renderer's value and put it back when the session ends.
+  const previousFocusFeather = renderer.focusFeather;
   // The runtime builds each eye's projection matrix, so its depth range has to
   // be set from the same draw distance the settings use - otherwise XR renders
   // with the runtime's own far plane, not the player's.
@@ -200,6 +228,20 @@ export async function enterXr(
   let gazeUi: ScreenUi | null = null;
   let selectQueued = false;
   let calibrateQueued = false;
+  // Long-press pause: selectstart/selectend bracket the trigger press, and a
+  // hold past the shared threshold pauses a live match. The release then
+  // must not click the UI or re-centre the view behind the pause menu.
+  let pressStarted = 0;
+  let pressTimer = 0;
+  let pressActive = false;
+  let suppressRelease = false;
+  const clearPress = (): void => {
+    if (pressTimer) {
+      window.clearTimeout(pressTimer);
+      pressTimer = 0;
+    }
+    pressActive = false;
+  };
   const refSpace = await s.requestReferenceSpace('local');
   const head = mat4.create();
   const chase = mat4.create();
@@ -212,16 +254,30 @@ export async function enterXr(
     last = time;
     // The session's own cadence (the page rAF is paused/throttled in XR).
     renderer.sampleFrame(dt);
+    updateParty(store.options, dt);
+    // The world-space menu/lobby/room follows the same live accent as the HUD.
+    renderer.uiOverlay?.syncAccent?.(performance.now());
     const instance = getInstance();
-    if (instance) applyTeamColors(instance, store.options);
+    if (instance) applyTeamColors(instance, store.options, partyPlayerColor(store.options));
     // Keep the focus veil on the chosen player colour even when the page rAF
     // is throttled by the headset.
-    const tint = instance?.selectedObject?.team?.color ?? hexToRgb(store.options.playerColor);
+    const tint = instance?.selectedObject?.team?.color ?? partyPlayerColor(store.options);
     renderer.focusTint[0] = tint[0];
     renderer.focusTint[1] = tint[1];
     renderer.focusTint[2] = tint[2];
     const pose = frame.getViewerPose(refSpace);
     if (!instance || !pose) return;
+    const projections = pose.views.map((v) => v.projectionMatrix);
+    // Fit the quad inside each eye instead of letting its side edges cross the
+    // viewport. At the old fixed 8x4.5 units/3 m the panel subtended ~106
+    // degrees, so on a typical headset its projected rectangle was wider than
+    // the eye: the side frame strokes fell off-screen and almost the whole
+    // view was "inside", leaving no outside area to blur.
+    const panelScale = planeFitScale(
+      projections, PANEL_WIDTH, PANEL_HEIGHT, PANEL_DISTANCE, PANEL_FIT,
+    );
+    const panelW = PANEL_WIDTH * panelScale;
+    const panelH = PANEL_HEIGHT * panelScale;
     // Re-centering: the head yaw that maps to "forward" is the one recorded
     // when VR starts, or the one recorded on a tap/trigger in a match (menus
     // use select for clicks instead).
@@ -251,13 +307,16 @@ export async function enterXr(
       onMatchEnd();
       return;
     }
-    // In-match HUD: a head-locked plane at a quarter of the menu distance
-    // (0.75 units), close to the camera. It is painted ONCE with the cyclops
-    // (head-centre) view and drawn in each eye, so the score/time/items stay
-    // fixed to the head rotation and the aim/markers keep their positions.
-    // At half distance it keeps its old world size, so it is twice as large
-    // on screen; the projection is widened by the same amount to match.
-    const inMatch = store.interactive && instance.gameType !== 'BACK';
+    // In-match HUD: a head-locked plane at 0.75 m, close to the camera. It is
+    // painted ONCE with the cyclops (head-centre) view and drawn in each eye,
+    // so the score/time/items stay fixed to the head rotation and the
+    // aim/markers keep their positions. The menu panel moved closer to 1.5 m,
+    // but the HUD stays at its previous (already close) distance so its screen
+    // rectangle is unchanged. Its painted projection is widened 2x so the
+    // texture still covers that rectangle.
+    // A paused match is a menu frame: the pause ScreenUi panel is the only
+    // overlay, and the head-locked HUD is rebuilt only after resuming.
+    const inMatch = store.interactive && instance.gameType !== 'BACK' && !store.paused;
     // Ship-up chase base for the scene and the menu panel; the head pose is
     // composed per eye, so head rotation follows the spaceship's rotation.
     renderer.camera.chaseView(chase);
@@ -282,7 +341,15 @@ export async function enterXr(
 
       // Project the snapshot through that head view with a widened
       // perspective: the plane fills the same angles as the painted texture.
+      // Fit the resulting quad to the eye as well, and paint the HUD with the
+      // fitted FOV so its markers still line up with the world.
       const hudFov = 2 * Math.atan(Math.tan(cam.fov / 2) * HUD_FOV_SCALE);
+      const hudBaseHalfH = Math.tan(hudFov / 2) * HUD_DISTANCE;
+      const hudBaseHalfW = hudBaseHalfH * (hudW / hudH);
+      const hudScale = planeFitScale(
+        projections, hudBaseHalfW * 2, hudBaseHalfH * 2, HUD_DISTANCE, PANEL_FIT,
+      );
+      const hudFittedFov = 2 * Math.atan(Math.tan(hudFov / 2) * hudScale);
       const basePos = vec3.clone(cam.position);
       const baseLook = vec3.clone(cam.lookAt);
       const baseUp = vec3.clone(cam.up);
@@ -291,14 +358,14 @@ export async function enterXr(
       vec3.copy(cam.direction, hudFwd);
       vec3.copy(cam.side, hudRight);
       mat4.copy(cam.view, hudView);
-      mat4.perspective(cam.proj, hudFov, hudW / hudH, cam.near, cam.far);
+      mat4.perspective(cam.proj, hudFittedFov, hudW / hudH, cam.near, cam.far);
       mat4.multiply(cam.viewProj, cam.proj, cam.view);
       extractFrustum(cam.viewProj, renderer.frustum);
       instance.canvasW = hudW;
       instance.canvasH = hudH;
       syncHud(instance);
       renderer.prepareHud(store.hud);
-      hudHalfH = Math.tan(hudFov / 2) * HUD_DISTANCE;
+      hudHalfH = Math.tan(hudFittedFov / 2) * HUD_DISTANCE;
       hudHalfW = hudHalfH * (hudW / hudH);
       hudBoard = {
         center: vec3.scaleAndAdd(vec3.create(), vec3.fromValues(hx, hy, hz), hudFwd, HUD_DISTANCE),
@@ -359,7 +426,7 @@ export async function enterXr(
       const panelFocus = ui && panel
         ? projectedPlaneRect(
           eyeView, eyeProj, basis.center, basis.right, basis.up,
-          PANEL_WIDTH * 0.5, PANEL_HEIGHT * 0.5,
+          panelW * 0.5, panelH * 0.5,
         )
         : null;
       const hudFocus = hudBoard
@@ -367,7 +434,9 @@ export async function enterXr(
           eyeView, eyeProj, hudBoard.center, hudBoard.right, hudBoard.up, hudHalfW, hudHalfH,
         )
         : null;
-      renderer.focusRect = panelFocus ?? hudFocus ?? null;
+      const focus = panelFocus ?? hudFocus ?? null;
+      renderer.focusRect = focus;
+      renderer.focusFeather = focus ? XR_FOCUS_FEATHER : previousFocusFeather;
       // The per-eye UI rect is applied where the pixels land (see below), so
       // the composite itself carries no UI.
       renderer.beginFrame();   // scene target + frustum for this eye
@@ -405,7 +474,7 @@ export async function enterXr(
           mat4.invert(inv, cam.view);
           const origin = vec3.fromValues(inv[12], inv[13], inv[14]);
           const ray = vec3.normalize(vec3.create(), vec3.fromValues(-eyeView[2], -eyeView[6], -eyeView[10]));
-          const hit = hitPanel(origin, ray, basis, PANEL_WIDTH, PANEL_HEIGHT, board.width, board.height);
+          const hit = hitPanel(origin, ray, basis, panelW, panelH, board.width, board.height);
           if (vi === 0) {
             // One pointer/dwell state for the UI; the left eye aims it.
             // Options can change while the panel is open, so refresh live.
@@ -418,7 +487,7 @@ export async function enterXr(
             // A hover change bumps the UI version: repaint before drawing.
             board.update(ui);
           }
-          board.draw(layer.framebuffer, eyeView, eyeProj, basis, PANEL_WIDTH, PANEL_HEIGHT);
+          board.draw(layer.framebuffer, eyeView, eyeProj, basis, panelW, panelH);
           // Reticle at this eye's own hit (parallax-correct); a fixed distance
           // along the gaze when the panel does not fill that direction.
           const point = hit
@@ -454,20 +523,52 @@ export async function enterXr(
   };
   s.requestAnimationFrame(loop);
   // A tap/trigger inside the session clicks the item under the crosshair; in a
-  // match (no UI overlay) it re-centres the view instead.
+  // match (no UI overlay) it re-centres the view instead. Holding it pauses.
+  s.addEventListener('selectstart', () => {
+    if (pressActive) return; // one timer per press, even with several sources
+    pressActive = true;
+    pressStarted = performance.now();
+    suppressRelease = false;
+    pressTimer = window.setTimeout(() => {
+      pressTimer = 0;
+      if (!pressActive || !session) return;
+      if (!isVrLongPress(performance.now() - pressStarted)) return;
+      // Only a live match pauses: inside the menus a hold is still a click.
+      if (!store.interactive || store.paused) return;
+      suppressRelease = true;
+      // Drop anything queued by an earlier press so the session ends cleanly.
+      selectQueued = false;
+      calibrateQueued = false;
+      // GameCanvas swaps renderer.uiOverlay to the WebGL pause menu; the
+      // immersive session stays live and draws that panel in both eyes.
+      store.paused = true;
+    }, VR_LONG_PRESS_MS);
+  });
+  s.addEventListener('selectend', () => {
+    clearPress();
+  });
   s.addEventListener('select', () => {
-    // Every trigger/tap recalibrates the view, in menus and in a match alike.
-    // The recalibration is applied after the UI click in the next frame, so
-    // the crosshair still activates what it was pointing at.
+    if (suppressRelease) {
+      suppressRelease = false;
+      clearPress();
+      return;
+    }
+    clearPress();
+    // Every short trigger/tap recalibrates the view, in menus and in a match
+    // alike. The recalibration is applied after the UI click in the next
+    // frame, so the crosshair still activates what it was pointing at.
     calibrateQueued = true;
     if (renderer.uiOverlay) selectQueued = true;
   });
   s.addEventListener('end', () => {
+    clearPress();
+    suppressRelease = false;
     panel?.dispose();
     cursor?.dispose();
     session = null;
     renderer.xrActive = false;
     renderer.presentBounds = null;
+    renderer.focusFeather = previousFocusFeather;
     baselineYawAbs = 0;
     latestHeadYawAbs = 0;
     initialized = false;

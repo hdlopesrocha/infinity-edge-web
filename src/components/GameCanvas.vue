@@ -12,14 +12,18 @@ import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
 import { store, syncOptionsFromRC } from '../game/store';
-import { applyTeamColors, hexToRgb } from '../game/colors';
-import { calibrateVr, dragLook, vrLook } from '../game/vr';
-import { enterXr, leaveXr, setXrMatchEndHandler } from '../game/xr';
+import { applyTeamColors } from '../game/colors';
+import { partyPlayerColor, updateParty } from '../game/party';
+import { cssColor, readableAccent } from '../game/ui/theme';
+import { calibrateVr, dragLook, isVrLongPress, vrLook, VR_LONG_PRESS_MS } from '../game/vr';
+import { enterXr, setXrMatchEndHandler } from '../game/xr';
 import { takeMatchResult } from '../game/matchresult';
 import { syncHud } from '../game/hud';
 import { HUD_PADDING } from '../engine/hud3d';
 import { audio } from '../game/audio';
 import { loadWordmarkFont } from '../game/fonts';
+import { PauseMenuUi } from '../game/ui/pauseui';
+import { goBack } from '../game/nav';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const glError = ref('');
@@ -28,6 +32,7 @@ const router = useRouter();
 let renderer: Renderer | null = null;
 let rc: RC | null = null;
 let instance: GameInstance | null = null;
+let pauseMenu: PauseMenuUi | null = null;
 let building = '';
 let buildGen = 0;
 let sceneTimer = 0;
@@ -111,7 +116,8 @@ async function rebuild(): Promise<void> {
     }
     // Colour preferences are presentation-only: apply them before a browser
     // host publishes its Scene so guests inherit the host's chosen colours.
-    applyTeamColors(gi, store.options);
+    updateParty(store.options, 16);
+    applyTeamColors(gi, store.options, partyPlayerColor(store.options));
     // A room this browser created and is now opening: become its host.
     if (!(gi instanceof NetGame) && hostIntent) mp.attachHost(gi);
     // Stale-build drop: a newer rebuild started while we were loading.
@@ -144,16 +150,22 @@ function clearHeldInputs(): void {
 
 function onWindowBlur(): void {
   clearHeldInputs();
+  resetVrPress();
 }
 
 function onVisibilityChange(): void {
-  if (document.hidden) clearHeldInputs();
+  if (document.hidden) {
+    clearHeldInputs();
+    resetVrPress();
+  }
 }
 
 /** In VR a tap on the scene re-centres the view on the current heading. */
-/** Stage 5 gets the live HUD in matches; menus keep the DOM UI. */
+/** Stage 5 gets the live HUD in matches. While paused the pause menu is the
+ *  only overlay: score, life, markers and touch controls stay disabled until
+ *  the player resumes. */
 function uiHud(): typeof store.hud | null {
-  return instance && instance.gameType !== 'BACK' ? store.hud : null;
+  return instance && instance.gameType !== 'BACK' && !store.paused ? store.hud : null;
 }
 
 /**
@@ -170,49 +182,157 @@ function setHudFocus(cssW: number, cssH: number): void {
 }
 
 /** The player's chosen colour, remembered across result/menu routes. */
+let lastAccentCss = '';
+function syncAccentCss(color: readonly [number, number, number]): void {
+  const accent = cssColor(color);
+  const text = cssColor(readableAccent([color[0], color[1], color[2]]));
+  const key = accent + '|' + text;
+  if (key === lastAccentCss) return;
+  lastAccentCss = key;
+  const root = document.documentElement.style;
+  root.setProperty('--accent', accent);
+  root.setProperty('--accent-text', text);
+  root.setProperty('--accent-soft', cssColor(color, 0.35));
+}
+
 function syncFocusTint(): void {
   if (!renderer) return;
   const color = instance?.selectedObject?.team?.color
-    ?? hexToRgb(store.options.playerColor);
+    ?? partyPlayerColor(store.options);
   renderer.focusTint[0] = color[0];
   renderer.focusTint[1] = color[1];
   renderer.focusTint[2] = color[2];
+  // DOM chrome (corner/back and fullscreen buttons, timer bars, native inputs)
+  // follows the same player colour as the GL menus and HUD.
+  syncAccentCss(color);
 }
 
 function onVrTap(): void {
   if (store.vr) calibrateVr();
 }
 
-/** VR fallback: dragging across the scene looks around (touch or mouse). */
+/**
+ * VR fallback: dragging across the scene looks around (touch or mouse).
+ * Holding still for VR_LONG_PRESS_MS in a live match pauses instead. The pause
+ * menu is the same WebGL ScreenUi panel as every other menu, so an immersive
+ * session can stay live while it is open.
+ */
 let dragging = false;
 let lastX = 0;
 let lastY = 0;
+let vrPressId: number | null = null;
+let vrPressX = 0;
+let vrPressY = 0;
+let vrPressStarted = 0;
+let vrPressMoved = false;
+let vrLongPress = false;
+let vrPressTimer = 0;
+/** Movement (CSS px) that makes the press a drag instead of a tap/hold. */
+const VR_TAP_SLOP = 10;
 const VR_CONTROL_SELECTOR = '.stick-back, .stick-knob, .accel-knob, .accel-bar, .tbtn, button';
+
+function clearVrPressTimer(): void {
+  if (vrPressTimer) {
+    window.clearTimeout(vrPressTimer);
+    vrPressTimer = 0;
+  }
+}
+
+/** Drop the in-flight press without calibrating (cancel/blur/unmount). */
+function resetVrPress(): void {
+  clearVrPressTimer();
+  vrPressId = null;
+  vrPressMoved = false;
+  vrLongPress = false;
+  dragging = false;
+}
+
 function onVrDown(e: PointerEvent): void {
-  if (!store.vr) return;
+  if (!store.vr || store.paused) return;
   // Controls keep their own drags (stick, accel knob, HUD buttons); anywhere
   // else on the scene the drag looks around.
   const t = e.target as HTMLElement | null;
   if (t && t.closest && t.closest(VR_CONTROL_SELECTOR)) return;
-  // Any click on the scene re-centres the view on the current heading.
-  calibrateVr();
+  // One press owns the long-press timer: a second finger cannot add another.
+  if (vrPressId !== null) return;
+  vrPressId = e.pointerId;
+  vrPressX = e.clientX;
+  vrPressY = e.clientY;
+  vrPressStarted = performance.now();
+  vrPressMoved = false;
+  vrLongPress = false;
+  // Drag-look starts immediately so normal drags stay responsive; moving past
+  // the tap slop below cancels the long-press timer.
   dragging = true;
   lastX = e.clientX;
   lastY = e.clientY;
+  if (!store.interactive || store.paused) return;
+  vrPressTimer = window.setTimeout(() => {
+    vrPressTimer = 0;
+    if (vrPressId !== e.pointerId || vrPressMoved || vrLongPress) return;
+    if (!isVrLongPress(performance.now() - vrPressStarted)) return;
+    if (!store.vr || !store.interactive || store.paused) return;
+    vrLongPress = true;
+    // The hold is the pause gesture: stop looking and do not re-centre on
+    // release. store.paused opens the WebGL pause menu.
+    dragging = false;
+    store.paused = true;
+  }, VR_LONG_PRESS_MS);
 }
+
 function onVrMove(e: PointerEvent): void {
-  if (!store.vr || !dragging) return;
+  if (!store.vr || store.paused || !dragging || e.pointerId !== vrPressId) return;
+  if (!vrLongPress) {
+    const dx = e.clientX - vrPressX;
+    const dy = e.clientY - vrPressY;
+    if (dx * dx + dy * dy > VR_TAP_SLOP * VR_TAP_SLOP) {
+      // A real drag must not pause when it happens to last past the threshold.
+      vrPressMoved = true;
+      clearVrPressTimer();
+    }
+  }
   dragLook(e.clientX - lastX, e.clientY - lastY);
   lastX = e.clientX;
   lastY = e.clientY;
 }
-function onVrUp(): void {
-  dragging = false;
+
+function onVrUp(e: PointerEvent): void {
+  if (vrPressId === null || e.pointerId !== vrPressId) return;
+  if (store.paused) {
+    resetVrPress();
+    return;
+  }
+  // A short, stationary press is still the tap that re-centres the view; a
+  // long press already paused, so its release must do nothing else.
+  const tap = e.type === 'pointerup' && !vrLongPress && !vrPressMoved;
+  resetVrPress();
+  if (tap && store.vr) calibrateVr();
 }
 
 function onKeyDown(e: KeyboardEvent): void {
   audio.unlock();
+  // The pause screen owns its keys (Esc resumes, options edit text, Enter
+  // activates the primary action) and must not leak them into the flight
+  // controls or the history.
+  if (store.paused) {
+    if (pauseMenu?.key(e)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    } else if (e.code === 'Backspace') {
+      // Backspace must not fall through to browser history while paused.
+      e.preventDefault();
+    }
+    return;
+  }
   if (e.code === 'Backspace' && (e.target as HTMLElement)?.tagName !== 'INPUT') {
+    if (store.interactive) {
+      // In a match, the browser back key is the pause/back gesture, just like
+      // Escape and the on-screen back button. Leaving is an explicit action in
+      // the pause menu.
+      e.preventDefault();
+      store.paused = true;
+      return;
+    }
     router.back();
     return;
   }
@@ -233,9 +353,23 @@ function canvasPos(e: PointerEvent): { x: number; y: number } {
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
+/** Feed a pointer event to the WebGL pause screen (canvas CSS coordinates). */
+function pausePointer(kind: 'move' | 'down' | 'up', e: PointerEvent): boolean {
+  if (!store.paused || !pauseMenu || !canvasRef.value) return false;
+  const r = canvasRef.value.getBoundingClientRect();
+  pauseMenu.ui.pointer(kind, e.clientX - r.left, e.clientY - r.top, r.width, r.height);
+  return true;
+}
+
 function onPointerDown(e: PointerEvent): void {
   audio.unlock();
   rc?.startMusic();
+  if (store.paused) {
+    if (pausePointer('down', e)) {
+      canvasRef.value?.setPointerCapture?.(e.pointerId);
+    }
+    return;
+  }
   if (!instance || !canvasRef.value) return;
   const p = canvasPos(e);
   if (renderer?.uiOverlay) {
@@ -249,6 +383,10 @@ function onPointerDown(e: PointerEvent): void {
 }
 
 function onPointerMove(e: PointerEvent): void {
+  if (store.paused) {
+    pausePointer('move', e);
+    return;
+  }
   if (!instance || !renderer) return;
   const p = canvasPos(e);
   if (instance.control.touches.has(e.pointerId)) {
@@ -257,14 +395,13 @@ function onPointerMove(e: PointerEvent): void {
 }
 
 function onPointerUp(e: PointerEvent): void {
+  if (pausePointer('up', e)) {
+    instance?.control.touches.delete(e.pointerId);
+    return;
+  }
   instance?.control.touches.delete(e.pointerId);
 }
 
-/**
- * Immersive sessions hide the page DOM (menus, HUD, score), so menus take over
- * with the split view: pausing ends the session, resuming or starting a match
- * opens a new one. Both happen inside a user gesture, as requestSession needs.
- */
 /**
  * Consume a finished match exactly once and hand over to the result route.
  * The page loop and the WebXR session loop can both observe the finish, so the
@@ -290,17 +427,69 @@ function tryImmersive(): void {
   if (!store.vr || !store.interactive || store.paused || renderer.xrActive) return;
   void enterXr(renderer, () => instance, () => undefined);
 }
+
+/** Leave the match from the WebGL pause menu. */
+function leaveMatch(): void {
+  store.paused = false;
+  closePauseMenu();
+  goBack(router, '/briefing/' + String(store.levelKey));
+}
+
+function openPauseMenu(): void {
+  if (!renderer) return;
+  // Do not let a held key/touch from the moment of pausing keep firing or
+  // thrusting when the match resumes. Drop a queued START edge too: it must
+  // not immediately toggle the newly opened pause menu shut.
+  clearHeldInputs();
+  if (instance) instance.control.pauseRequested = false;
+  if (!pauseMenu) {
+    pauseMenu = new PauseMenuUi({
+      resume: () => { store.paused = false; },
+      leave: leaveMatch,
+    });
+  }
+  pauseMenu.open();
+  renderer.uiOverlay = pauseMenu.ui;
+  // The pause screen supplies its own full-plane focus rectangle; a HUD inset
+  // from the live match must not win.
+  renderer.focusRect = null;
+}
+
+function closePauseMenu(): void {
+  if (!pauseMenu) return;
+  const menu = pauseMenu;
+  menu.close();
+  if (renderer?.uiOverlay === menu.ui) renderer.uiOverlay = null;
+}
+
+/** The simulation is frozen while paused, so poll the pad separately: START
+ *  must still be able to resume from either flat or split-view VR. */
+function pollPausedGamepad(): void {
+  if (!instance) return;
+  instance.control.update(instance.canvasW, instance.canvasH);
+  if (!instance.control.pauseRequested) return;
+  instance.control.pauseRequested = false;
+  store.paused = false;
+}
+
 watch(() => store.paused, (p) => {
-  if (!renderer || !store.vr) return;
-  if (!store.interactive) return;
-  // There is no separate VR pause menu: the pause panel belongs to the new
-  // (DOM) HUD. Ending the immersive session makes it reachable; VR mode stays
-  // on and resuming re-enters the session, exactly like the menus do.
-  if (p) leaveXr(true);
-  else tryImmersive();
+  if (!renderer) return;
+  if (p && store.interactive) openPauseMenu();
+  else closePauseMenu();
+  // A real immersive session stays alive while paused: the pause menu is the
+  // same world-space ScreenUi panel as every other menu. On resume, retry
+  // immersive entry when VR mode is on but no headset session is open yet.
+  if (store.vr && store.interactive && !p) tryImmersive();
 });
 watch(() => store.interactive, (on) => {
-  if (!renderer || !on) return;
+  if (!renderer) return;
+  if (!on) {
+    // Leaving the match (browser back, result route) must not leave the pause
+    // overlay attached to a menu screen.
+    closePauseMenu();
+    if (store.paused) store.paused = false;
+    return;
+  }
   // Entering a match from a VR menu opens the session. Leaving a match (the
   // result screen or any menu route) keeps it alive: those screens are drawn
   // by the same XR UI panel, so VR only ends on an explicit toggle or when the
@@ -363,9 +552,14 @@ onMounted(() => {
       // Result observed on the previous frame (or by the XR session loop):
       // hand over before drawing another match frame.
       if (finishMatch()) return;
+      // Music rhythm drives party colours; update before teams are recoloured.
+      updateParty(rc.options, dtMs);
+      // Menus/lobby/room follow that live hue too (repainting only when it
+      // actually moved, at a modest rate).
+      renderer.uiOverlay?.syncAccent?.(performance.now());
       // Colour options apply live to the current instance (including paused
       // frames, menu backgrounds and NetGame's late-arriving player ship).
-      applyTeamColors(instance, store.options);
+      applyTeamColors(instance, store.options, partyPlayerColor(rc.options));
       // The focus veil follows the live ship's team colour; menus keep the
       // chosen player colour and use their ScreenUi rectangle instead of a HUD
       // inset.
@@ -447,14 +641,22 @@ onMounted(() => {
       renderer.camera.vrYaw = look.tracking ? look.yaw : 0;
       renderer.camera.vrPitch = look.tracking ? look.pitch : 0;
       renderer.camera.vrRoll = look.tracking ? look.roll : 0;
+      // The gamepad START button toggles pause and can also resume it, in the
+      // flat view and in the split-view VR fallback.
+      if (instance.control.pauseRequested) {
+        instance.control.pauseRequested = false;
+        store.paused = !store.paused;
+      }
       // Stereo VR (no WebXR headset): two eyes side by side. Each half is a
       // full render with the camera shifted along its right axis, which is
       // what makes the depth read in a phone viewer.
       if (store.vr && !renderer.xrActive) {
         instance.canvasW = canvasRef.value?.clientWidth || 1280;
         instance.canvasH = canvasRef.value?.clientHeight || 720;
-        // While paused only the simulation stops; the eyes keep drawing so the
-        // background, the world and the HUD stay visible in the headset.
+        // While paused only the simulation stops; the eyes keep drawing the
+        // frozen world, while the pause menu takes over the UI layer. The HUD
+        // returns only after the player resumes.
+        if (store.paused) pollPausedGamepad();
         if (!store.paused) instance.update(dtMs);
         // The match can finish in this update; leave VR and show the result
         // menu instead of drawing and looping on a frozen final frame.
@@ -493,9 +695,10 @@ onMounted(() => {
           instance.canvasW = eyeCssW;
           instance.canvasH = fullH;
           syncHud(instance);
-          // In a match the HUD owns the eye's padded inset. Menus keep the
-          // ScreenUi content island (rendered per eye) instead.
-          if (store.interactive) setHudFocus(eyeCssW, fullH);
+          // In a live match the HUD owns the eye's padded inset. A paused
+          // match, like the menus, leaves the whole screen to the ScreenUi
+          // rectangle instead.
+          if (store.interactive && !store.paused) setHudFocus(eyeCssW, fullH);
           else renderer.focusRect = null;
           renderer.endFrame(null);
           if (renderer.renderOptions.zoom > 0) {
@@ -504,6 +707,10 @@ onMounted(() => {
           // HUD last, straight into this eye's rectangle: score, clock,
           // respawn timer, aim, life, markers - one copy per eye.
           renderer.drawHudTo(null, { x: eye * half, y: 0, w: half, h }, uiHud());
+          // The composite paints the frame under the UI; repaint its inside
+          // strips after the HUD/screen overlay so an opaque HUD or menu pixel
+          // cannot hide it in the split-screen VR path either.
+          renderer.drawFocusBorder(null, { x: eye * half, y: 0, w: half, h });
           gl.disable(gl.SCISSOR_TEST);
         }
         renderer.viewport = null;
@@ -526,19 +733,16 @@ onMounted(() => {
       }
       if (store.paused) {
         // Paused: the world stands still but the frame keeps drawing, so the
-        // pause panel can show live option changes behind it.
+        // WebGL pause menu sits over the frozen match. Only the ScreenUi
+        // overlay is drawn - no HUD, life, markers or touch controls.
         instance.canvasW = canvasRef.value?.clientWidth || 1280;
         instance.canvasH = canvasRef.value?.clientHeight || 720;
-        setHudFocus(instance.canvasW, instance.canvasH);
+        pollPausedGamepad();
+        renderer.focusRect = null;
         renderer.beginFrame();
         instance.draw();
-        renderer.endFrame(uiHud());
-        syncHud(instance);
+        renderer.endFrame(null);
         return;
-      }
-      if (instance.control.pauseRequested) {
-        instance.control.pauseRequested = false;
-        store.paused = !store.paused;
       }
       mp.preTick(dtMs);
       instance.update(dtMs);
@@ -585,8 +789,13 @@ onMounted(() => {
 onBeforeUnmount(() => {
   setXrMatchEndHandler(null);
   window.clearInterval(sceneTimer);
+  resetVrPress();
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
+  window.removeEventListener('pointerdown', onVrDown, true);
+  window.removeEventListener('pointerup', onVrUp, true);
+  window.removeEventListener('pointermove', onVrMove, true);
+  window.removeEventListener('pointercancel', onVrUp, true);
   window.removeEventListener('blur', onWindowBlur);
   document.removeEventListener('visibilitychange', onVisibilityChange);
   mp.endSession();
