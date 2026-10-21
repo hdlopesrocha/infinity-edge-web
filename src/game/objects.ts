@@ -14,6 +14,7 @@ import type { Team } from './team';
 import type { GameInstance } from './instance';
 import { simHooks } from './mp/bridge';
 import type { RC } from './resources';
+import { party, partyShiftColor } from './party';
 
 export interface Command {
   execute(): void;
@@ -395,6 +396,25 @@ export class SpaceShip extends SpaceObject {
     gi.map.insertObject(this);
   }
 
+  override solidDraw(d: DrawCtx): void {
+    const L = this.lod(d, 'solid');
+    if (!L) return;
+    // Party mode tints the player's hull toward the current music hue; enemy
+    // ships and addons keep their normal materials.
+    const tint: [number, number, number] = [1, 1, 1];
+    if (this.isPlayer && party.active) {
+      const k = 0.62 + 0.18 * party.energy;
+      tint[0] = 1 + (this.team.color[0] - 1) * k;
+      tint[1] = 1 + (this.team.color[1] - 1) * k;
+      tint[2] = 1 + (this.team.color[2] - 1) * k;
+    }
+    d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
+      alpha: this.alpha * L.alpha, emissive: this.color, light: true,
+      tint, prevWorld: this.prevMatrix(),
+    }, L.gpu === this.model.solid[0] ? this.model.texes : null);
+    d.rc.renderer.trackDraws(L.gpu.meshes.length);
+  }
+
   override canLaunchBullet(): boolean {
     return this.launchSpan >= 200;
   }
@@ -495,10 +515,14 @@ export class SpaceShip extends SpaceObject {
     );
     const drift = vec3.create();
     vec3.scale(drift, this.vel, 0.05);
-    gi.map.spawnSmoke(pos, drift, {
+    const puff = gi.map.spawnSmoke(pos, drift, {
       size0: 0.35, size1: 2.3 + 1.5 * speed, life: 1600,
       alpha: clamp(speed, 0, 1), turbulence: 0.6,
     });
+    // Every ship's plume takes its own team colour: the player's is live (party
+    // mode rotates and flashes it), while enemy smoke stays the static enemy
+    // colour. Explosion smoke elsewhere remains neutral.
+    puff.tint = [...this.team.color] as [number, number, number];
   }
 
   alphaDraw(d: DrawCtx): void {
@@ -707,6 +731,17 @@ export class Asteroid extends SpaceObject {
     quat.normalize(this.rot, this.rot);
     this.step(dtMs, () => gi.map.refreshObject(this));
     this.update();
+  }
+
+  override solidDraw(d: DrawCtx): void {
+    const L = this.lod(d, 'solid');
+    if (!L) return;
+    d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
+      alpha: this.alpha * L.alpha, emissive: this.color, light: true,
+      hue: party.active ? party.shownHue * 360 : 0,
+      prevWorld: this.prevMatrix(),
+    });
+    d.rc.renderer.trackDraws(L.gpu.meshes.length);
   }
 
   destroyObject(gi: GameInstance): void {
@@ -1019,8 +1054,9 @@ export class Bullet extends SpaceObject {
   solidDraw(d: DrawCtx): void {
     const L = this.lod(d, 'solid');
     if (!L) return;
+    const emissive = partyShiftColor([1, 0.55, 0]);
     d.draw.drawModel(L.gpu, this.model.tex, this.getMatrix(), d.view, d.proj, d.camPos, {
-      alpha: this.alpha * L.alpha, emissive: [1, 0.55, 0], light: true, prevWorld: this.prevMatrix(),
+      alpha: this.alpha * L.alpha, emissive, light: true, prevWorld: this.prevMatrix(),
     });
     d.rc.renderer.trackDraws(L.gpu.meshes.length);
   }
@@ -1036,7 +1072,7 @@ export class Bullet extends SpaceObject {
     mat4.fromScaling(sc, vec3.fromValues(s, s, s));
     mat4.multiply(m, m, sc);
     mat4.multiply(mPrev, mPrev, sc);
-    d.draw.drawGlow(m, mPrev, d.view, d.proj, d.camPos, [1, 1, 0.35], 0.85);
+    d.draw.drawGlow(m, mPrev, d.view, d.proj, d.camPos, partyShiftColor([1, 1, 0.35]), 0.85);
     d.rc.renderer.trackDraws();
   }
 }
@@ -1095,7 +1131,7 @@ export class HomingMissile extends Bullet {
     mat4.fromScaling(sc, vec3.fromValues(s, s, s));
     mat4.multiply(m, m, sc);
     mat4.multiply(mPrev, mPrev, sc);
-    d.draw.drawGlow(m, mPrev, d.view, d.proj, d.camPos, [1, 0.62, 0.2], 0.9);
+    d.draw.drawGlow(m, mPrev, d.view, d.proj, d.camPos, partyShiftColor([1, 0.62, 0.2]), 0.9);
     d.rc.renderer.trackDraws();
   }
 }
@@ -1190,6 +1226,8 @@ export class SmokePuff extends Abstract3D {
   turbulence: number;
   size: number;
   seed: number;
+  /** Optional per-particle colour; player engine smoke uses the live team hue. */
+  tint: [number, number, number] | null = null;
 
   get kind(): ObKind {
     return ObKind.Uncollidable;
@@ -1253,7 +1291,7 @@ export class SmokePuff extends Abstract3D {
       this.pos[0], this.pos[1], this.pos[2],
       this.prevPos[0], this.prevPos[1], this.prevPos[2],
       this.size, this.alpha0, this.seed, this.age01(), this.turbulence,
-      d.view, d.proj,
+      d.view, d.proj, this.tint,
     );
     d.rc.renderer.trackDraws();
   }

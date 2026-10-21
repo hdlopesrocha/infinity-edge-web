@@ -6,6 +6,8 @@ import type { GameInstance } from './instance';
 import type { Options } from './resources';
 
 export type Rgb = [number, number, number];
+/** Hue 0..1, saturation 0..1, value 0..1. */
+export type Hsv = [number, number, number];
 
 /** The original human and alien team colours. */
 export const DEFAULT_PLAYER_COLOR = '#40e0d0';
@@ -55,6 +57,50 @@ export function rgbToHex(color: Rgb): string {
   return '#' + channel(color[0]) + channel(color[1]) + channel(color[2]);
 }
 
+/** Convert a 0..1 RGB triple to hue/saturation/value (all 0..1). */
+export function rgbToHsv(color: Rgb): Hsv {
+  const [r, g, b] = color;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d > 1e-8) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+    if (h < 0) h += 1;
+  }
+  return [h, max > 0 ? d / max : 0, max];
+}
+
+/** Convert hue/saturation/value (all 0..1) back to a 0..1 RGB triple. */
+export function hsvToRgb(hsv: Hsv): Rgb {
+  const h = ((hsv[0] % 1) + 1) % 1;
+  const s = Math.max(0, Math.min(1, hsv[1]));
+  const v = Math.max(0, Math.min(1, hsv[2]));
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  switch (i % 6) {
+    case 0: return [v, t, p];
+    case 1: return [q, v, p];
+    case 2: return [p, v, t];
+    case 3: return [p, q, v];
+    case 4: return [t, p, v];
+    default: return [v, p, q];
+  }
+}
+
+/** Rotate a colour's hue by `turns` (1 = a full colour wheel). */
+export function hueShiftRgb(color: Rgb, turns: number): Rgb {
+  const hsv = rgbToHsv(color);
+  hsv[0] = ((hsv[0] + turns) % 1 + 1) % 1;
+  return hsvToRgb(hsv);
+}
+
 /**
  * Recolour every combatant team for the player's view. The team flown by the
  * selected ship is the player colour; all other combatants are the enemy
@@ -66,6 +112,8 @@ export function rgbToHex(color: Rgb): string {
 export function applyTeamColors(
   instance: Pick<GameInstance, 'teams' | 'selectedObject'> | null,
   options: Pick<Options, 'playerColor' | 'enemyColor'>,
+  /** Party mode rotates the player hue every beat without touching enemies. */
+  playerOverride?: Rgb | null,
 ): void {
   if (!instance) return;
   const player =
@@ -73,7 +121,9 @@ export function applyTeamColors(
     instance.teams.get('human') ??
     null;
   if (!player) return;
-  const playerRgb = hexToRgb(options.playerColor, FALLBACK_PLAYER);
+  const playerRgb = playerOverride
+    ? ([...playerOverride] as Rgb)
+    : hexToRgb(options.playerColor, FALLBACK_PLAYER);
   const enemyRgb = hexToRgb(options.enemyColor, FALLBACK_ENEMY);
   for (const team of instance.teams.values()) {
     if (team.name === 'ambient') continue;

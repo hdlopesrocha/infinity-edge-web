@@ -20,11 +20,35 @@ uniform sampler2D uTex; uniform bool uHasTex;
 uniform vec3 uDiffuse; uniform vec3 uEmissive; uniform vec3 uAmbient;
 uniform vec3 uLightDir; uniform vec3 uLightDiffuse; uniform vec3 uLightSpec;
 uniform float uShininess; uniform vec3 uCamPos; uniform float uAlpha;
+// Per-draw presentation tint (party-mode ship) and texture hue rotation
+// (party-mode asteroids). Both default to no change.
+uniform vec3 uTint; uniform float uHue;
 layout(location = 0) out vec4 oColor;
+
+vec3 rgb2hsv(vec3 c) {
+  vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+  vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y);
+  float e = 1.0e-10;
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
 void main() {
   vec3 base = uDiffuse;
   vec4 sampled = uHasTex ? texture(uTex, vUV) : vec4(1.0);
-  base *= sampled.rgb;
+  if (uHue != 0.0) {
+    vec3 hsv = rgb2hsv(sampled.rgb);
+    hsv.x = fract(hsv.x + uHue / 360.0);
+    sampled.rgb = hsv2rgb(hsv);
+  }
+  base *= sampled.rgb * uTint;
   vec3 N = normalize(vN);
   vec3 L = normalize(uLightDir);
   float nd = max(dot(N, L), 0.0);
@@ -54,6 +78,7 @@ uniform sampler2D uTex; uniform bool uHasTex; uniform vec3 uColor; uniform float
 // Hue (degrees), saturation and value multipliers: one skysphere texture is
 // recoloured per difficulty by the fragment shader instead of baking three.
 uniform float uHue; uniform float uSat; uniform float uVal;
+uniform float uContrast;
 layout(location = 0) out vec4 oColor;
 
 vec3 rgb2hsv(vec3 c) {
@@ -81,6 +106,7 @@ void main() {
     hsv.z = clamp(hsv.z * uVal, 0.0, 1.0);
     c = hsv2rgb(hsv);
   }
+  c = clamp((c - 0.5) * uContrast + 0.5, 0.0, 1.0);
   oColor = vec4(uColor * c, uAlpha * t.a);
 }`;
 
@@ -146,10 +172,11 @@ export const SMOKE_VERT = `#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aData;   // x seed, y age01, z alpha, w turbulence
+layout(location=4) in vec3 aTint;   // per-particle colour (player smoke)
 uniform mat4 uView; uniform mat4 uProj;
-out vec2 vUV; out vec4 vData; out vec3 vWorld; out vec4 vClip;
+out vec2 vUV; out vec4 vData; out vec3 vWorld; out vec4 vClip; out vec3 vTint;
 void main() {
-  vUV = aUV; vData = aData; vWorld = aPos;
+  vUV = aUV; vData = aData; vWorld = aPos; vTint = aTint;
   vec4 cur = uProj * uView * vec4(aPos, 1.0);
   vClip = cur;
   gl_Position = cur;
@@ -158,11 +185,11 @@ void main() {
 export const SMOKE_FRAG = `#version 300 es
 precision highp float;
 precision highp sampler3D;
-in vec2 vUV; in vec4 vData; in vec3 vWorld; in vec4 vClip;
+in vec2 vUV; in vec4 vData; in vec3 vWorld; in vec4 vClip; in vec3 vTint;
 uniform sampler3D uNoise;
 uniform sampler2D uDepth;
 uniform float uTime; uniform float uNear; uniform float uFar;
-uniform vec3 uTint; uniform float uFreq; uniform float uSoftness; uniform float uDensity;
+uniform float uFreq; uniform float uSoftness; uniform float uDensity;
 layout(location = 0) out vec4 oColor;
 
 float linearDepth(float ndc) {
@@ -202,7 +229,7 @@ void main() {
   a *= clamp((sceneZ - fragZ) * uSoftness, 0.0, 1.0);
   if (a <= 0.002) discard;
 
-  oColor = vec4(uTint, a);
+  oColor = vec4(vTint, a);
 }`;
 
 // ---------------------------------------------------------------- flare mesh

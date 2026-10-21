@@ -24,6 +24,8 @@ export interface Options {
   zoomBlur: boolean;
   /** Show the smoothed WebGL frame time (ms) on the HUD. */
   showMs: boolean;
+  /** Music-reactive player/asteroid/bullet/ship/sky colours. */
+  partyMode: boolean;
   /** VR gaze dwell before a click, in seconds. */
   dwellTime: number;
   /** #rrggbb colours for the player's team and every enemy team. */
@@ -64,7 +66,7 @@ export function defaultOptions(): Options {
     // port run show the special effects (star/cloud billboards + engine
     // flares), so the web build defaults to on.
     musicVolume: 0.5, billboards: true,
-    zoomBlur: true, showMs: true, dwellTime: 2,
+    zoomBlur: true, showMs: true, partyMode: false, dwellTime: 2,
     playerColor: DEFAULT_PLAYER_COLOR, enemyColor: DEFAULT_ENEMY_COLOR,
     cheats: false, axisX: false, axisY: false,
   };
@@ -115,6 +117,7 @@ function loadOptionsStored(): Options {
       billboards: b('_billboards', d.billboards),
       zoomBlur: b('_zoomBlur', d.zoomBlur),
       showMs: b('_showMs', d.showMs),
+      partyMode: b('_partyMode', d.partyMode),
       dwellTime: Number.isFinite(dwell) ? Math.max(0.5, Math.min(5, dwell)) : d.dwellTime,
       playerColor: normalizeHexColor(g('_playerColor', d.playerColor), d.playerColor),
       enemyColor: normalizeHexColor(g('_enemyColor', d.enemyColor), d.enemyColor),
@@ -134,7 +137,7 @@ export function saveOptions(o: Options): void {
       `<Options _version="${OPTIONS_VERSION}" _userName="${o.username.replace(/"/g, '')}" ` +
         `_wireframe="${o.wireframe}" _detail="${o.detail}" _distance="${o.distance}" ` +
         `_musicVolume="${o.musicVolume}" _billboards="${o.billboards}" _showMs="${o.showMs}" ` +
-        `_dwellTime="${o.dwellTime}" ` +
+        `_partyMode="${o.partyMode}" _dwellTime="${o.dwellTime}" ` +
         `_playerColor="${normalizeHexColor(o.playerColor, DEFAULT_PLAYER_COLOR)}" ` +
         `_enemyColor="${normalizeHexColor(o.enemyColor, DEFAULT_ENEMY_COLOR)}" ` +
         `_axisY="${o.axisY}" _axisX="${o.axisX}" />`,

@@ -16,6 +16,10 @@ export interface LitOpts {
   emissive: [number, number, number];
   diffuse?: [number, number, number] | null;
   light: boolean;
+  /** Multiply the sampled albedo (party-mode player ship). */
+  tint?: [number, number, number] | null;
+  /** Rotate the sampled texture hue in degrees (party-mode asteroids). */
+  hue?: number | null;
   /** Previous frame's world matrix (motion-blur velocity); defaults to world. */
   prevWorld?: mat4 | null;
 }
@@ -165,8 +169,8 @@ export class Draw {
     this.gl = gl;
     this.lit = linkProgram(gl, LIT_VERT, LIT_FRAG);
     this.unlit = linkProgram(gl, UNLIT_VERT, UNLIT_FRAG);
-    this.uLit = uniforms(gl, this.lit, ['uWorld', 'uView', 'uProj', 'uWorldInvT', 'uPrevWorld', 'uViewProjPrev', 'uTex', 'uHasTex', 'uDiffuse', 'uEmissive', 'uAmbient', 'uLightDir', 'uLightDiffuse', 'uLightSpec', 'uShininess', 'uCamPos', 'uAlpha']);
-    this.uUnlit = uniforms(gl, this.unlit, ['uWorld', 'uPrevWorld', 'uViewProjPrev', 'uView', 'uProj', 'uTex', 'uHasTex', 'uColor', 'uAlpha', 'uHue', 'uSat', 'uVal']);
+    this.uLit = uniforms(gl, this.lit, ['uWorld', 'uView', 'uProj', 'uWorldInvT', 'uPrevWorld', 'uViewProjPrev', 'uTex', 'uHasTex', 'uDiffuse', 'uEmissive', 'uAmbient', 'uLightDir', 'uLightDiffuse', 'uLightSpec', 'uShininess', 'uCamPos', 'uAlpha', 'uTint', 'uHue']);
+    this.uUnlit = uniforms(gl, this.unlit, ['uWorld', 'uPrevWorld', 'uViewProjPrev', 'uView', 'uProj', 'uTex', 'uHasTex', 'uColor', 'uAlpha', 'uHue', 'uSat', 'uVal', 'uContrast']);
     this.bbq = linkProgram(gl, BBQ_VERT, BBQ_FRAG);
     this.uBbq = uniforms(gl, this.bbq, ['uView', 'uProj', 'uViewProjPrev', 'uTex']);
     {
@@ -192,15 +196,15 @@ export class Draw {
       this.bbqVbo = vbo;
     }
     this.smokeProg = linkProgram(gl, SMOKE_VERT, SMOKE_FRAG);
-    this.uSmoke = uniforms(gl, this.smokeProg, ['uView', 'uProj', 'uViewProjPrev', 'uNoise', 'uDepth', 'uTime', 'uNear', 'uFar', 'uTint', 'uFreq', 'uSoftness', 'uDensity']);
+    this.uSmoke = uniforms(gl, this.smokeProg, ['uView', 'uProj', 'uViewProjPrev', 'uNoise', 'uDepth', 'uTime', 'uNear', 'uFar', 'uFreq', 'uSoftness', 'uDensity']);
     {
       const vao = gl.createVertexArray();
       gl.bindVertexArray(vao);
       const vbo = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
-      // pos(3) prevPos(3) uv(2) data(4: seed, age01, alpha, turbulence)
-      const stride = 48;
+      // pos(3) prevPos(3) uv(2) data(4: seed, age01, alpha, turbulence) tint(3)
+      const stride = 60;
       gl.enableVertexAttribArray(0);
       gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
       gl.enableVertexAttribArray(1);
@@ -209,6 +213,8 @@ export class Draw {
       gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 24);
       gl.enableVertexAttribArray(3);
       gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, 32);
+      gl.enableVertexAttribArray(4);
+      gl.vertexAttribPointer(4, 3, gl.FLOAT, false, stride, 48);
       gl.bindVertexArray(null);
       this.smokeVao = vao;
       this.smokeVbo = vbo;
@@ -342,6 +348,9 @@ export class Draw {
       gl.uniform3f(U.uLightSpec, 0, 0, 0);
     }
     gl.uniform3f(U.uCamPos, camPos[0], camPos[1], camPos[2]);
+    const tint = opts.tint ?? [1, 1, 1];
+    gl.uniform3f(U.uTint, tint[0], tint[1], tint[2]);
+    gl.uniform1f(U.uHue, opts.hue ?? 0);
     const fallbackTex = tex ?? getFallback(gl);
     for (const m of model.meshes) {
       const bound = (texes && texes[m.materialIndex]) || fallbackTex;
@@ -370,6 +379,7 @@ export class Draw {
     color: [number, number, number], alpha: number,
     prevWorld?: mat4 | null,
     hsb?: [number, number, number] | null,
+    contrast = 1,
   ): void {
     const gl = this.gl;
     this.flushBillboards();
@@ -380,6 +390,7 @@ export class Draw {
     gl.uniform1f(U.uHue, tint[0]);
     gl.uniform1f(U.uSat, tint[1]);
     gl.uniform1f(U.uVal, tint[2]);
+    gl.uniform1f(U.uContrast, Math.max(0, contrast));
     gl.uniformMatrix4fv(U.uView, false, view as Float32Array);
     gl.uniformMatrix4fv(U.uProj, false, proj as Float32Array);
     gl.uniformMatrix4fv(U.uWorld, false, world as Float32Array);
@@ -496,11 +507,12 @@ export class Draw {
     cx: number, cy: number, cz: number,
     prevX: number, prevY: number, prevZ: number,
     size: number, alpha: number, seed: number, age01: number, turbulence: number,
-    view: mat4, proj: mat4,
+    view: mat4, proj: mat4, tint: [number, number, number] | null = null,
   ): void {
     if (alpha <= 0.003 || size <= 0) return;
     this.smokeView = view;
     this.smokeProj = proj;
+    const color = tint ?? this.smokeTint;
     const v = view as unknown as Float32Array;
     const sx = v[0], sy = v[4], sz = v[8];
     const ux = v[1], uy = v[5], uz = v[9];
@@ -518,6 +530,7 @@ export class Draw {
       verts.push(
         c[i][0], c[i][1], c[i][2], prevX, prevY, prevZ,
         uv[i][0], uv[i][1], seed, age01, alpha, turbulence,
+        color[0], color[1], color[2],
       );
     }
     this.smokeQuads.push({ vz: v[2] * cx + v[6] * cy + v[10] * cz + v[14], verts });
@@ -541,7 +554,6 @@ export class Draw {
     gl.uniform1f(U.uTime, this.time);
     gl.uniform1f(U.uNear, this.nearPlane);
     gl.uniform1f(U.uFar, this.farPlane);
-    gl.uniform3f(U.uTint, this.smokeTint[0], this.smokeTint[1], this.smokeTint[2]);
     gl.uniform1f(U.uFreq, 0.09);
     gl.uniform1f(U.uSoftness, 1.4);
     gl.uniform1f(U.uDensity, this.smokeDensity);
@@ -561,7 +573,7 @@ export class Draw {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(flat), gl.DYNAMIC_DRAW);
     const cull = gl.isEnabled(gl.CULL_FACE);
     if (cull) gl.disable(gl.CULL_FACE);
-    gl.drawArrays(gl.TRIANGLES, 0, flat.length / 12);
+    gl.drawArrays(gl.TRIANGLES, 0, flat.length / 15);
     if (cull) gl.enable(gl.CULL_FACE);
     gl.bindVertexArray(null);
     this.smokeQuads.length = 0;
