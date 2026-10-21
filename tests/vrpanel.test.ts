@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mat4, vec3 } from 'gl-matrix';
 import {
-  DWELL_MS, GazePointer, PANEL_H, PANEL_W, cyclopsView, hitPanel, panelBasis, withClipRect,
+  DWELL_MS, GazePointer, PANEL_H, PANEL_W, cyclopsView, hitPanel, panelBasis,
+  planeFitScale, withClipRect,
 } from '../src/engine/vrpanel';
 import type { ScreenUi } from '../src/engine/overlay';
 
@@ -55,6 +56,64 @@ describe('panelBasis', () => {
     close(b.right, [1, 0, 0]);
     close(b.up, [0, 0, 1]);
     expect(Number.isFinite(b.up[0]) && Number.isFinite(b.up[1]) && Number.isFinite(b.up[2])).toBe(true);
+  });
+});
+
+describe('planeFitScale', () => {
+  const proj = (fovDeg: number): Float32Array => mat4.perspective(
+    mat4.create(), fovDeg * Math.PI / 180, 1, 0.1, 100,
+  ) as Float32Array;
+
+  it('shrinks a too-wide menu panel to leave a focus-frame margin', () => {
+    // 90-degree eye: 8 units at 3 units would project to +-1.33 NDC. The fit
+    // keeps the edge at 0.86 NDC and leaves 7% of the half-view each side.
+    const s = planeFitScale([proj(90)], 8, 4.5, 3, 0.86);
+    expect(s).toBeCloseTo(5.16 / 8, 5);
+    expect((8 * s / 2 / 3)).toBeCloseTo(0.86, 5);
+  });
+
+  it('leaves a panel that already fits untouched', () => {
+    const s = planeFitScale([proj(120)], 8, 4.5, 3, 0.86);
+    expect(s).toBe(1);
+  });
+
+  it('shrinks harder on a narrow eye FOV', () => {
+    const s = planeFitScale([proj(60)], 8, 4.5, 3, 0.86);
+    expect(s).toBeCloseTo(2 * 3 * 0.86 * Math.tan(Math.PI / 6) / 8, 5);
+    expect(s).toBeLessThan(0.4);
+  });
+
+  it('reserves the margin on the tighter side of an asymmetric eye', () => {
+    // Off-axis projection: the NDC centre is shifted +0.2, so the left edge
+    // reaches the viewport sooner. The fit must use the smaller margin.
+    const p = mat4.frustum(
+      mat4.create(), -0.08, 0.12, -0.1, 0.1, 0.1, 100,
+    ) as Float32Array;
+    const s = planeFitScale([p], 8, 4.5, 3, 0.86);
+    expect(s).toBeCloseTo((2 * 3 * (0.86 - 0.2)) / 8, 5);
+  });
+
+  it('uses the most restrictive eye and ignores bad matrices', () => {
+    const bad = new Float32Array(16);
+    const s = planeFitScale([bad, proj(90), proj(70)], 8, 4.5, 3, 0.86);
+    const narrow = 2 * 3 * 0.86 * Math.tan(35 * Math.PI / 180) / 8;
+    expect(s).toBeCloseTo(narrow, 5);
+  });
+
+  it('returns the identity for degenerate inputs', () => {
+    expect(planeFitScale([], 8, 4.5, 3)).toBe(1);
+    expect(planeFitScale([proj(90)], 0, 4.5, 3)).toBe(1);
+    expect(planeFitScale([proj(90)], 8, 4.5, 0)).toBe(1);
+  });
+
+  it('keeps the apparent rectangle when distance and world size halve together', () => {
+    // The VR menu now sits at half the distance with half the world size. The
+    // fitted scale must be identical, so the screen-space focus rect and blur
+    // feather remain calibrated.
+    expect(planeFitScale([proj(90)], 4, 2.25, 1.5, 0.86))
+      .toBeCloseTo(planeFitScale([proj(90)], 8, 4.5, 3, 0.86), 10);
+    expect(planeFitScale([proj(120)], 4, 2.25, 1.5, 0.86))
+      .toBeCloseTo(planeFitScale([proj(120)], 8, 4.5, 3, 0.86), 10);
   });
 });
 

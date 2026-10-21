@@ -20,6 +20,8 @@ export interface HudPointer {
   h: number;
   iconUrl: string | null;
   over: boolean;
+  /** Enemy marker: gets a 1 px inset border in the opposite team colour. */
+  enemy: boolean;
   color: [number, number, number];
   label: string | null;
 }
@@ -30,8 +32,8 @@ export const store = reactive({
   sceneKey: 'background' as string,
   levelKey: '' as string,
   interactive: false,
-  /** True while the in-game pause overlay is open: the world stops, the
-   *  scene keeps rendering so option changes are visible behind it. */
+  /** True while the WebGL pause menu is open: the world stops, the scene
+   *  keeps rendering so option changes are visible behind it. */
   paused: false,
   /** VR mode: head-tracked view, gamepad-only input (see game/vr.ts). */
   vr: false,
@@ -54,6 +56,8 @@ export const store = reactive({
   hud: {
     score: '',
     notify: '',
+    /** Live player-team accent for timers, buttons and action labels. */
+    accent: [64 / 255, 224 / 255, 208 / 255] as [number, number, number],
     aimX: 0,
     aimY: 0,
     life: [] as HudLifeSegment[],
@@ -115,9 +119,9 @@ export function syncSceneState(routeName: string, param?: string): void {
 }
 
 export function syncOptionsFromRC(o: Options): void {
-  // Mutate the reactive mirror instead of replacing it: views such as the
-  // pause settings capture `store.options` during setup and must see values
-  // loaded by the game canvas after mount.
+  // Mutate the reactive mirror instead of replacing it: the Options screen
+  // and the pause menu read this object live and must see the values loaded
+  // by the game canvas after they mount.
   Object.assign(store.options, o);
   store.username = o.username;
 }

@@ -26,7 +26,6 @@ function username(): string {
 export function mainMenu(): MenuScreen {
   return {
     title: 'MAIN MENU',
-    subtitle: `pilot ${username()} · Infinity Edge 3.7`,
     left: {
       icons: [
         icon('/single-player', 'SINGLE PLAYER', '_singlePlayer.png'),
@@ -42,7 +41,6 @@ export function mainMenu(): MenuScreen {
 export function singlePlayer(): MenuScreen {
   return {
     title: 'SINGLE PLAYER',
-    subtitle: `pilot ${username()}`,
     left: {
       icons: [
         icon('/ctf', 'CAPTURE THE FLAG', '_ctf.png'),
@@ -57,7 +55,6 @@ export function singlePlayer(): MenuScreen {
 export function ctfMenu(): MenuScreen {
   return {
     title: 'CAPTURE THE FLAG',
-    subtitle: 'choose a difficulty',
     left: {
       icons: [
         icon('/briefing/' + CTF_LEVELS[0], 'PEGASUS', '_easy.png'),
@@ -71,7 +68,6 @@ export function ctfMenu(): MenuScreen {
 export function timeTrialMenu(): MenuScreen {
   return {
     title: 'TIME TRIAL',
-    subtitle: 'choose a race class',
     left: {
       icons: [
         icon('/tt/easy', 'PEGASUS', '_easy.png'),
@@ -88,7 +84,6 @@ export function modeMenu(mode: 'kots' | 'surv'): MenuScreen {
   const diffs = ['easy', 'normal', 'hard'] as const;
   return {
     title: mode === 'surv' ? 'SURVIVAL' : 'KING OF THE SYSTEM',
-    subtitle: teamsMode ? 'teams' : 'solo',
     left: {
       icons: keys.map((key, i) =>
         icon('/briefing/' + key, MODE_CAPS[diffs[i]], MODE_ICONS[diffs[i]])),
@@ -106,7 +101,6 @@ export function tracksMenu(diff: string): MenuScreen {
   };
   return {
     title: 'TIME TRIAL · ' + group.label,
-    subtitle: 'choose a track',
     left: {
       buttons: group.tracks.map((key, i) => ({ id: '/briefing/' + key, label: labels[group.id][i] })),
     },
@@ -118,7 +112,6 @@ export function tracksMenu(diff: string): MenuScreen {
 export function briefingScreen(levelKey: string, text: string, rows: string[]): MenuScreen {
   return {
     title: 'BRIEFING',
-    subtitle: levelKey,
     left: {
       heading: 'High Scores',
       table: { rows: rows.length > 0 ? rows : [''] },
@@ -135,7 +128,6 @@ export function briefingScreen(levelKey: string, text: string, rows: string[]): 
 export function briefingLoading(): MenuScreen {
   return {
     title: 'BRIEFING',
-    subtitle: 'loading…',
     left: {},
   };
 }
@@ -146,7 +138,6 @@ export function optionsMenu(): MenuScreen {
   const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
   return {
     title: 'OPTIONS',
-    subtitle: 'changes apply live — SAVE keeps them',
     left: {
       heading: 'SETTINGS',
       rows: [
@@ -168,6 +159,7 @@ export function optionsMenu(): MenuScreen {
         { kind: 'check', id: 'billboards', label: 'Special Effects', value: o.billboards },
         { kind: 'check', id: 'zoomBlur', label: 'Speed Blur', value: o.zoomBlur },
         { kind: 'check', id: 'showMs', label: 'Frame Time (ms)', value: o.showMs },
+        { kind: 'check', id: 'partyMode', label: 'Party Mode (music colour)', value: o.partyMode },
       ],
     },
     right: {
@@ -276,7 +268,26 @@ export function hangarMenu(): MenuScreen {
       { left: 'Input', right: 'Gamepad, keyboard or touch', gapBefore: 2 },
     ],
   };
-  return { title: 'HANGAR', subtitle: 'your ship and its numbers', left, right };
+  return { title: 'HANGAR', left, right };
+}
+
+// ------------------------------------------------------------------- pause
+/** The in-match pause screen: the same WebGL menu chrome as every other
+ *  screen, drawn over the frozen match. HUD and flight input are hidden until
+ *  the player resumes. */
+export function pauseMenu(): MenuScreen {
+  return {
+    title: 'PAUSED',
+    left: {
+      icons: [
+        icon('pause:resume', 'RESUME', '_resume.png'),
+        icon('pause:options', 'OPTIONS', '_optionsIcon.png'),
+        icon('pause:leave', 'LEAVE MATCH', '_leave.png'),
+      ],
+    },
+    primary: { id: 'pause:resume', label: 'resume' },
+    backLabel: 'leave match',
+  };
 }
 
 // ------------------------------------------------------------------ result

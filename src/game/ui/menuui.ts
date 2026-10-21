@@ -10,11 +10,13 @@
 
 import { nextUiVersion } from '../../engine/overlay';
 import { COLOR_PALETTE, DEFAULT_PLAYER_COLOR, normalizeHexColor } from '../colors';
+import type { Rgb } from '../colors';
 import { FS_REGION } from './fullscreen';
+import { cssColor, accentMoved, currentPlayerAccent, readableAccent } from './theme';
 import { wordmarkFont } from '../fonts';
 import {
-  UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, SINGLE_W,
-  leftPanelX, singlePanelX, paintActionColumn, paintPanelBox, contentFocusRect,
+  UI_FONT as FONT, CONTENT_CX, MENU_H, MENU_W, PANEL_W, PANEL_Y, PANEL_H, SINGLE_W,
+  leftPanelX, singlePanelX, paintActionColumn, paintContentShell, paintNavbar, contentFocusRect,
 } from './layout';
 import type { ScreenUi } from '../../engine/overlay';
 
@@ -70,9 +72,8 @@ export interface MenuPanel {
 }
 
 export interface MenuScreen {
-  /** Big title; empty string = no title (unknown route / boot chrome). */
+  /** Path crumb used when the host does not supply a trail (unknown route / boot chrome). */
   title: string;
-  subtitle?: string;
   left?: MenuPanel;
   right?: MenuPanel;
   /** Boot/start wordmark text, painted in the original Airstrike face. */
@@ -111,6 +112,8 @@ interface Column {
   y: number;
   w: number;
   h: number;
+  /** Computed row pitch; rows spread out when the panel is tall. */
+  rowH?: number;
 }
 
 const imageCache = new Map<string, HTMLImageElement>();
@@ -135,6 +138,11 @@ export class MenuUi implements ScreenUi {
   private contentBottom = 0;
   private crumbs: { label: string; current: boolean }[] = [];
   private onImageLoad: () => void;
+  /** Live accent, refreshed at the start of each paint from Options. */
+  private accent: Rgb = currentPlayerAccent();
+  private accentText: Rgb = readableAccent(this.accent);
+  private paintedAccent: Rgb | null = null;
+  private lastAccentCheck = 0;
 
   constructor(screen: MenuScreen, cb: MenuCallbacks, onImageLoad: () => void) {
     this.screen = screen;
@@ -143,13 +151,19 @@ export class MenuUi implements ScreenUi {
   }
 
   setScreen(screen: MenuScreen): void {
+    // Screens are rebuilt whenever a live option changes. Keep editing state
+    // that still belongs to a row on the new screen: dropping it would stop a
+    // slider drag after one step and blur a text field after one character.
+    const focus = this.focus;
+    const dragging = this.dragging;
+    const picker = this.colorPicker;
     this.screen = screen;
     this.scroll = 0;
     this.hover = null;
     this.pressed = null;
-    this.dragging = null;
-    this.focus = null;
-    if (this.colorPicker && !this.rowById(this.colorPicker.id)) this.colorPicker = null;
+    this.dragging = dragging && this.rowById(dragging) ? dragging : null;
+    this.focus = focus && this.rowById(focus) ? focus : null;
+    if (picker && !this.rowById(picker.id)) this.colorPicker = null;
     this.bump();
   }
 
@@ -170,7 +184,17 @@ export class MenuUi implements ScreenUi {
     this.version = nextUiVersion();
   }
 
-  /** Content-panel strip kept sharp by the renderer's focus veil. Boot
+  /** Frame-loop hook: follow a party-mode hue without repainting a static
+   *  menu every frame. */
+  syncAccent(now: number): void {
+    if (now - this.lastAccentCheck < 120) return;
+    this.lastAccentCheck = now;
+    const painted = this.paintedAccent;
+    if (painted && !accentMoved(currentPlayerAccent(), painted)) return;
+    this.bump();
+  }
+
+  /** Full menu plane kept sharp by the renderer's focus veil. Boot
    *  wordmarks have no panels, so they have no UI island (and no frame). */
   focusRect(w: number, h: number): { x: number; y: number; w: number; h: number } | null {
     if (this.screen.empty || this.screen.wordmark) return null;
@@ -214,6 +238,9 @@ export class MenuUi implements ScreenUi {
   private paintInner(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     this.ctx = ctx;
     this.logical = { w, h };
+    this.accent = currentPlayerAccent();
+    this.accentText = readableAccent(this.accent);
+    this.paintedAccent = [this.accent[0], this.accent[1], this.accent[2]];
     const s = Math.min(w / DW, h / DH);
     const ox = (w - DW * s) / 2;
     const oy = (h - DH * s) / 2;
@@ -230,7 +257,14 @@ export class MenuUi implements ScreenUi {
     ctx.fillRect(0, 0, w, h);
 
     if (this.screen.wordmark) this.paintWordmark(ctx, s, X, Y, U);
-    if (this.screen.title) this.paintTitle(ctx, s, X, Y, U);
+    if (!this.screen.wordmark && !this.screen.empty) {
+      // One maximised content rectangle fills everything left of the action
+      // column, from the top edge to the bottom. The path navbar lives inside
+      // it at the top; screens never draw nested panel boxes, so the chrome is
+      // identical to the lobby and room.
+      paintContentShell(ctx, s, X, Y, U);
+      this.paintPath(ctx, s, X, Y, U);
+    }
 
     if (!this.screen.empty && !this.screen.wordmark) {
       const both = !!(this.screen.left && this.screen.right);
@@ -253,40 +287,23 @@ export class MenuUi implements ScreenUi {
       back: this.screen.hideChrome ? undefined : { id: 'back', label: this.screen.backLabel ?? 'back' },
       hover: this.hover,
       chrome: !this.screen.hideChrome,
+      accent: this.accent,
     }));
-    this.paintCrumbs(ctx, s, X, Y, U);
     if (this.colorPicker) this.paintColorPicker(ctx, s, X, Y, U);
   }
 
-  /** Breadcrumbs, bottom centre of the content area. */
-  private paintCrumbs(
+  /**
+   * Clickable navigation path in the shared navbar. The old pilot/version
+   * subtitle is gone, and this screen title no longer eats into the icons.
+   */
+  private paintPath(
     ctx: CanvasRenderingContext2D, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
-    if (this.crumbs.length <= 1) return;
-    ctx.font = `${U(12)}px ${FONT}`;
-    const full = this.crumbs.map((c) => c.label).join('  ›  ');
-    const total = ctx.measureText(full).width;
-    let x = X(CONTENT_CX) - total / 2;
-    const y = Y(DH - 30);
-    for (let i = 0; i < this.crumbs.length; i++) {
-      const c = this.crumbs[i];
-      const label = c.label;
-      const w = ctx.measureText(label).width;
-      ctx.fillStyle = c.current ? 'rgba(255,255,255,0.45)' : 'rgba(127,232,216,0.85)';
-      ctx.fillText(label, x, y);
-      if (!c.current) {
-        const id = 'crumb:' + i;
-        this.regions.push({ id, x: x - U(4), y: y - U(10), w: w + U(8), h: U(20) });
-      }
-      x += w;
-      if (i < this.crumbs.length - 1) {
-        const sep = '  ›  ';
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-        ctx.fillText(sep, x, y);
-        x += ctx.measureText(sep).width;
-      }
-    }
+    const crumbs = this.crumbs.length
+      ? this.crumbs
+      : this.screen.title ? [{ label: this.screen.title, current: true }] : [];
+    this.regions.push(...paintNavbar(ctx, s, X, Y, U, crumbs, this.hover, this.accent));
   }
 
   /** Palette modal for a `color` row. The swatch regions are published after
@@ -309,7 +326,7 @@ export class MenuUi implements ScreenUi {
     const bx = X(x), by = Y(y), bw = U(w), bh = U(h);
     ctx.fillStyle = 'rgba(7, 13, 21, 0.97)';
     ctx.fillRect(bx, by, bw, bh);
-    ctx.strokeStyle = 'rgba(127,232,216,0.5)';
+    ctx.strokeStyle = cssColor(this.accent, 0.5);
     ctx.lineWidth = Math.max(1, s);
     ctx.strokeRect(bx, by, bw, bh);
     ctx.font = `700 ${U(20)}px ${FONT}`;
@@ -345,7 +362,9 @@ export class MenuUi implements ScreenUi {
       ctx.fillRect(sx, sy, size, size);
       const isSelected = color === selected;
       const hovered = this.hover === `color:${picker.id}:${color}`;
-      ctx.strokeStyle = isSelected ? '#ffffff' : hovered ? '#7fe8d8' : 'rgba(255,255,255,0.22)';
+      ctx.strokeStyle = isSelected
+        ? cssColor(this.accentText)
+        : hovered ? cssColor(this.accent) : 'rgba(255,255,255,0.22)';
       ctx.lineWidth = Math.max(1, U(isSelected ? 3 : 1));
       ctx.strokeRect(sx, sy, size, size);
       if (isSelected) {
@@ -366,27 +385,6 @@ export class MenuUi implements ScreenUi {
     ctx.textAlign = 'left';
   }
 
-  private paintTitle(
-    ctx: CanvasRenderingContext2D, s: number,
-    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
-  ): void {
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `700 ${U(32)}px ${FONT}`;
-    ctx.shadowColor = 'rgba(0,0,0,0.85)';
-    ctx.shadowBlur = U(8);
-    ctx.fillText(this.screen.title, X(CONTENT_CX), Y(34));
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(127,232,216,0.9)';
-    ctx.fillRect(X(CONTENT_CX - 90), Y(54), U(180), U(2));
-    if (this.screen.subtitle) {
-      ctx.font = `${U(14)}px ${FONT}`;
-      ctx.fillStyle = 'rgba(255,255,255,0.72)';
-      ctx.fillText(this.screen.subtitle, X(CONTENT_CX), Y(76));
-    }
-    ctx.textAlign = 'left';
-  }
-
   private paintWordmark(
     ctx: CanvasRenderingContext2D, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
@@ -395,7 +393,9 @@ export class MenuUi implements ScreenUi {
     if (text) {
       // Same place and proportions as the old 512x128 bitmap wordmarks (their
       // glyphs were ~508x37 at y=51..88), but rendered as text in Airstrike.
-      const cx = X(CONTENT_CX);
+      // Boot/start wordmarks are standalone splash art, not menu content:
+      // centre them on the whole design plane rather than the menu rectangle.
+      const cx = X(MENU_W / 2);
       const cy = Y(280);
       const chars = [...text];
       let size = U(64);
@@ -452,7 +452,7 @@ export class MenuUi implements ScreenUi {
       ctx.fillText('loading', X(CONTENT_CX), by - U(14));
       ctx.fillStyle = 'rgba(255,255,255,0.18)';
       ctx.fillRect(bx, by, bw, bh);
-      ctx.fillStyle = '#7fe8d8';
+      ctx.fillStyle = cssColor(this.accent);
       ctx.fillRect(bx, by, (bw * pct) / 100, bh);
       ctx.font = `${U(13)}px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
@@ -466,8 +466,6 @@ export class MenuUi implements ScreenUi {
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
     const p = col.panel;
-    paintPanelBox(ctx, X(col.x), Y(col.y), U(col.w), U(col.h), s);
-
     if (p.watermark) {
       const img = this.image(p.watermark);
       if (img) {
@@ -495,6 +493,10 @@ export class MenuUi implements ScreenUi {
     if (p.table) y = this.paintTable(ctx, p.table, col, y, s, X, Y, U);
     if (p.lines) y = this.paintLines(ctx, p.lines, col, y, s, X, Y, U);
     if (p.rows) {
+      // Spread a short list over the enlarged panel instead of leaving a large
+      // empty tail; info rows still keep their compact vertical rhythm.
+      const available = col.h - 46 - (p.heading ? 34 : 0) - (p.footer ? 26 : 0);
+      col.rowH = Math.max(34, Math.min(56, available / Math.max(1, p.rows.length)));
       for (const row of p.rows) {
         y = this.paintRow(ctx, row, col, y, s, X, Y, U);
       }
@@ -514,29 +516,36 @@ export class MenuUi implements ScreenUi {
   ): number {
     const perRow = items.length <= 3 ? items.length : Math.ceil(items.length / 2);
     const cellW = (col.w - 40) / Math.max(1, perRow);
-    const iconSize = U(Math.min(120, cellW * s * 0.62));
+    // cellW is already in design pixels, so do not multiply by the canvas
+    // scale again: that shrank the original icons twice on small screens.
+    const iconSize = U(Math.min(160, cellW * 0.92));
+    const rows = Math.ceil(items.length / perRow);
+    const rowStep = iconSize / s + 52;
+    // Balance the icon block in the taller panel when there is no heading.
+    const startY = col.panel.heading ? y : col.y + (col.h - rows * rowStep) / 2;
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const row = Math.floor(i / perRow);
       const colIdx = i % perRow;
       const cx = col.x + 20 + cellW * colIdx + cellW / 2;
-      const cy = y + row * (iconSize / s + 46) + iconSize / s / 2;
+      const cy = startY + row * rowStep + iconSize / s / 2;
       const img = item.icon ? this.image(item.icon) : null;
       if (img) {
         ctx.drawImage(img, X(cx) - iconSize / 2, Y(cy) - iconSize / 2, iconSize, iconSize);
       }
-      ctx.font = `700 ${U(13)}px ${FONT}`;
-      ctx.fillStyle = this.hover === item.id ? '#7fe8d8' : 'rgba(255,255,255,0.85)';
+      ctx.font = `700 ${U(14)}px ${FONT}`;
+      ctx.fillStyle = this.hover === item.id
+        ? cssColor(this.accent)
+        : cssColor(this.accentText, 0.9);
       ctx.textAlign = 'center';
-      ctx.fillText(item.label, X(cx), Y(cy + iconSize / s / 2 + 16));
+      ctx.fillText(item.label, X(cx), Y(cy + iconSize / s / 2 + 18));
       ctx.textAlign = 'left';
       this.regions.push({
         id: item.id, x: X(cx) - iconSize / 2, y: Y(cy) - iconSize / 2,
-        w: iconSize, h: iconSize + U(30),
+        w: iconSize, h: iconSize + U(34),
       });
     }
-    const rows = Math.ceil(items.length / perRow);
-    return y + rows * (iconSize / s + 46) + 6;
+    return startY + rows * rowStep + 6;
   }
 
   private paintButtons(
@@ -554,12 +563,19 @@ export class MenuUi implements ScreenUi {
       } else {
         ctx.fillStyle = 'rgba(10,14,22,0.72)';
         ctx.fillRect(X(bx), Y(y), U(bw), U(bh));
-        ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-        ctx.strokeRect(X(bx), Y(y), U(bw), U(bh));
       }
+      ctx.strokeStyle = cssColor(this.accent, this.hover === item.id ? 0.7 : 0.3);
+      ctx.lineWidth = Math.max(1, s);
+      ctx.strokeRect(X(bx), Y(y), U(bw), U(bh));
       ctx.font = `700 ${U(17)}px ${FONT}`;
-      ctx.fillStyle = '#0a0e16';
       ctx.textAlign = 'center';
+      // The accent label sits on the pale plate: a dark outline keeps every
+      // player colour (including white) readable.
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(4,8,14,0.72)';
+      ctx.lineWidth = U(3);
+      ctx.strokeText(item.label, X(bx + bw / 2), Y(y + bh / 2 + 1));
+      ctx.fillStyle = cssColor(this.accentText);
       ctx.fillText(item.label, X(bx + bw / 2), Y(y + bh / 2 + 1));
       ctx.textAlign = 'left';
       this.regions.push({ id: item.id, x: X(bx), y: Y(y), w: U(bw), h: U(bh) });
@@ -645,80 +661,82 @@ export class MenuUi implements ScreenUi {
   ): number {
     const labelX = X(col.x + 20);
     const valueRight = X(col.x + col.w - 20);
-    const rowH = 34;
+    const rowH = col.rowH ?? 34;
+    const fs = Math.max(14, Math.min(18, rowH * 0.31));
     switch (row.kind) {
       case 'slider': {
-        ctx.font = `${U(14)}px ${FONT}`;
+        ctx.font = `${U(fs)}px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.72)';
         ctx.fillText(row.label, labelX, Y(y));
         // Track on the right: knob position + value.
-        const tw = U(190), tx = valueRight - tw - U(70), ty = Y(y) - U(3);
+        const tw = U(240), tx = valueRight - tw - U(74), ty = Y(y) - U(3);
         ctx.fillStyle = 'rgba(255,255,255,0.16)';
         ctx.fillRect(tx, ty, tw, U(6));
         const frac = row.max > row.min ? (row.value - row.min) / (row.max - row.min) : 0;
         const kx = tx + tw * Math.max(0, Math.min(1, frac));
-        ctx.fillStyle = '#7fe8d8';
+        ctx.fillStyle = cssColor(this.accent);
         ctx.fillRect(tx, ty, kx - tx, U(6));
         ctx.beginPath();
-        ctx.arc(kx, ty + U(3), U(7), 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
+        ctx.arc(kx, ty + U(3), U(8), 0, Math.PI * 2);
+        ctx.fillStyle = cssColor(this.accentText);
         ctx.fill();
-        ctx.font = `${U(13)}px ${FONT}`;
+        ctx.font = `${U(Math.max(13, fs - 1))}px ${FONT}`;
         ctx.textAlign = 'right';
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = cssColor(this.accentText);
         ctx.fillText(row.display(row.value), valueRight, Y(y));
         ctx.textAlign = 'left';
         this.regions.push({
-          id: 'row:' + row.id, x: tx - U(8), y: ty - U(12), w: tw + U(16), h: U(28),
+          id: 'row:' + row.id, x: tx - U(8), y: ty - U(14), w: tw + U(16), h: U(32),
         });
         return y + rowH;
       }
       case 'check': {
-        ctx.font = `${U(14)}px ${FONT}`;
+        ctx.font = `${U(fs)}px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.72)';
         ctx.fillText(row.label, labelX, Y(y));
-        const box = U(18);
+        const box = U(Math.max(18, Math.min(24, rowH * 0.42)));
         const bx = valueRight - box, by = Y(y) - box / 2;
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.strokeStyle = cssColor(this.accent, 0.55);
         ctx.lineWidth = Math.max(1, s);
         ctx.strokeRect(bx, by, box, box);
         if (row.value) {
-          ctx.fillStyle = '#7fe8d8';
+          ctx.fillStyle = cssColor(this.accent);
           const ball = box - U(8);
           ctx.beginPath();
           ctx.arc(bx + box / 2, by + box / 2, ball / 2, 0, Math.PI * 2);
           ctx.fill();
         }
-        this.regions.push({ id: 'row:' + row.id, x: bx - U(10), y: Y(y) - U(14), w: box + U(20), h: U(28) });
+        this.regions.push({ id: 'row:' + row.id, x: bx - U(10), y: Y(y) - U(16), w: box + U(20), h: U(32) });
         return y + rowH;
       }
       case 'text': {
-        ctx.font = `${U(14)}px ${FONT}`;
+        ctx.font = `${U(fs)}px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.72)';
         ctx.fillText(row.label, labelX, Y(y));
-        const w = U(240), h = U(28);
+        const w = U(280), h = U(Math.max(28, Math.min(38, rowH - 10)));
         const bx = valueRight - w, by = Y(y) - h / 2;
         const focused = this.focus === row.id;
         ctx.fillStyle = 'rgba(0,0,0,0.45)';
         ctx.fillRect(bx, by, w, h);
-        ctx.strokeStyle = focused ? 'rgba(127,232,216,0.85)' : 'rgba(255,255,255,0.25)';
+        ctx.strokeStyle = focused ? cssColor(this.accent, 0.85) : 'rgba(255,255,255,0.25)';
         ctx.strokeRect(bx, by, w, h);
-        ctx.font = `${U(15)}px ${FONT}`;
-        ctx.fillStyle = '#ffffff';
+        ctx.font = `${U(Math.max(15, fs))}px ${FONT}`;
+        ctx.fillStyle = cssColor(this.accentText);
         ctx.fillText(row.value, bx + U(8), Y(y));
         if (focused && this.caretOn) {
           const tw = ctx.measureText(row.value).width;
-          ctx.fillRect(bx + U(8) + tw + U(2), Y(y) - U(8), Math.max(1, s), U(16));
+          ctx.fillStyle = cssColor(this.accentText);
+          ctx.fillRect(bx + U(8) + tw + U(2), Y(y) - U(9), Math.max(1, s), U(18));
         }
         this.regions.push({ id: 'row:' + row.id, x: bx, y: by, w, h });
         return y + rowH;
       }
       case 'color': {
         const hovered = this.hover === 'row:' + row.id;
-        ctx.font = `${U(14)}px ${FONT}`;
-        ctx.fillStyle = hovered ? '#7fe8d8' : 'rgba(255,255,255,0.72)';
+        ctx.font = `${U(fs)}px ${FONT}`;
+        ctx.fillStyle = hovered ? cssColor(this.accent) : 'rgba(255,255,255,0.72)';
         ctx.fillText(row.label, labelX, Y(y));
-        const sw = U(24), sh = U(16);
+        const sw = U(28), sh = U(Math.max(16, Math.min(22, rowH * 0.4)));
         const sx = valueRight - sw, sy = Y(y) - sh / 2;
         ctx.fillStyle = normalizeHexColor(row.value, DEFAULT_PLAYER_COLOR);
         ctx.fillRect(sx, sy, sw, sh);
@@ -726,27 +744,27 @@ export class MenuUi implements ScreenUi {
         ctx.lineWidth = Math.max(1, s);
         ctx.strokeRect(sx, sy, sw, sh);
         ctx.font = `${U(12)}px ${FONT}`;
-        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.fillStyle = cssColor(this.accentText, 0.72);
         ctx.textAlign = 'right';
         ctx.fillText(normalizeHexColor(row.value, DEFAULT_PLAYER_COLOR), sx - U(9), Y(y));
         ctx.textAlign = 'left';
         this.regions.push({
-          id: 'row:' + row.id, x: labelX, y: Y(y) - U(14), w: valueRight - labelX, h: U(28),
+          id: 'row:' + row.id, x: labelX, y: Y(y) - U(16), w: valueRight - labelX, h: U(32),
         });
         return y + rowH;
       }
       case 'button': {
-        const bh = U(32);
+        const bh = U(Math.max(32, Math.min(44, rowH - 10)));
         const bw = U(col.w - 48);
         const bx = X(col.x + 24);
         const hovered = this.hover === 'row:' + row.id;
-        ctx.fillStyle = hovered ? 'rgba(255,255,255,0.16)' : 'rgba(10,14,22,0.72)';
+        ctx.fillStyle = hovered ? cssColor(this.accent, 0.18) : 'rgba(10,14,22,0.72)';
         ctx.fillRect(bx, Y(y) - bh / 2, bw, bh);
-        ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+        ctx.strokeStyle = cssColor(this.accent, hovered ? 0.55 : 0.28);
         ctx.strokeRect(bx, Y(y) - bh / 2, bw, bh);
-        ctx.font = `700 ${U(13)}px ${FONT}`;
+        ctx.font = `700 ${U(Math.max(13, fs - 1))}px ${FONT}`;
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = cssColor(this.accentText);
         const text = row.value ? `${row.label}  ·  ${row.value}` : row.label;
         ctx.fillText(text, bx + bw / 2, Y(y) + 1);
         ctx.textAlign = 'left';
@@ -754,10 +772,10 @@ export class MenuUi implements ScreenUi {
         return y + rowH + 6;
       }
       case 'info': {
-        ctx.font = `${U(row.small ? 12 : 13)}px ${FONT}`;
+        ctx.font = `${U(row.small ? 13 : 14)}px ${FONT}`;
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
         ctx.fillText(row.text, labelX, Y(y));
-        return y + (row.small ? 18 : 20);
+        return y + (row.small ? 20 : 22);
       }
     }
     return y + rowH;
@@ -825,7 +843,7 @@ export class MenuUi implements ScreenUi {
   }
 
   wheel(deltaY: number): boolean {
-    const overflow = this.contentBottom - (104 + 512);
+    const overflow = this.contentBottom - (PANEL_Y + PANEL_H);
     if (overflow <= 6) return false;
     const next = this.scroll + (deltaY > 0 ? 40 : -40);
     this.scroll = Math.max(0, Math.min(overflow, next));

@@ -11,9 +11,11 @@ import type { Multiplayer } from './manager';
 import type { RoomInfo } from '../nostr/event';
 import { nextUiVersion } from '../../engine/overlay';
 import { FS_REGION, toggleFullscreen } from '../ui/fullscreen';
+import type { Rgb } from '../colors';
+import { cssColor, accentMoved, currentPlayerAccent, readableAccent } from '../ui/theme';
 import {
   UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
-  paintActionColumn, paintPanelBox, contentFocusRect,
+  paintActionColumn, paintContentShell, paintNavbar, contentFocusRect,
 } from '../ui/layout';
 import type { ScreenUi } from '../../engine/overlay';
 
@@ -96,6 +98,10 @@ export class LobbyUi implements ScreenUi {
   private typeIdx = 0;
   private levelIdx = 0;
   private maxIdx = 1;
+  private accent: Rgb = currentPlayerAccent();
+  private accentText: Rgb = readableAccent(this.accent);
+  private paintedAccent: Rgb | null = null;
+  private lastAccentCheck = 0;
 
   constructor(hooks: LobbyHooks, manager: Multiplayer = mp) {
     this.hooks = hooks;
@@ -107,7 +113,16 @@ export class LobbyUi implements ScreenUi {
     this.version = nextUiVersion();
   }
 
-  /** Content-panel strip kept sharp by the renderer's focus veil. */
+  /** Follow a live party-mode accent without repainting a static lobby. */
+  syncAccent(now: number): void {
+    if (now - this.lastAccentCheck < 120) return;
+    this.lastAccentCheck = now;
+    const painted = this.paintedAccent;
+    if (painted && !accentMoved(currentPlayerAccent(), painted)) return;
+    this.bump();
+  }
+
+  /** Full menu plane kept sharp by the renderer's focus veil. */
   focusRect(w: number, h: number): { x: number; y: number; w: number; h: number } {
     return contentFocusRect(w, h);
   }
@@ -116,6 +131,9 @@ export class LobbyUi implements ScreenUi {
   paint(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     this.ctx2 = ctx;
     this.logical = { w, h };
+    this.accent = currentPlayerAccent();
+    this.accentText = readableAccent(this.accent);
+    this.paintedAccent = [this.accent[0], this.accent[1], this.accent[2]];
     const s = Math.min(w / DW, h / DH);
     const ox = (w - DW * s) / 2;
     const oy = (h - DH * s) / 2;
@@ -128,29 +146,17 @@ export class LobbyUi implements ScreenUi {
     ctx.textAlign = 'left';
 
     // Full-view dim so the WebGL background stays visible but the UI reads.
-    ctx.fillStyle = 'rgba(4, 8, 14, 0.45)';
+    // The same alpha and content rectangle as the menus, settings and room.
+    ctx.fillStyle = 'rgba(4, 8, 14, 0.42)';
     ctx.fillRect(0, 0, w, h);
+    paintContentShell(ctx, s, X, Y, U);
 
-    // Title + identity/status strip.
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `700 ${U(34)}px ${FONT}`;
-    ctx.shadowColor = 'rgba(0,0,0,0.85)';
-    ctx.shadowBlur = U(8);
-    ctx.fillText('MULTIPLAYER', X(CONTENT_CX), Y(32));
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(127,232,216,0.9)';
-    ctx.fillRect(X(CONTENT_CX - 90), Y(52), U(180), U(2));
-    const relays = this.mp.config.relays.length;
-    const open = this.mp.online ? relays : 0;
-    ctx.font = `${U(14)}px ${FONT}`;
-    ctx.fillStyle = 'rgba(255,255,255,0.78)';
-    ctx.fillText(
-      `you are ${this.mp.identityName()} · ${short(this.mp.npub)} · relays ${open}/${relays}` +
-      (this.mp.guestCount() > 0 ? ` · ${this.mp.guestCount()} guest${this.mp.guestCount() === 1 ? '' : 's'}` : ''),
-      X(CONTENT_CX), Y(72),
-    );
-    ctx.textAlign = 'left';
+    // Shared navbar: the clickable path only (no pilot key, relay or guest
+    // identity line), matching every other menu screen.
+    this.regions.push(...paintNavbar(ctx, s, X, Y, U, [
+      { label: 'MAIN MENU', current: false },
+      { label: 'MULTIPLAYER', current: true },
+    ], this.hover, this.accent));
 
     this.paintRooms(ctx, s, X, Y, U);
     this.paintCreate(ctx, s, X, Y, U);
@@ -175,6 +181,7 @@ export class LobbyUi implements ScreenUi {
       ],
       back: { id: 'back', label: 'back' },
       hover: this.hover,
+      accent: this.accent,
     }));
 
     // Open dropdown options last: they float above everything.
@@ -186,7 +193,6 @@ export class LobbyUi implements ScreenUi {
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
     const x0 = leftPanelX(0), y0 = PANEL_Y, w = PANEL_W, h = PANEL_H;
-    paintPanelBox(ctx, X(x0), Y(y0), U(w), U(h), s);
     ctx.fillStyle = '#ffffff';
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('PUBLIC ROOMS', X(x0 + 20), Y(y0 + 26));
@@ -222,15 +228,15 @@ export class LobbyUi implements ScreenUi {
       const dead = this.mp.deadRooms.has(room.hostPubkey + ':' + room.id);
       const rowId = 'room:' + room.hostPubkey + ':' + room.id;
       const hovered = this.hover === rowId;
-      ctx.fillStyle = hovered ? 'rgba(127,232,216,0.10)' : i % 2 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
+      ctx.fillStyle = hovered ? cssColor(this.accent, 0.1) : i % 2 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
       ctx.fillRect(X(x0 + 16), Y(ry), U(w - 48) + U(16), U(rowH - 6));
       if (own) {
-        ctx.fillStyle = 'rgba(127,232,216,0.6)';
+        ctx.fillStyle = cssColor(this.accent, 0.6);
         ctx.fillRect(X(x0 + 16), Y(ry), U(3), U(rowH - 6));
       }
       this.regions.push({ id: rowId, x: X(x0 + 16), y: Y(ry), w: U(w - 48) + U(16), h: U(rowH - 6) });
       ctx.font = `700 ${U(12)}px ${FONT}`;
-      ctx.fillStyle = own ? '#7fe8d8' : 'rgba(255,200,120,0.95)';
+      ctx.fillStyle = own ? cssColor(this.accentText) : 'rgba(255,200,120,0.95)';
       ctx.fillText(`${room.type || 'GAME'}${room.srv ? ' · SERVER' : ''}${own ? ' · YOURS' : ''}${dead ? ' · OFFLINE?' : ''}`, X(x0 + 28), Y(ry + 15));
       ctx.font = `700 ${U(16)}px ${FONT}`;
       ctx.fillStyle = dead ? 'rgba(255,255,255,0.45)' : '#ffffff';
@@ -269,7 +275,6 @@ export class LobbyUi implements ScreenUi {
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
     const x0 = leftPanelX(1), y0 = PANEL_Y, w = PANEL_W, h = PANEL_H;
-    paintPanelBox(ctx, X(x0), Y(y0), U(w), U(h), s);
     ctx.fillStyle = '#ffffff';
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('CREATE A ROOM', X(x0 + 20), Y(y0 + 26));
@@ -320,7 +325,7 @@ export class LobbyUi implements ScreenUi {
     let y = anchor.y + anchor.h + U(4);
     if (y + height > this.logical.h) y = Math.max(0, anchor.y - height - U(4));
     ctx.fillStyle = 'rgba(6,10,16,0.94)';
-    ctx.strokeStyle = 'rgba(127,232,216,0.5)';
+    ctx.strokeStyle = cssColor(this.accent, 0.5);
     ctx.lineWidth = Math.max(1, U(1));
     ctx.fillRect(anchor.x, y, anchor.w, height);
     ctx.strokeRect(anchor.x, y, anchor.w, height);
@@ -329,11 +334,11 @@ export class LobbyUi implements ScreenUi {
       const rid = 'opt:' + id + ':' + opt.value;
       const hovered = this.hover === rid;
       if (hovered) {
-        ctx.fillStyle = 'rgba(127,232,216,0.16)';
+        ctx.fillStyle = cssColor(this.accent, 0.16);
         ctx.fillRect(anchor.x + U(2), oy, anchor.w - U(4), rowH - U(2));
       }
       ctx.font = `700 ${U(14)}px ${FONT}`;
-      ctx.fillStyle = opt.selected ? '#7fe8d8' : '#ffffff';
+      ctx.fillStyle = opt.selected ? cssColor(this.accentText) : '#ffffff';
       ctx.fillText(clip(ctx, opt.label, anchor.w - U(20)), anchor.x + U(10), oy + rowH / 2);
       // Registered last: the dropdown wins hit testing over what it covers.
       this.regions.push({ id: rid, x: anchor.x, y: oy, w: anchor.w, h: rowH });
@@ -361,16 +366,18 @@ export class LobbyUi implements ScreenUi {
 
   private button(
     ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
-    label: string, hovered: boolean, s: number, size: number, id?: string, open = false, accent = false,
+    label: string, hovered: boolean, s: number, size: number, id?: string, open = false, emphasis = false,
   ): void {
     const pressed = id !== undefined && this.pressed === id;
-    ctx.fillStyle = accent
-      ? (hovered ? 'rgba(127,232,216,0.32)' : 'rgba(127,232,216,0.18)')
+    ctx.fillStyle = emphasis
+      ? cssColor(this.accent, hovered ? 0.32 : 0.18)
       : open
-        ? 'rgba(127,232,216,0.16)'
-        : (hovered ? 'rgba(255,255,255,0.16)' : 'rgba(10,14,22,0.72)');
+        ? cssColor(this.accent, 0.16)
+        : (hovered ? cssColor(this.accent, 0.16) : 'rgba(10,14,22,0.72)');
     ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = accent ? 'rgba(127,232,216,0.8)' : open ? 'rgba(127,232,216,0.6)' : 'rgba(255,255,255,0.16)';
+    ctx.strokeStyle = emphasis
+      ? cssColor(this.accent, 0.8)
+      : open ? cssColor(this.accent, 0.6) : cssColor(this.accent, 0.24);
     ctx.lineWidth = Math.max(1, s);
     ctx.strokeRect(x, y, w, h);
     if (pressed) {
@@ -379,7 +386,7 @@ export class LobbyUi implements ScreenUi {
     }
     ctx.font = `700 ${Math.round(size * s)}px ${FONT}`;
     ctx.textAlign = 'center';
-    ctx.fillStyle = accent ? '#7fe8d8' : '#ffffff';
+    ctx.fillStyle = cssColor(this.accentText);
     ctx.fillText(clip(ctx, label, w - 12 * s), x + w / 2, y + h / 2 + s);
     ctx.textAlign = 'left';
     if (id !== undefined) this.regions.push({ id, x, y, w, h });
@@ -501,7 +508,7 @@ export class LobbyUi implements ScreenUi {
       this.bump();
       return;
     }
-    if (id === 'back') {
+    if (id === 'back' || id === 'crumb:0') {
       this.hooks.back();
       return;
     }
@@ -542,8 +549,4 @@ function age(created: number): string {
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
   return `${Math.floor(secs / 86400)}d ago`;
-}
-
-function short(npub: string): string {
-  return npub.length > 16 ? npub.slice(0, 9) + '…' + npub.slice(-4) : npub;
 }

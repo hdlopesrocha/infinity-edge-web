@@ -152,6 +152,48 @@ export function projectedPlaneRect(
 }
 
 /**
+ * Uniform scale for a world-space plane so it fits inside an eye's projection.
+ *
+ * A menu/HUD panel is painted at a fixed world size and distance. On a narrow
+ * or moderate eye FOV that can be wider than the view: its projected rectangle
+ * then crosses the viewport edge, so the focus frame loses its side strokes and
+ * the post-process has no "outside" left to blur. Scale the quad (and the
+ * painted FOV for the HUD) by this factor to keep a margin around it.
+ *
+ * `projections` are the WebXR eye projection matrices. For a plane centred on
+ * the view axis, the NDC half-extent is `(size / 2) / distance * m[0]` (or
+ * m[5] vertically); require it to stay inside `margin` (0..1 of NDC). The
+ * asymmetric per-eye offsets m[8]/m[9] are subtracted from the usable margin
+ * so the tighter side is safe too.
+ */
+export function planeFitScale(
+  projections: ArrayLike<number>[],
+  width: number,
+  height: number,
+  distance: number,
+  margin = 0.86,
+): number {
+  if (!(width > 0) || !(height > 0) || !(distance > 0)) return 1;
+  const edge = Math.max(0.05, Math.min(1, margin));
+  let scale = 1;
+  for (const p of projections) {
+    const m0 = Math.abs(p[0] ?? 0);
+    const m5 = Math.abs(p[5] ?? 0);
+    if (!(m0 > 1e-6) || !(m5 > 1e-6) || !Number.isFinite(m0) || !Number.isFinite(m5)) continue;
+    // Per-eye projections are often asymmetric (m[8]/m[9] shift the NDC
+    // centre). Keep the same margin on the tighter side as well.
+    const offX = Math.max(0, Math.min(edge, Math.abs(p[8] ?? 0)));
+    const offY = Math.max(0, Math.min(edge, Math.abs(p[9] ?? 0)));
+    // NDC half-size = (worldHalf / distance) * projection scale. Solve for the
+    // largest world size whose half-size is at most `edge` on both sides.
+    const fitW = (2 * distance * (edge - offX)) / m0;
+    const fitH = (2 * distance * (edge - offY)) / m5;
+    scale = Math.min(scale, fitW / width, fitH / height);
+  }
+  return Math.max(0.05, Math.min(1, scale));
+}
+
+/**
  * Cyclops view for the head-locked HUD. The eye views are composed exactly as
  * the renderer does it (head pose -> yaw re-centre -> ship-up chase), inverted
  * to world space and averaged into one head-centre position. The returned view

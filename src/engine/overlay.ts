@@ -45,6 +45,12 @@ export interface ScreenUi {
    * their content panels; the VR path projects its own world-space panel.
    */
   focusRect?(w: number, h: number): { x: number; y: number; w: number; h: number } | null;
+  /**
+   * Optional per-frame hook for colours that move on their own (party mode).
+   * Implementations bump `version` only when the live accent actually moved,
+   * so a static menu is not repainted every frame.
+   */
+  syncAccent?(now: number): void;
 }
 
 const VERT = `#version 300 es

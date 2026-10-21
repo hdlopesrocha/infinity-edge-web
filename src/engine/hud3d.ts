@@ -7,6 +7,7 @@
 // viewport after the post composite. Same data the DOM overlay renders, so the
 // two can never disagree.
 import { store } from '../game/store';
+import { cssColor, readableAccent } from '../game/ui/theme';
 import { WorldQuad } from './vrpanel';
 import type { vec3 } from './math';
 
@@ -54,6 +55,89 @@ function tinted(img: HTMLImageElement, css: string): HTMLCanvasElement {
   g.fillRect(0, 0, cv.width, cv.height);
   tintCache.set(key, cv);
   return cv;
+}
+
+/** 1 px ring built from a sprite's alpha silhouette. Pixel-edge detection is
+ *  cached at the display size so the border stays exactly one pixel even when
+ *  the HUD texture is scaled; the DOM marker uses the same flood-fill to
+ *  pre-render its ring image. */
+const borderCache = new Map<string, HTMLCanvasElement>();
+function innerBorder(
+  img: HTMLImageElement,
+  color: readonly [number, number, number],
+  w: number,
+  h: number,
+): HTMLCanvasElement | null {
+  const cw = Math.max(1, Math.round(w));
+  const ch = Math.max(1, Math.round(h));
+  const key = `${img.src}|${color[0]},${color[1]},${color[2]}|${cw}x${ch}`;
+  const hit = borderCache.get(key);
+  if (hit) return hit;
+  if (borderCache.size > 64) {
+    const first = borderCache.keys().next();
+    if (!first.done) borderCache.delete(first.value);
+  }
+  const cv = document.createElement('canvas');
+  cv.width = cw;
+  cv.height = ch;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  if (!g) return null;
+  g.drawImage(img, 0, 0, cw, ch);
+  const src = g.getImageData(0, 0, cw, ch);
+  const data = src.data;
+  const out = g.createImageData(cw, ch);
+  const r = Math.round(color[0] * 255);
+  const gg = Math.round(color[1] * 255);
+  const b = Math.round(color[2] * 255);
+  // Flood the transparent area that touches the canvas edge. Transparent
+  // detail *inside* the silhouette (the black panels of the base icon, for
+  // example) is not outside, so the ring only traces the outer contour.
+  const outside = new Uint8Array(cw * ch);
+  const queue = new Int32Array(cw * ch);
+  let head = 0;
+  let tail = 0;
+  const push = (x: number, y: number): void => {
+    const p = y * cw + x;
+    if (outside[p] || data[p * 4 + 3] > 8) return;
+    outside[p] = 1;
+    queue[tail++] = p;
+  };
+  for (let x = 0; x < cw; x++) { push(x, 0); push(x, ch - 1); }
+  for (let y = 1; y < ch - 1; y++) { push(0, y); push(cw - 1, y); }
+  while (head < tail) {
+    const p = queue[head++];
+    const x = p % cw;
+    const y = (p / cw) | 0;
+    if (x > 0) push(x - 1, y);
+    if (x + 1 < cw) push(x + 1, y);
+    if (y > 0) push(x, y - 1);
+    if (y + 1 < ch) push(x, y + 1);
+  }
+  const isOutside = (x: number, y: number): boolean =>
+    x < 0 || y < 0 || x >= cw || y >= ch || outside[y * cw + x] === 1;
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const i = (y * cw + x) * 4;
+      if (data[i + 3] <= 8) continue;
+      const edge =
+        isOutside(x - 1, y) || isOutside(x + 1, y) ||
+        isOutside(x, y - 1) || isOutside(x, y + 1) ||
+        isOutside(x - 1, y - 1) || isOutside(x + 1, y - 1) ||
+        isOutside(x - 1, y + 1) || isOutside(x + 1, y + 1);
+      if (!edge) continue;
+      out.data[i] = r;
+      out.data[i + 1] = gg;
+      out.data[i + 2] = b;
+      out.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(out, 0, 0);
+  borderCache.set(key, cv);
+  return cv;
+}
+
+function oppositeCss(color: readonly [number, number, number]): string {
+  return `rgb(${((1 - color[0]) * 255) | 0},${((1 - color[1]) * 255) | 0},${((1 - color[2]) * 255) | 0})`;
 }
 
 const iconCache = new Map<string, HTMLImageElement>();
@@ -191,6 +275,11 @@ export class HudOverlay {
     const sx = W / Math.max(1, h.canvasW);
     const sy = H / Math.max(1, h.canvasH);
     const s = Math.min(sx, sy);
+    // Player-colour accents (timer/action chrome). `accentText` lifts very dark
+    // player choices just enough to stay legible over the scene.
+    const accent = h.accent;
+    const accentCss = cssColor(accent);
+    const accentTextCss = cssColor(readableAccent(accent));
     // No UI hugs the border, only the 3D game does.
     const padX = HUD_PADDING * sx;
     const padY = HUD_PADDING * sy;
@@ -211,7 +300,7 @@ export class HudOverlay {
     if (h.matchLeft !== null) {
       const total = Math.max(0, Math.ceil(h.matchLeft / 1000));
       const clock = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-      c.fillStyle = h.matchLeft <= 30000 ? '#ffcc55' : '#fff';
+      c.fillStyle = h.matchLeft <= 30000 ? '#ffcc55' : accentTextCss;
       c.font = `${Math.round(22 * s)}px system-ui, sans-serif`;
       shadow(5);
       c.fillText(clock, W / 2, padY + 52 * sy);
@@ -232,14 +321,15 @@ export class HudOverlay {
       const bx = W / 2 - bw / 2, by = H * 0.3;
       c.fillStyle = 'rgba(0,0,0,0.45)';
       c.fillRect(bx, by, bw, bh);
-      c.strokeStyle = h.outside ? 'rgba(255,122,82,0.8)' : 'rgba(255,255,255,0.35)';
+      c.strokeStyle = h.outside ? 'rgba(255,122,82,0.8)' : cssColor(accent, 0.4);
       c.lineWidth = 2;
       c.strokeRect(bx, by, bw, bh);
-      c.fillStyle = '#fff';
+      c.fillStyle = h.outside ? '#ffb0a0' : accentTextCss;
       c.font = `${Math.round(18 * s)}px system-ui, sans-serif`;
       shadow(4);
       c.fillText(label, W / 2, by + 8 * sy);
       c.font = `700 ${Math.round(44 * s)}px system-ui, sans-serif`;
+      c.fillStyle = h.outside ? '#ff7a52' : accentTextCss;
       c.fillText(`${secs}s`, W / 2, by + 32 * sy);
       if (h.respawn && h.deathCause) {
         c.font = `${Math.round(16 * s)}px system-ui, sans-serif`;
@@ -249,7 +339,7 @@ export class HudOverlay {
       const pct = t.total > 0 ? Math.max(0, Math.min(1, t.left / t.total)) : 0;
       c.fillStyle = 'rgba(255,255,255,0.18)';
       c.fillRect(bx + 12 * s, by + bh - 16 * sy, bw - 24 * s, 5);
-      c.fillStyle = h.outside ? '#ff7a52' : '#7fe8d8';
+      c.fillStyle = h.outside ? '#ff7a52' : accentCss;
       c.fillRect(bx + 12 * s, by + bh - 16 * sy, (bw - 24 * s) * pct, 5);
     }
     // Aim: the real _aim.png crosshair (32x32), exactly like the DOM HUD.
@@ -306,12 +396,18 @@ export class HudOverlay {
       const mx = Math.max(marginX, Math.min(W - marginX, m.x * sx));
       const my = Math.max(marginY, Math.min(H - marginY, m.y * sy));
       const sprite = icon(m.over ? OVER_URL : m.iconUrl);
+      const border = m.enemy ? oppositeCss(m.color) : null;
       // Team-coloured glow, like the DOM drop-shadow on the marker.
       c.shadowColor = col;
       c.shadowBlur = 5;
       if (sprite) {
         // Friend and enemy alike: the icon itself in the team colour.
         c.drawImage(tinted(sprite, col), mx - iw / 2, my - ih / 2, iw, ih);
+        if (m.enemy) {
+          // Opposite-colour 1 px inset ring, clipped to the PNG alpha shape.
+          const ring = innerBorder(sprite, [1 - m.color[0], 1 - m.color[1], 1 - m.color[2]], iw, ih);
+          if (ring) c.drawImage(ring, mx - iw / 2, my - ih / 2, iw, ih);
+        }
       } else {
         c.strokeStyle = col;
         c.lineWidth = Math.max(2, 3 * s);
@@ -324,6 +420,20 @@ export class HudOverlay {
           c.closePath();
         }
         c.stroke();
+        if (border) {
+          // Procedural fallback: a thinner inner contour while the icon loads.
+          c.strokeStyle = border;
+          c.lineWidth = 1;
+          c.beginPath();
+          if (m.over) {
+            c.ellipse(mx, my, Math.max(1, rx - 1.5), Math.max(1, ry - 1.5), 0, 0, Math.PI * 2);
+          } else {
+            const ir = Math.max(1, r - 2);
+            c.moveTo(mx, my - ir); c.lineTo(mx + ir, my); c.lineTo(mx, my + ir); c.lineTo(mx - ir, my);
+            c.closePath();
+          }
+          c.stroke();
+        }
       }
       if (m.label) {
         c.fillStyle = '#fff';
@@ -336,11 +446,11 @@ export class HudOverlay {
     // Pre-match countdown: big and centred, so the goggles can be put on.
     if (h.countdown > 0) {
       c.font = `700 ${Math.round(120 * s)}px system-ui, sans-serif`;
-      c.fillStyle = '#ffffff';
+      c.fillStyle = accentTextCss;
       shadow(14);
       c.fillText(String(h.countdown), W / 2, H * 0.36);
       c.font = `700 ${Math.round(30 * s)}px system-ui, sans-serif`;
-      c.fillStyle = '#7fe8d8';
+      c.fillStyle = accentTextCss;
       c.fillText('READY IN', W / 2, H * 0.36 - 52 * sy);
     }
     // Missile-lock warning: blink a red banner under the top block.
@@ -397,7 +507,7 @@ export class HudOverlay {
         const glyph = icon(it.url);
         if (glyph) c.drawImage(glyph, bx, y, bw, bw);
         if (it.count) {
-          c.fillStyle = '#fff';
+          c.fillStyle = accentTextCss;
           c.font = `${Math.round(18 * s)}px system-ui, sans-serif`;
           shadow(4);
           c.fillText(it.count, bx + bw / 2, y + bw * 0.34);
@@ -430,20 +540,20 @@ export class HudOverlay {
       const hm = icon(FIRE_HM_URL);
       if (hm) c.drawImage(hm, x0, y, iw, iw);
       c.font = `700 ${Math.round(22 * s)}px system-ui, sans-serif`;
-      c.fillStyle = h.homings > 0 ? '#fff' : 'rgba(255,255,255,0.35)';
+      c.fillStyle = h.homings > 0 ? accentTextCss : 'rgba(255,255,255,0.35)';
       shadow(4);
       c.fillText(String(h.homings), x0 + iw + 8 * s, y + iw / 2);
       const x1 = x0 + iw + 56 * s;
       const ni = icon(NITRO_URL);
       if (ni) c.drawImage(ni, x1, y, iw, iw);
-      c.fillStyle = h.nitroPct > 0 ? '#fff' : 'rgba(255,255,255,0.35)';
+      c.fillStyle = h.nitroPct > 0 ? accentTextCss : 'rgba(255,255,255,0.35)';
       c.fillText(String(h.nitroPct), x1 + iw + 8 * s, y + iw / 2);
       c.textAlign = 'center';
       c.textBaseline = 'top';
     }
 
     // Frame time (web addition): smoothed display interval, bottom centre of
-    // the plane. The setting lives in Options / pause settings.
+    // the plane. The setting lives in Options / the pause menu's options.
     if (store.options.showMs && h.frameMs > 0) {
       c.textAlign = 'center';
       c.textBaseline = 'bottom';

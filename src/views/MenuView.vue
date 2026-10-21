@@ -192,6 +192,7 @@ export default defineComponent({
         case 'billboards': o.billboards = Boolean(value); break;
         case 'zoomBlur': o.zoomBlur = Boolean(value); break;
         case 'showMs': o.showMs = Boolean(value); break;
+        case 'partyMode': o.partyMode = Boolean(value); break;
         case 'dwellTime': o.dwellTime = Math.max(0.5, Math.min(5, Math.round(Number(value) * 10) / 10)); break;
         case 'playerColor': o.playerColor = normalizeHexColor(value, o.playerColor); break;
         case 'enemyColor': o.enemyColor = normalizeHexColor(value, o.enemyColor); break;

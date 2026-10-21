@@ -8,9 +8,11 @@ import { nextUiVersion } from '../../engine/overlay';
 import type { ScreenUi } from '../../engine/overlay';
 import type { RoomSnapshot } from './manager';
 import { FS_REGION, toggleFullscreen } from '../ui/fullscreen';
+import type { Rgb } from '../colors';
+import { cssColor, accentMoved, currentPlayerAccent, readableAccent } from '../ui/theme';
 import {
   UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
-  paintActionColumn, paintPanelBox, contentFocusRect,
+  paintActionColumn, paintContentShell, paintNavbar, contentFocusRect,
 } from '../ui/layout';
 
 const DW = 1280;
@@ -51,6 +53,10 @@ export class RoomUi implements ScreenUi {
   private chatText = '';
   private chatScroll = 0;
   private chatBox = { x: 0, y: 0, w: 0, h: 0 };
+  private accent: Rgb = currentPlayerAccent();
+  private accentText: Rgb = readableAccent(this.accent);
+  private paintedAccent: Rgb | null = null;
+  private lastAccentCheck = 0;
 
   constructor(hooks: RoomHooks) {
     this.hooks = hooks;
@@ -74,7 +80,16 @@ export class RoomUi implements ScreenUi {
     this.version = nextUiVersion();
   }
 
-  /** Content-panel strip kept sharp by the renderer's focus veil. */
+  /** Follow a live party-mode accent without repainting a static room. */
+  syncAccent(now: number): void {
+    if (now - this.lastAccentCheck < 120) return;
+    this.lastAccentCheck = now;
+    const painted = this.paintedAccent;
+    if (painted && !accentMoved(currentPlayerAccent(), painted)) return;
+    this.bump();
+  }
+
+  /** Full menu plane kept sharp by the renderer's focus veil. */
   focusRect(w: number, h: number): { x: number; y: number; w: number; h: number } {
     return contentFocusRect(w, h);
   }
@@ -83,6 +98,9 @@ export class RoomUi implements ScreenUi {
   paint(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     const snap = this.snap;
     this.logical = { w, h };
+    this.accent = currentPlayerAccent();
+    this.accentText = readableAccent(this.accent);
+    this.paintedAccent = [this.accent[0], this.accent[1], this.accent[2]];
     const s = Math.min(w / DW, h / DH);
     const ox = (w - DW * s) / 2;
     const oy = (h - DH * s) / 2;
@@ -97,37 +115,13 @@ export class RoomUi implements ScreenUi {
     ctx.fillRect(0, 0, w, h);
     if (!snap) return;
 
-    // Scrims: the water behind the top/bottom chrome is often bright enough
-    // to wash the text out, so fade a dark band in from each edge.
-    const top = ctx.createLinearGradient(0, Y(0), 0, Y(96));
-    top.addColorStop(0, 'rgba(3, 7, 12, 0.8)');
-    top.addColorStop(1, 'rgba(3, 7, 12, 0)');
-    ctx.fillStyle = top;
-    ctx.fillRect(0, 0, w, Y(96));
-    const bottom = ctx.createLinearGradient(0, Y(DH - 70), 0, Y(DH));
-    bottom.addColorStop(0, 'rgba(3, 7, 12, 0)');
-    bottom.addColorStop(1, 'rgba(3, 7, 12, 0.72)');
-    ctx.fillStyle = bottom;
-    ctx.fillRect(0, Math.max(0, Y(DH - 70)), w, Math.max(0, h - Y(DH - 70)));
-
-    // Title + subtitle (room identity, player count, phase).
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `700 ${U(30)}px ${FONT}`;
-    ctx.shadowColor = 'rgba(0,0,0,0.85)';
-    ctx.shadowBlur = U(8);
-    ctx.fillText(snap.title || snap.level, X(CONTENT_CX), Y(30));
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(127,232,216,0.9)';
-    ctx.fillRect(X(CONTENT_CX - 90), Y(50), U(180), U(2));
-    ctx.font = `600 ${U(15)}px ${FONT}`;
-    const subtitle = `${snap.players.length}/${snap.maxPlayers} pilots · room ${snap.roomId.slice(0, 8)} · ${snap.level}`;
-    const subW = ctx.measureText(subtitle).width;
-    ctx.fillStyle = 'rgba(3, 7, 12, 0.6)';
-    ctx.fillRect(X(CONTENT_CX) - subW / 2 - U(12), Y(58), subW + U(24), U(24));
-    ctx.fillStyle = 'rgba(168,255,240,0.95)';
-    ctx.fillText(subtitle, X(CONTENT_CX), Y(70));
-    ctx.textAlign = 'left';
+    // Same dim, one content rectangle and shared navbar as the menus,
+    // settings and lobby. The room's title is the last crumb.
+    paintContentShell(ctx, s, X, Y, U);
+    this.regions.push(...paintNavbar(ctx, s, X, Y, U, [
+      { label: 'MULTIPLAYER', current: false },
+      { label: snap.title || snap.level, current: true },
+    ], this.hover, this.accent));
 
     this.paintPlayers(ctx, snap, s, X, Y, U);
     this.paintChat(ctx, snap, s, X, Y, U);
@@ -158,6 +152,7 @@ export class RoomUi implements ScreenUi {
         : undefined,
       back: { id: 'back', label: snap.isHost ? 'CLOSE ROOM' : 'LEAVE ROOM', danger: true },
       hover: this.hover,
+      accent: this.accent,
     }));
 
     if (this.openTeam !== null) this.paintTeamDropdown(ctx, snap, s, X, Y, U);
@@ -168,7 +163,6 @@ export class RoomUi implements ScreenUi {
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
     const x0 = leftPanelX(0), y0 = PANEL_Y, w = PANEL_W, h = PANEL_H;
-    paintPanelBox(ctx, X(x0), Y(y0), U(w), U(h), s);
     ctx.fillStyle = '#ffffff';
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('PLAYERS', X(x0 + 20), Y(y0 + 26));
@@ -178,11 +172,11 @@ export class RoomUi implements ScreenUi {
       const me = i === snap.meIndex;
       const canPick = snap.isHost || me;
       if (me) {
-        ctx.fillStyle = 'rgba(127,232,216,0.10)';
+        ctx.fillStyle = cssColor(this.accent, 0.1);
         ctx.fillRect(X(x0 + 12), Y(y - 4), U(w - 24), U(rowH - 6));
       }
       ctx.font = `700 ${U(15)}px ${FONT}`;
-      ctx.fillStyle = me ? '#7fe8d8' : '#ffffff';
+      ctx.fillStyle = me ? cssColor(this.accentText) : '#ffffff';
       ctx.fillText(player.name, X(x0 + 22), Y(y + 6));
       // Badges: HOST, MIC.
       let badgeX = x0 + 22 + ctx.measureText(player.name).width / s + 14;
@@ -195,7 +189,7 @@ export class RoomUi implements ScreenUi {
         ctx.fillText(text, X(badgeX + 6), Y(y + 6));
         badgeX += bw + 6;
       };
-      if (player.host) badge('HOST', 'rgba(127,232,216,0.9)');
+      if (player.host) badge('HOST', cssColor(this.accentText, 0.9));
       if (player.mic) badge('MIC', 'rgba(255,212,121,0.95)');
       // Team picker on the right.
       const tw = 150;
@@ -224,7 +218,6 @@ export class RoomUi implements ScreenUi {
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   ): void {
     const x0 = leftPanelX(1), y0 = PANEL_Y, w = PANEL_W, h = PANEL_H;
-    paintPanelBox(ctx, X(x0), Y(y0), U(w), U(h), s);
     ctx.fillStyle = '#ffffff';
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('CHAT', X(x0 + 20), Y(y0 + 26));
@@ -287,15 +280,15 @@ export class RoomUi implements ScreenUi {
     const bx = X(x0 + 22);
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(bx, Y(iy), U(bw), U(inputH));
-    ctx.strokeStyle = this.focusChat ? 'rgba(127,232,216,0.85)' : 'rgba(255,255,255,0.25)';
+    ctx.strokeStyle = this.focusChat ? cssColor(this.accent, 0.85) : 'rgba(255,255,255,0.25)';
     ctx.lineWidth = Math.max(1, s);
     ctx.strokeRect(bx, Y(iy), U(bw), U(inputH));
     ctx.font = `${U(14)}px ${FONT}`;
-    ctx.fillStyle = this.chatText ? '#ffffff' : 'rgba(255,255,255,0.4)';
+    ctx.fillStyle = this.chatText ? cssColor(this.accentText) : 'rgba(255,255,255,0.4)';
     const shown = this.chatText || 'type a message…';
     ctx.fillText(shown, bx + U(8), Y(iy + inputH / 2));
     if (this.focusChat && this.caretOn) {
-      ctx.fillStyle = '#7fe8d8';
+      ctx.fillStyle = cssColor(this.accentText);
       const tw = ctx.measureText(shown).width;
       ctx.fillRect(bx + U(8) + (this.chatText ? tw : 0) + U(2), Y(iy + inputH / 2 - 8), Math.max(1, s), U(16));
     }
@@ -318,7 +311,7 @@ export class RoomUi implements ScreenUi {
       const rnd = (i: number): number => Math.abs(Math.sin(i * 12.9898 + level * 78.233));
       bars = Math.min(meterW, level * meterW * (0.6 + rnd(Math.floor(level * 100)) * 0.8));
     }
-    ctx.fillStyle = level > 0.65 ? '#ff8a76' : '#7fe8d8';
+    ctx.fillStyle = level > 0.65 ? '#ff8a76' : cssColor(this.accent);
     ctx.fillRect(X(meterX), Y(micY - 8), U(bars), U(6));
     ctx.font = `${U(11)}px ${FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
@@ -342,7 +335,7 @@ export class RoomUi implements ScreenUi {
     let y = anchor.y + anchor.h + U(4);
     if (y + height > this.logical.h) y = Math.max(0, anchor.y - height - U(4));
     ctx.fillStyle = 'rgba(6,10,16,0.94)';
-    ctx.strokeStyle = 'rgba(127,232,216,0.5)';
+    ctx.strokeStyle = cssColor(this.accent, 0.5);
     ctx.lineWidth = Math.max(1, U(1));
     ctx.fillRect(anchor.x, y, anchor.w, height);
     ctx.strokeRect(anchor.x, y, anchor.w, height);
@@ -350,12 +343,12 @@ export class RoomUi implements ScreenUi {
       const oy = y + U(4) + i * rowH;
       const rid = `opt:team:${index}:${option}`;
       if (this.hover === rid) {
-        ctx.fillStyle = 'rgba(127,232,216,0.16)';
+        ctx.fillStyle = cssColor(this.accent, 0.16);
         ctx.fillRect(anchor.x + U(2), oy, anchor.w - U(4), rowH - U(2));
       }
       const current = (snap.players[index]?.team || 'auto') === option;
       ctx.font = `700 ${U(13)}px ${FONT}`;
-      ctx.fillStyle = current ? '#7fe8d8' : '#ffffff';
+      ctx.fillStyle = current ? cssColor(this.accentText) : '#ffffff';
       ctx.fillText(option, anchor.x + U(10), oy + rowH / 2);
       this.regions.push({ id: rid, x: anchor.x, y: oy, w: anchor.w, h: rowH });
     });
@@ -364,24 +357,24 @@ export class RoomUi implements ScreenUi {
 
   private button(
     ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
-    label: string, id: string, hovered: boolean, size: number, accent = false,
+    label: string, id: string, hovered: boolean, size: number, emphasis = false,
     disabled = false, open = false,
   ): void {
     ctx.fillStyle = disabled
       ? 'rgba(10,14,22,0.45)'
-      : accent
-        ? 'rgba(127,232,216,0.2)'
+      : emphasis
+        ? cssColor(this.accent, 0.2)
         : open
-          ? 'rgba(127,232,216,0.16)'
-          : hovered ? 'rgba(255,255,255,0.16)' : 'rgba(10,14,22,0.72)';
+          ? cssColor(this.accent, 0.16)
+          : hovered ? cssColor(this.accent, 0.16) : 'rgba(10,14,22,0.72)';
     ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = accent ? 'rgba(127,232,216,0.8)' : open ? 'rgba(127,232,216,0.6)'
-      : 'rgba(255,255,255,0.16)';
+    ctx.strokeStyle = emphasis ? cssColor(this.accent, 0.8) : open ? cssColor(this.accent, 0.6)
+      : cssColor(this.accent, 0.24);
     ctx.lineWidth = Math.max(1, size / 16);
     ctx.strokeRect(x, y, w, h);
     ctx.font = `700 ${Math.round(size)}px ${FONT}`;
     ctx.textAlign = 'center';
-    ctx.fillStyle = disabled ? 'rgba(255,255,255,0.3)' : accent ? '#7fe8d8' : '#ffffff';
+    ctx.fillStyle = disabled ? 'rgba(255,255,255,0.3)' : cssColor(this.accentText);
     ctx.fillText(label, x + w / 2, y + h / 2 + 1);
     ctx.textAlign = 'left';
     // Disabled controls keep their look but are not clickable.
@@ -422,7 +415,7 @@ export class RoomUi implements ScreenUi {
       void toggleFullscreen().then(() => this.bump());
       return true;
     }
-    if (id === 'back') {
+    if (id === 'back' || id === 'crumb:0') {
       this.hooks.back();
       return true;
     }

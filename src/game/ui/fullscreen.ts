@@ -2,6 +2,9 @@
 // room) and by the in-match DOM button. Keeping one implementation guarantees
 // the same icon and behaviour from the boot sequence onwards.
 
+import type { Rgb } from '../colors';
+import { cssColor, currentPlayerAccent, readableAccent } from './theme';
+
 export function isFullscreen(): boolean {
   return typeof document !== 'undefined' && !!document.fullscreenElement;
 }
@@ -28,15 +31,16 @@ export const FS_REGION = 'fs';
  */
 export function paintFullscreenButton(
   ctx: CanvasRenderingContext2D, x: number, y: number, size: number, scale: number, hovered: boolean,
+  accent: Rgb = currentPlayerAccent(),
 ): void {
   ctx.fillStyle = hovered ? 'rgba(255,255,255,0.16)' : 'rgba(10,14,22,0.6)';
   ctx.fillRect(x, y, size, size);
-  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.strokeStyle = cssColor(accent, hovered ? 0.55 : 0.24);
   ctx.lineWidth = Math.max(1, scale);
   ctx.strokeRect(x, y, size, size);
 
   const full = isFullscreen();
-  ctx.strokeStyle = hovered ? '#7fe8d8' : 'rgba(255,255,255,0.85)';
+  ctx.strokeStyle = hovered ? cssColor(accent) : cssColor(readableAccent(accent), 0.9);
   ctx.lineWidth = Math.max(1.4, 2 * scale);
   const p = size * 0.25;
   const arm = size * 0.136;

@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest';
 import * as screens from '../src/game/ui/screens';
 import { parseUsernameParam } from '../src/game/resources';
 import { store } from '../src/game/store';
+import {
+  ACTIONS_W, CONTENT_W, CONTENT_X, MENU_H, MENU_W, NAVBAR_H, PANEL_H, PANEL_Y,
+} from '../src/game/ui/layout';
 
 describe('menu screens', () => {
   it('boot/engine/start screens use text wordmarks (Airstrike), not logo bitmaps', () => {
@@ -12,6 +15,13 @@ describe('menu screens', () => {
     expect(screens.bootScreen('start', null).wordmark).toBe('Infinity Edge');
     // The old `logo` field is gone; screens carry text only.
     expect('logo' in screens.bootScreen('engine', null)).toBe(false);
+  });
+
+  it('layout: actions on the right and one maximised content rectangle', () => {
+    expect(CONTENT_X).toBe(0);
+    expect(CONTENT_X + CONTENT_W + ACTIONS_W).toBe(MENU_W);
+    expect(NAVBAR_H).toBeLessThan(PANEL_Y);
+    expect(PANEL_Y + PANEL_H).toBe(MENU_H);
   });
 
   it('main menu: one icon per entry, including multiplayer', () => {
@@ -57,7 +67,7 @@ describe('menu screens', () => {
       .map((r) => (r.kind === 'info' ? '' : r.id));
     expect(ids).toEqual([
       'username', 'playerColor', 'enemyColor', 'distance', 'detail', 'musicVolume',
-      'billboards', 'zoomBlur', 'showMs', 'vr', 'dwellTime', 'axisX', 'axisY', 'music', 'clear',
+      'billboards', 'zoomBlur', 'showMs', 'partyMode', 'vr', 'dwellTime', 'axisX', 'axisY', 'music', 'clear',
     ]);
     const dwell = s.right?.rows?.find((r) => r.kind === 'slider' && r.id === 'dwellTime');
     expect(dwell && dwell.kind === 'slider' ? [dwell.min, dwell.max, dwell.step] : null)
@@ -65,6 +75,19 @@ describe('menu screens', () => {
     expect(s.primary?.id).toBe('save');
     const username = s.left?.rows?.find((r) => r.kind === 'text');
     expect(username && username.kind === 'text' && username.maxLength).toBe(12);
+  });
+
+  it('pause menu: resume/options/leave icons and the action column', () => {
+    const s = screens.pauseMenu();
+    expect(s.title).toBe('PAUSED');
+    expect(s.left?.icons?.map((i) => i.id)).toEqual([
+      'pause:resume', 'pause:options', 'pause:leave',
+    ]);
+    expect(s.left?.icons?.every((i) => !!i.icon)).toBe(true);
+    expect(s.left?.icons?.find((i) => i.id === 'pause:resume')?.icon).toBe('_resume.png');
+    expect(s.left?.icons?.find((i) => i.id === 'pause:leave')?.icon).toBe('_leave.png');
+    expect(s.primary?.id).toBe('pause:resume');
+    expect(s.backLabel).toBe('leave match');
   });
 
   it('briefing and result carry the level/medal data', () => {
@@ -92,11 +115,13 @@ describe('?username=', () => {
     expect(parseUsernameParam('', '')).toBeNull();
   });
 
-  it('the menu stamps the pilot name into the title lines', () => {
+  it('the menu chrome is only the path: no pilot/version subtitle', () => {
     const previous = store.options.username;
     store.options.username = 'MenuTest';
     const s = screens.mainMenu();
-    expect(s.subtitle).toContain('MenuTest');
+    expect('subtitle' in s).toBe(false);
+    expect(JSON.stringify(s)).not.toContain('Infinity Edge 3.7');
+    expect(JSON.stringify(s)).not.toContain('pilot');
     store.options.username = previous;
   });
 });

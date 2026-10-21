@@ -3,24 +3,30 @@
 import { describe, expect, it } from 'vitest';
 import { mat4 } from 'gl-matrix';
 import { contentFocusRect, FOCUS_H, FOCUS_W, FOCUS_X, FOCUS_Y } from '../src/game/ui/layout';
-import { projectedPlaneRect } from '../src/engine/vrpanel';
+import { planeFitScale, projectedPlaneRect } from '../src/engine/vrpanel';
 import { focusBorderStrips } from '../src/engine/focusborder';
 
 describe('contentFocusRect', () => {
-  it('maps the content-panel strip through the 16:9 design scale', () => {
-    expect(FOCUS_X).toBe(200);
-    expect(FOCUS_Y).toBe(104);
-    expect(FOCUS_W).toBe(1040);
-    expect(FOCUS_H).toBe(512);
+  it('covers the full menu plane through the 16:9 design scale', () => {
+    expect(FOCUS_X).toBe(0);
+    expect(FOCUS_Y).toBe(0);
+    expect(FOCUS_W).toBe(1280);
+    expect(FOCUS_H).toBe(720);
     const r = contentFocusRect(1600, 900);
-    expect(r).toEqual({ x: 250, y: 130, w: 1300, h: 640 });
+    expect(r).toEqual({ x: 0, y: 0, w: 1600, h: 900 });
   });
 
   it('follows the letterbox offset on a wider canvas', () => {
     const r = contentFocusRect(2000, 720);
     // 1280x720 design is centred with 360 px bars on each side.
-    expect(r).toEqual({ x: 560, y: 104, w: 1040, h: 512 });
-    expect(r.x + r.w / 2).toBeCloseTo(1080, 5);
+    expect(r).toEqual({ x: 360, y: 0, w: 1280, h: 720 });
+    expect(r.x + r.w / 2).toBeCloseTo(1000, 5);
+  });
+
+  it('follows the letterbox offset on a taller canvas', () => {
+    const r = contentFocusRect(1280, 900);
+    // 90 px bars above and below the design plane.
+    expect(r).toEqual({ x: 0, y: 90, w: 1280, h: 720 });
   });
 });
 
@@ -36,6 +42,23 @@ describe('focusBorderStrips', () => {
       { x: 250, y: 150, w: 500, h: 2 },
       { x: 250, y: 152, w: 2, h: 296 },
       { x: 748, y: 152, w: 2, h: 296 },
+    ]);
+  });
+
+  it('keeps the full-plane border visible inside a letterboxed viewport', () => {
+    const r = contentFocusRect(2000, 720);
+    const uv = {
+      x: r.x / 2000,
+      y: 1 - (r.y + r.h) / 720,
+      w: r.w / 2000,
+      h: r.h / 720,
+    };
+    const strips = focusBorderStrips(uv, { x: 0, y: 0, w: 2000, h: 720 }, 2);
+    expect(strips).toEqual([
+      { x: 360, y: 718, w: 1280, h: 2 },
+      { x: 360, y: 0, w: 1280, h: 2 },
+      { x: 360, y: 2, w: 2, h: 716 },
+      { x: 1638, y: 2, w: 2, h: 716 },
     ]);
   });
 
@@ -88,6 +111,22 @@ describe('projectedPlaneRect', () => {
     expect(r.w).toBeCloseTo(0.25, 6);
     expect(r.y).toBeCloseTo(0.375, 6);
     expect(r.h).toBeCloseTo(0.25, 6);
+  });
+
+  it('keeps a fitted menu panel clear of the eye edges', () => {
+    const view = mat4.create();
+    const proj = mat4.perspective(mat4.create(), Math.PI / 2, 1, 0.1, 100);
+    const scale = planeFitScale([proj], 8, 4.5, 3, 0.86);
+    const r = projectedPlaneRect(
+      view, proj, new Float32Array([0, 0, -3]), new Float32Array([1, 0, 0]),
+      new Float32Array([0, 1, 0]), 4 * scale, 2.25 * scale,
+    )!;
+    // Projection is 90 degrees: the panel half-width lands at 0.86 NDC, so
+    // the UV rectangle has a 0.07 margin on both sides for the frame/veil.
+    expect(r.x).toBeCloseTo(0.07, 5);
+    expect(r.x + r.w).toBeCloseTo(0.93, 5);
+    expect(r.y).toBeGreaterThan(0.2);
+    expect(r.y + r.h).toBeLessThan(0.8);
   });
 
   it('returns null when the panel is behind the perspective eye', () => {

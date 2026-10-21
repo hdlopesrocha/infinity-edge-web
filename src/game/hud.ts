@@ -4,6 +4,7 @@
 import { store } from './store';
 import type { GameInstance } from './instance';
 import { Life3 } from './life';
+import { hexToRgb } from './colors';
 
 /**
  * Snapshot, written right after the scene draw, i.e. after every movement of
@@ -16,6 +17,12 @@ export function syncHud(g: GameInstance): void {
   const hud = store.hud;
   hud.score = g.scoreText();
   hud.notify = g.notificationText;
+  // HUD accents follow the selected ship's live team colour: the chosen player
+  // colour normally, and the rotating/flashing party colour when active.
+  const accent = g.selectedObject?.team?.color;
+  hud.accent = accent
+    ? [accent[0], accent[1], accent[2]]
+    : hexToRgb(store.options.playerColor, [64 / 255, 224 / 255, 208 / 255]);
   const aim = g.aimPos();
   hud.aimX = aim.x;
   hud.aimY = aim.y;
