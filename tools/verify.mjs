@@ -5,8 +5,8 @@
 //
 // Checks: hash routing + history back/forward, deep-link restore, a single
 // surviving WebGL context across routes, navigation → background scene mapping,
-// audio unlock after a user gesture, frame rate, and frustum culling (rejected
-// objects counted, nothing visible is dropped).
+// audio unlock + WebAudio looping soundtrack after a user gesture, frame rate,
+// and frustum culling (rejected objects counted, nothing visible is dropped).
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -107,11 +107,20 @@ await sleep(800);
 check('browser forward re-applies the route',
   (await evaluate('location.hash')).startsWith('#/single-player'), await evaluate('location.hash'));
 
-// unknown routes must not crash or invent content
+// unknown routes must not crash or fall back to a DOM page
 await goto('/no-such-screen');
-const unknownText = await evaluate('document.body.innerText.trim()');
-check('unknown route handled', unknownText.length > 0 && !/error|failed/i.test(unknownText),
-  JSON.stringify(unknownText.slice(0, 40)));
+const unknown = await evaluate(`(() => {
+  const r = window.__ieRenderer;
+  const ui = r && r.uiOverlay;
+  return {
+    canvas: !!document.querySelector('canvas'),
+    regions: ui ? ui.regions.length : 0,
+    text: document.body.innerText.trim().slice(0, 40),
+    errors: (window.__ieErrors || []).length,
+  };
+})()`);
+check('unknown route handled', unknown.canvas && unknown.regions > 0
+  && !/error|failed/i.test(unknown.text), JSON.stringify(unknown));
 
 // --- one GL context across routes ----------------------------------------
 await goto('/menu', 2500);
@@ -145,22 +154,34 @@ await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 400, y: 240, but
 await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 400, y: 240, button: 'left', buttons: 1, clickCount: 1 });
 await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 400, y: 240, button: 'left', buttons: 0, clickCount: 1 });
 await sleep(1500);
-const audioState = await evaluate(`(() => {
-  const a = window.__ieAudio;
-  const el = [...document.querySelectorAll('audio')].map(e => ({ paused: e.paused, src: (e.currentSrc||'').split('/').pop() }));
-  return a ? {
-    unlocked: a.unlocked ?? null,
-    playing: typeof a.playing === 'function' ? a.playing() : null,
-    ctx: a.ctx ? a.ctx.state : null,
-    elements: el,
-  } : null;
-})()`);
+// Decoding the 5.6 MB soundtrack can take a few seconds on a software-rendered
+// headless run; poll instead of assuming a fixed startup time.
+let audioState = null;
+for (let i = 0; i < 16; i++) {
+  audioState = await evaluate(`(() => {
+    const a = window.__ieAudio;
+    const source = a?.musicSource ?? null;
+    return a ? {
+      unlocked: a.unlocked ?? null,
+      playing: typeof a.playing === 'function' ? a.playing() : null,
+      ctx: a.ctx ? a.ctx.state : null,
+      elements: document.querySelectorAll('audio').length,
+      source: !!source,
+      loop: source ? source.loop : null,
+      analyser: !!a.musicAnalyser,
+    } : null;
+  })()`);
+  if (audioState?.playing) break;
+  await sleep(500);
+}
 check('audio unlocks after a user gesture', !!audioState && (audioState.unlocked || audioState.playing),
   JSON.stringify(audioState));
-// The soundtrack is an unattached `new Audio()` element (Game1.LoadContent ->
-// MediaPlayer.Play), so it is asserted through playing()/ctx rather than a DOM
-// query.
-check('soundtrack reports as playing', !!audioState && audioState.playing === true && audioState.ctx === 'running',
+// The soundtrack is an AudioBufferSourceNode with loop=true, feeding the
+// party-mode analyser; there is no <audio> element anywhere in the page.
+check('soundtrack is a looping WebAudio buffer source',
+  !!audioState && audioState.playing === true && audioState.ctx === 'running'
+    && audioState.elements === 0 && audioState.source === true
+    && audioState.loop === true && audioState.analyser === true,
   JSON.stringify(audioState));
 
 // --- gameplay: fps, culling, no dropped frames ---------------------------

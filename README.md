@@ -85,7 +85,7 @@ composition; the compiled XNB is exact. It is kept only for reference.
 | `#/ctf`, `#/tt`, `#/tt/{easy,normal,hard}` | Difficulty menus; TT lists Track 01.. / Demo Track |
 | `#/briefing/:level` | Level Menu.xml: scoreBoard (10 rows) + briefing textBox + "start" |
 | `#/game/:level` | Level.xml game (TT race or CTF 10v9) |
-| `#/options` (`#/settings`) | Options (ranges 128–512 / 4–0 / 0–1, player/enemy colour palettes, frame-time readout toggle, VR dwell 0.5–5 s, saves on "save") |
+| `#/options` (`#/settings`) | Options (ranges 128–512 / 4–0 / 0–1, player/enemy colour palettes, party mode, frame-time readout toggle, VR dwell 0.5–5 s, saves on "save") |
 | `#/about` | Credits (verbatim) |
 | `#/victory/:level`, `#/defeat/:level` | "Congratulations <user>!" + medal / defeat message |
 | unknown | empty chrome, no invented text |
@@ -95,16 +95,21 @@ only the scene description swaps (menus share the Background.xml scene).
 
 **Every menu screen is WebGL UI** (`src/game/ui/menuui.ts` + `screens.ts`): the
 routes above render no DOM at all — panels, the original icon/button art,
-sliders, checkboxes, text fields, score tables and the breadcrumb are painted
-into the frame (the same overlay the multiplayer lobby uses), with a
+sliders, checkboxes, text fields, score tables and a clickable breadcrumb path
+are painted into the frame (the same overlay the multiplayer lobby uses), with a
 `_menubtn`-plated list, watermarked track menus and the Floating-Gear boot
 splash — whose "Floating Gear" and "Infinity Edge" wordmarks are text in the
-Airstrike face now, not the old bitmap logos. Every menu reserves the **left
-eighth of the design width** for an actions column (fullscreen toggle, primary
-action such as save/start/create/play, context actions and back) and gives the
-remaining seven eighths (to its right) to content; `src/game/ui/layout.ts`
-owns that split and is shared by the menus, the lobby and the room. Only the
-in-match HUD stays DOM-based.
+Airstrike face now, not the old bitmap logos. The old oversized screen title is
+gone: a small clickable **path** (`MAIN MENU › SINGLE PLAYER › …`) sits in a
+navbar at the top of one maximised content rectangle (1120x720 px of the
+1280x720 frame). Menus, settings, the pause screen, the lobby and the room all
+use that same shell: one content rectangle, the same left-aligned navbar and
+the same action column, with no nested panel frames (only their content
+differs). Every menu reserves the **right eighth of the design width**
+for an actions column (fullscreen toggle, primary action such as
+save/start/create/play, context actions and back) and gives the remaining seven
+eighths (to its left) to content; `src/game/ui/layout.ts` owns that split and is
+shared by the menus, the lobby, the room and the in-match pause screen.
 
 ## WebSocket asset channel (optional)
 
@@ -205,13 +210,25 @@ single-player simulation. `ie-server` also serves a directory over HTTP
 (`--root`, default `public`), so a single port carries both the client and the
 game channel. `npm run server:test` runs the simulation unit tests.
 
-## Music
+## Music and party mode
 
-Options → CONTROLS & DATA → **Music File** opens a file picker (`*.mp3`, and
-audio files generally) and the chosen track becomes the looping soundtrack;
-the pick is stored in IndexedDB and survives reloads, and **Reset Music**
-returns to the shipped `sound.mp3`. The default soundtrack starts immediately
-while the stored file loads in the background.
+The soundtrack is decoded into an `AudioBuffer` and looped by an
+`AudioBufferSourceNode`: every sound, including music, runs through WebAudio;
+there is no `<audio>` element or media-element playback. Options → CONTROLS &
+DATA → **Music File** opens a file picker (`*.mp3`, and audio files generally)
+and the chosen track becomes the looping soundtrack; the pick is stored in
+IndexedDB and survives reloads, and **Reset Music** returns to the shipped
+`sound.mp3`. The default soundtrack starts immediately while the stored file
+loads in the background.
+
+**Party Mode** (Options → DISPLAY **Party Mode**, also in the pause menu's options)
+analyses the music before the volume gain, detects **bass onsets** and rotates
+the current player's hue further on every bass hit, with a brief
+saturation/brightness flash scaled by the bass amplitude. The player hull is
+tinted, every ship's engine smoke takes its **own team colour** (the player's
+live/flashing colour in party mode, enemies their static colour), asteroids and
+bullets rotate hue, and the sky gets a small ±10° hue sway plus a stronger
+contrast lift. Enemy teams and addon colours are never changed by the music.
 
 ## Controls
 
@@ -235,7 +252,7 @@ image-saving everywhere.
 
 ## VR
 
-Enterable from the **Settings** menu (same menu as the in-game pause overlay).
+Enterable from the **Settings** menu (the in-game pause menu opens the same options).
 Two paths, in order:
 
 - **Immersive WebXR** (`navigator.xr` immersive-vr): per-eye pose and
@@ -246,20 +263,24 @@ Two paths, in order:
   The head pose adds yaw, pitch and roll on top of that ship-relative base.
   The in-game HUD (score, clock, speed, life pools, missile/nitro items, aim
   reticle and target markers) is a
-  **head-locked panel at a quarter of the menu distance (0.75 units, half
-  the previous HUD distance) close to the camera, keeping its old world
-  size so it is twice as large on screen**: it is painted
-  once with the cyclops/head-centre view and drawn in each eye, so the
-  score/time/items stay fixed to the head rotation. The panel matches that
-  same head view at its distance, so projected aim/marker positions are exact
-  inside it and are pinned to the panel's edge when they fall outside (they
-  stick to the plane instead of the eye's screen). With the frame-time option
-  enabled (Options or the pause settings), the smoothed WebGL frame interval
+  **head-locked panel at 0.75 m, close to the camera, fitted to 86% of the eye's
+  half-view so the 2 px frame and the blurred world veil remain visible around
+  it**: it is painted once with the cyclops/head-centre view and drawn in each
+  eye, so the score/time/items stay fixed to the head rotation. The panel
+  matches that same head view at its distance, so projected aim/marker
+  positions are exact inside it and are pinned to the panel's edge when they
+  fall outside (they stick to the plane instead of the eye's screen). With the frame-time option
+  enabled (Options or the pause menu's options), the smoothed WebGL frame interval
   is shown at the bottom centre of that plane. On the 2D page the HUD stays a
   screen-space overlay. The menus, lobby and room menu are the **same
-  WebGL UI** as the 2D pages, not a second VR menu: the screen is painted once
-  into a texture and drawn as a plane in the scene (16:9, 8 world units wide,
-  3 in front of the base view). A crosshair with a dwell ring follows the headset's gaze ray on
+  WebGL UI** as the 2D pages (including the in-game pause screen), not a
+  second VR menu: the screen is painted once
+  into a texture and drawn as a plane in the scene (16:9, at most 4 world units
+  wide, 1.5 m in front of the base view, uniformly scaled down per eye so its
+  projected rectangle stays 7% inside the viewport). Distance and world size are
+  halved together versus the old 3 m/8-unit plane, so it sits closer for more
+  comfortable stereo while the on-screen rectangle and the screen-space blur
+  feather are unchanged. A crosshair with a dwell ring follows the headset's gaze ray on
   that plane; the controller trigger (session `select`) clicks the item under
   it, and dwelling selects without a controller (2 s by default, configurable
   as **VR Dwell Time** in Options). The dwell only restarts when the crosshair
@@ -281,15 +302,17 @@ diagnostic readout
 (`sensor: N events · yaw … · pitch … · roll … · drag look`) proves the mode is
 alive. Every controller trigger/hand tap re-centres the view, in menus and in
 a match; in menus the click is applied first, so the item under the crosshair
-still activates. Pausing leaves the immersive session so the new pause panel is
-usable (VR stays on and resuming re-enters); VR ends with the match so the
-result screens come up as normal menus.
+still activates. Pausing keeps the immersive session alive: the WebGL pause
+menu replaces the HUD and is drawn on the same world-space panel, and the HUD
+returns only after RESUME. The immersive session stays alive across the result
+screens too — they use the same world-space UI panel — and ends only on an
+explicit VR toggle or when the headset ends the session.
 
 ## Navigation
 
 LIFO back everywhere (`goBack` pops history; finished matches use
-`router.replace()` so the game leaves the stack). Clickable breadcrumb built
-from the navigation stack, persisted in `sessionStorage` with synthesised
+`router.replace()` so the game leaves the stack). Clickable path at the top
+built from the navigation stack, persisted in `sessionStorage` with synthesised
 ancestry for cold deep links. Reload rebuilds the stack.
 
 ## Layout
@@ -365,13 +388,22 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - **Focus frame**: the exact boundary where the focus veil reaches zero carries
   a 2 CSS px player-colour stroke just inside the sharp UI rectangle. It follows
   flat menus/lobby/room, the HUD inset, split-screen eyes, and the projected
-  immersive menu/HUD planes.
+  immersive menu/HUD planes. Immersive planes are uniformly fitted to 86% of the
+  eye's half-view so all four frame sides stay on-screen and the world outside
+  remains visible and blurred through a short veil ramp.
+- **Player-colour chrome and enemy markers**: menu/lobby/room buttons, action
+  labels, inputs, the respawn/timer bars, the pre-match countdown and the HUD
+  action counts read the live player colour (including party-mode hue/flash);
+  the bright/white `_menubtn` plates keep their art with a dark-outlined accent
+  label. Enemy markers (ships, bases, flags) get a 1 px inset border in the
+  opposite enemy colour, clipped to the PNG alpha silhouette in both the DOM and
+  GL/XR HUD paths; allies, goals and the path keep their plain team colour.
 - **Deferred depth test**: the opaque model pass runs depth-only first (colour
   masked off), then the colour pass resolves with LEQUAL, so occlusion is
   independent of draw order (the arena walls render correctly again).
 - **Zoom blur**: the ship's velocity vector drives a radial smear (radius 0.10
   at full throttle, 16 taps); the models stay sharp on top. Toggleable via
-  "Speed blur" in Options / pause settings.
+  "Speed blur" in Options / the pause menu's options.
 - **Lens flare** (gated on Special Effects): bright-pass bloom kept separate
   from the blur layer so the ghosts cannot duplicate the scene.
 - **Motion blur was removed** at the user's request (velocity buffer, MB shader,
@@ -382,18 +414,18 @@ ancestry for cold deep links. Reload rebuilds the stack.
   every time; the WebGL menus render on
   a world-space panel with a gaze
   crosshair (trigger click + configurable dwell, 2 s default) instead of a separate VR menu, and the
-  in-game HUD is a head-locked plane at a quarter of the menu distance,
-  close to the camera (painted once
+  in-game HUD is a head-locked plane at 0.75 m, close to the camera (painted once
   from the cyclops view; projected positions clamp to its edges), both
   verified by the panel
   math/pointer unit tests; enterable without a gamepad;
-  the same Settings menu is shared with the pause panel (live apply,
-  save/revert).
+  the same Settings menu is shared with the WebGL pause menu (live apply,
+  save/revert); pausing shows only that menu over the frozen match and the HUD
+  comes back on RESUME.
 - **Gameplay**: 5 s pre-match countdown (world frozen, world units per second
   "SPD" display, missile-lock warning, red lock crosshair, death-cause line in
   the respawn panel, draw distance in VR matches the setting).
-- **Navigation**: LIFO back, clickable breadcrumb persisted across reloads,
-  `router.replace()` for finished matches.
+- **Navigation**: LIFO back, a clickable breadcrumb path at the top of every
+  menu (persisted across reloads), `router.replace()` for finished matches.
 - **No context menu / long-press callout / image saving** anywhere in the UI.
 - **HTTPS dev server**: self-signed cert with SAN (localhost, 127.0.0.1, LAN
   IP), served only when `certs/dev.{crt,key}` exist; `/game` is proxied to the
@@ -420,8 +452,10 @@ ancestry for cold deep links. Reload rebuilds the stack.
   saving the pilot name, and breadcrumb/back/primary corners.
 - `npm run ui:e2e` drives the same screens with **real mouse input**
   (`Input.dispatchMouseEvent`, full browser hit-testing): menu navigation,
-  options checkbox/slider/save, the in-match back button + pause RESUME, and
-  the multiplayer lobby's age-filter dropdown and back button. It is the check
+  options checkbox/slider/save, a real briefing START click, the in-match back
+  button opening the WebGL pause menu, pause options/back and RESUME with the
+  DOM chrome hidden and restored, and the multiplayer lobby's age-filter
+  dropdown and back button. It is the check
   that caught the DOM overlay layer (`.ui-layer`) swallowing every canvas
   click — the menus and lobby are painted into the canvas, so that layer is
   `pointer-events: none` now, with the in-match controls opting back in.
@@ -430,12 +464,13 @@ ancestry for cold deep links. Reload rebuilds the stack.
   checks with a white ball when set, `Clear All` at 90 % of the right list.
 - `node tools/verify.mjs`: 17/17 checks — deep link, menu navigation, history
   back/forward, unknown route, one surviving WebGL context across routes,
-  navigation→scene mapping (background/engine/level), audio unlock + soundtrack,
-  60 fps, culling (19k objects rejected, nothing visible dropped), context-loss
-  recovery (loop pauses, GL caches drop, scene rebuilds), 2x DPR backing store,
-  no page errors. Run against both the dev server and the production build, over
-  HTTP and over the WebSocket channel.
-- `npm test`: 136 unit tests (protocol framing/gzip/threshold/malformed input,
+  navigation→scene mapping (background/engine/level), audio unlock + looping
+  WebAudio soundtrack, frame rate, culling (tens of thousands of objects
+  rejected, nothing visible dropped), context-loss recovery (loop pauses, GL
+  caches drop, scene rebuilds), 2x DPR backing store, no page errors. Run
+  against both the dev server and the production build, over HTTP and over the
+  WebSocket channel.
+- `npm test`: 211 unit tests (protocol framing/gzip/threshold/malformed input,
   frustum + ocTree culling, converted model sidecars, physics and life pools,
   BIP-340/NIP-19 vectors, Nostr event signing, multiplayer rooms over a local
   relay, the browser host's frame production decoded by the client codec,

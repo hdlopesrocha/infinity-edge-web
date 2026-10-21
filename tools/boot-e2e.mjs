@@ -73,11 +73,15 @@ try {
         if (hash !== last) {
           seq.push([hash, Date.now() - t0]);
           last = hash;
+          // Timestamp the route change before probing the WebGL chrome: the
+          // screen's dwell timer starts when the route mounts, and the probe
+          // can take long enough (especially on the start deep link) to skew
+          // the measured dwell.
+          if (hash === '#/engine' && engineAt === null) engineAt = Date.now() - t0;
+          if (hash === '#/start' && startAt === null) startAt = Date.now() - t0;
           if (hash === '#/engine') fsEngine = await fsVisible();
           if (hash === '#/start') fsStart = await fsVisible();
         }
-        if (hash === '#/engine' && engineAt === null) engineAt = Date.now() - t0;
-        if (hash === '#/start' && startAt === null) startAt = Date.now() - t0;
         if (hash === '#/menu') {
           menuAt = Date.now() - t0;
           break;
@@ -163,3 +167,5 @@ if (failures.length > 0) {
 } else {
   console.log('\nboot-e2e: PASS');
 }
+// The CDP socket can keep Node alive after Chrome exits.
+process.exit(process.exitCode ?? 0);
