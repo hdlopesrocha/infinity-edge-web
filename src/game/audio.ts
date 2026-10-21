@@ -1,4 +1,6 @@
-// Audio: Web Audio SFX/voices + <audio> music loop.
+// Audio: every sound (SFX, voices and the music loop) runs through WebAudio.
+// The soundtrack is decoded into an AudioBuffer and looped by an
+// AudioBufferSourceNode: there is no <audio> element or MediaElementSource.
 
 import { SFX, VOICES } from './config';
 import { clearStoredMusic, loadStoredMusic } from './musicfile';
@@ -23,10 +25,20 @@ function revokeObjectUrl(url: string | null): void {
   } catch { /* already released */ }
 }
 
+/** Frequency-band energies returned to the party-mode beat tracker. */
+export interface MusicLevels {
+  /** Weighted 0..1 energy (bass-heavy). */
+  energy: number;
+  bass: number;
+  mid: number;
+  high: number;
+}
+
+const SILENT_LEVELS: MusicLevels = { energy: 0, bass: 0, mid: 0, high: 0 };
+
 class AudioManager {
   private ctx: AudioContext | null = null;
   private buffers = new Map<string, AudioBuffer>();
-  private musicEl: HTMLAudioElement | null = null;
   private unlocked = false;
   private muteState = false;
   private customName: string | null = null;
@@ -36,6 +48,15 @@ class AudioManager {
   // Bumped when the selection changes so a slow startup read cannot overwrite
   // a newer choice made from the Options menu.
   private selection = 0;
+  // WebAudio music graph: BufferSource -> Analyser -> Gain -> destination.
+  // The analyser sits before the gain, so party mode still reacts while muted.
+  private musicSource: AudioBufferSourceNode | null = null;
+  private musicAnalyser: AnalyserNode | null = null;
+  private musicGain: GainNode | null = null;
+  private musicFreq: Uint8Array<ArrayBuffer> | null = null;
+  private musicLoad = 0;
+  private musicLoading = false;
+  private musicStarted = false;
   musicVolume = 0.5;
 
   get muted(): boolean {
@@ -44,33 +65,38 @@ class AudioManager {
 
   set muted(v: boolean) {
     this.muteState = v;
-    if (this.musicEl) this.musicEl.volume = v ? 0 : this.musicVolume;
+    if (this.musicGain) this.musicGain.gain.value = v ? 0 : this.musicVolume;
   }
 
   private currentMusicUrl(): string {
     return this.customUrl ?? musicUrl();
   }
 
-  /** Swap <audio>'s source without stopping a soundtrack that was playing. */
-  private applyMusicSource(url: string): void {
-    if (!this.musicEl) return;
-    const wasPlaying = !this.musicEl.paused;
+  private ensureMusicGraph(): void {
+    if (!this.ctx || this.musicGain || this.musicAnalyser) return;
     try {
-      this.musicEl.src = url;
-      this.musicEl.loop = true;
-      this.musicEl.volume = this.muted ? 0 : this.musicVolume;
-      if (wasPlaying) {
-        const p = this.musicEl.play();
-        if (p) p.catch(() => undefined);
-      }
-    } catch { /* keep the previous element state */ }
+      const analyser = this.ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.55;
+      const gain = this.ctx.createGain();
+      gain.gain.value = this.muted ? 0 : this.musicVolume;
+      analyser.connect(gain);
+      gain.connect(this.ctx.destination);
+      this.musicAnalyser = analyser;
+      this.musicGain = gain;
+    } catch {
+      this.musicAnalyser = null;
+      this.musicGain = null;
+    }
   }
 
   private setCustomTrack(name: string | null, url: string | null): void {
     const previous = this.customUrl;
     this.customName = name;
     this.customUrl = url;
-    this.applyMusicSource(url ?? musicUrl());
+    // Decode the replacement while the old buffer keeps looping; only swap
+    // when the new track is ready.
+    if (this.musicStarted) void this.loadAndPlayMusic();
     if (previous && previous !== url) revokeObjectUrl(previous);
   }
 
@@ -80,43 +106,28 @@ class AudioManager {
     // call and the global first-gesture handler both land here).
     const ua = (navigator as unknown as { userActivation?: { hasBeenActive?: boolean } }).userActivation;
     if (ua && ua.hasBeenActive === false) return;
-    if (!this.unlocked) {
-      this.unlocked = true;
+    if (!this.ctx) {
       try {
-        if (!this.ctx) this.ctx = new AudioContext();
-        if (this.ctx.state === 'suspended') void this.ctx.resume();
-      } catch { /* no audio */ }
+        this.ctx = new AudioContext();
+      } catch {
+        return;
+      }
     }
+    this.unlocked = true;
+    this.ensureMusicGraph();
+    if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => undefined);
     // Read the saved track in the background; the default loop starts right
     // away and is swapped as soon as the file is ready.
     if (!this.customLoaded && !this.customJob) void this.refreshCustomMusic();
-    try {
-      if (!this.musicEl) {
-        this.musicEl = new Audio(this.currentMusicUrl());
-        this.musicEl.loop = true;
-        this.musicEl.volume = this.muted ? 0 : this.musicVolume;
-        const el = this.musicEl;
-        const source = this.currentMusicUrl();
-        const p = el.play();
-        if (p) {
-          p.catch(() => {
-            // A source swap aborts this promise; only undo a failed start when
-            // the same track is still the active one.
-            if (this.musicEl !== el || this.currentMusicUrl() !== source) return;
-            this.unlocked = false;
-            this.musicEl = null;
-          });
-        }
-      } else if (this.musicEl.paused) {
-        this.musicEl.volume = this.muted ? 0 : this.musicVolume;
-        void this.musicEl.play().catch(() => undefined);
-      }
-    } catch { /* silent */ }
+    if (!this.musicSource && !this.musicLoading) {
+      this.musicStarted = true;
+      void this.loadAndPlayMusic();
+    }
   }
 
   setMusicVolume(v: number): void {
-    this.musicVolume = v;
-    if (this.musicEl) this.musicEl.volume = this.muted ? 0 : v;
+    this.musicVolume = Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
+    if (this.musicGain) this.musicGain.gain.value = this.muted ? 0 : this.musicVolume;
   }
 
   /** Cached name of the saved custom track, or null for the default soundtrack. */
@@ -195,9 +206,97 @@ class AudioManager {
     return this.customName;
   }
 
-  /** True while the looping soundtrack is audible. */
+  /** True while the looping soundtrack is actually running. */
   playing(): boolean {
-    return !!this.musicEl && !this.musicEl.paused;
+    return !!this.musicSource && this.ctx?.state === 'running';
+  }
+
+  /**
+   * Decode and loop the selected soundtrack. The old source keeps playing
+   * until the new buffer is ready; a failed replacement leaves it untouched.
+   */
+  private async loadAndPlayMusic(): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const token = ++this.musicLoad;
+    const url = this.currentMusicUrl();
+    this.musicLoading = true;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`music ${res.status}`);
+      const data = await res.arrayBuffer();
+      if (data.byteLength === 0) throw new Error('empty music file');
+      const buffer = await ctx.decodeAudioData(data);
+      if (token !== this.musicLoad || this.ctx !== ctx) return;
+      this.stopMusicSource();
+      this.startMusicSource(buffer);
+    } catch {
+      if (token === this.musicLoad && !this.musicSource) this.musicStarted = false;
+    } finally {
+      if (token === this.musicLoad) this.musicLoading = false;
+    }
+  }
+
+  private startMusicSource(buffer: AudioBuffer): void {
+    if (!this.ctx || !this.musicAnalyser) return;
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.connect(this.musicAnalyser);
+    source.onended = () => {
+      // A loop only ends when stopped or the context dies. Clearing the flag
+      // lets the next gesture / visibility event restart the soundtrack.
+      if (this.musicSource === source) {
+        this.musicSource = null;
+        this.musicStarted = false;
+      }
+    };
+    try {
+      source.start();
+      this.musicSource = source;
+      this.musicStarted = true;
+    } catch {
+      try { source.disconnect(); } catch { /* already detached */ }
+    }
+  }
+
+  private stopMusicSource(): void {
+    const source = this.musicSource;
+    this.musicSource = null;
+    if (!source) return;
+    source.onended = null;
+    try { source.stop(); } catch { /* already stopped */ }
+    try { source.disconnect(); } catch { /* already detached */ }
+  }
+
+  /** Read the music spectrum for party mode; silence when no track is playing. */
+  musicLevels(): MusicLevels {
+    if (!this.ctx || !this.musicAnalyser || !this.musicSource || this.ctx.state !== 'running') {
+      return SILENT_LEVELS;
+    }
+    const analyser = this.musicAnalyser;
+    const bins = analyser.frequencyBinCount;
+    if (!this.musicFreq || this.musicFreq.length !== bins) this.musicFreq = new Uint8Array(bins);
+    const data = this.musicFreq;
+    analyser.getByteFrequencyData(data);
+    const binHz = this.ctx.sampleRate / analyser.fftSize;
+    const lowEnd = Math.max(1, Math.min(bins, Math.round(250 / binHz)));
+    const midEnd = Math.max(lowEnd + 1, Math.min(bins, Math.round(2500 / binHz)));
+    const highEnd = Math.max(midEnd + 1, Math.min(bins, Math.round(10000 / binHz)));
+    const band = (start: number, end: number): number => {
+      let sum = 0;
+      for (let i = start; i < end; i++) sum += data[i];
+      return end > start ? sum / (end - start) / 255 : 0;
+    };
+    const bass = band(0, lowEnd);
+    const mid = band(lowEnd, midEnd);
+    const high = band(midEnd, highEnd);
+    return {
+      energy: Math.min(1, bass * 0.65 + mid * 0.25 + high * 0.1),
+      bass,
+      mid,
+      high,
+    };
   }
 
   private async buffer(name: string): Promise<AudioBuffer | null> {

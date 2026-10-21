@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
@@ -531,13 +532,27 @@ void WsServer::destroyConn(ConnId id, bool notify) {
   const bool haveOut = !it->second.out.empty() &&
                        (it->second.closing || it->second.ws);
   if (haveOut) {
-    // Best effort: try one last blocking-ish write of what is queued.
+    // Closing HTTP responses (notably the multi-megabyte soundtrack) are much
+    // larger than a socket buffer. Drain the queue before closing instead of
+    // dropping the tail on the first EAGAIN, which browsers report as
+    // ERR_CONTENT_LENGTH_MISMATCH. The socket is non-blocking, so wait for
+    // POLLOUT with a bounded number of retries.
     size_t sent = it->second.outSent;
+    // WebSocket queues are latency-sensitive and small; only the HTTP close
+    // path (large assets) waits for the socket buffer to drain.
+    int waits = 0;
+    const int maxWaits = wasWs ? 0 : 20;
     while (sent < it->second.out.size()) {
       const ssize_t n = ::send(fd, it->second.out.data() + sent, it->second.out.size() - sent, MSG_NOSIGNAL);
       if (n > 0) {
         sent += static_cast<size_t>(n);
+        waits = 0;
         continue;
+      }
+      if (n < 0 && errno == EINTR) continue;
+      if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && waits++ < maxWaits) {
+        pollfd p{fd, POLLOUT, 0};
+        if (::poll(&p, 1, 500) > 0) continue;
       }
       break;
     }

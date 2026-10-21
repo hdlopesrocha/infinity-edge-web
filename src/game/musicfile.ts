@@ -1,6 +1,7 @@
 // User-selected soundtrack persistence: a File/Blob in IndexedDB plus an
-// object URL for <audio>. Browser-only at runtime, but importing this module in
-// Node (tests) must not touch File/IndexedDB APIs.
+// object URL that the WebAudio decoder reads into an AudioBuffer. Browser-only
+// at runtime, but importing this module in Node (tests) must not touch
+// File/IndexedDB APIs.
 
 /** Extensions offered by both picker paths; `audio/*` covers other formats. */
 export const MUSIC_EXTENSIONS = ['.mp3', '.ogg', '.m4a', '.wav'];
