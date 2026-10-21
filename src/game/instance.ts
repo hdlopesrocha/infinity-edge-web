@@ -22,6 +22,7 @@ import { loadGhostFile, saveGhostFile } from './ghost';
 import type { GhostRecord } from './ghost';
 import type { LevelDef } from './levels';
 import type { RC } from './resources';
+import { partySkyContrast, partySkyHue } from './party';
 
 export type GameType = 'CTF' | 'TT' | 'BACK' | 'KOTS' | 'SURV';
 
@@ -32,6 +33,8 @@ export interface PointerMark {
   h: number;
   iconUrl: string | null;
   over: boolean;
+  /** True for enemy markers (ships, bases, flags), false for allies/goals. */
+  enemy: boolean;
   color: [number, number, number];
   label: string | null;
 }
@@ -522,7 +525,17 @@ export class GameInstance {
     // translation keeps its motion-blur velocity at zero (it is "at infinity").
     const prev = mat4.create();
     mat4.fromTranslation(prev, r.prevCameraPos);
-    draw.drawUnlit(this.skyGpu, this.skyTex, m, r.camera.view, r.camera.proj, [1, 1, 1], 1, prev, this.skyHsb);
+    // Party mode only nudges the sky: a small hue oscillation and a contrast
+    // lift from the music energy keep the level's colour identity intact.
+    const hsb: [number, number, number] = [
+      this.skyHsb[0] + partySkyHue(),
+      this.skyHsb[1],
+      this.skyHsb[2],
+    ];
+    draw.drawUnlit(
+      this.skyGpu, this.skyTex, m, r.camera.view, r.camera.proj,
+      [1, 1, 1], 1, prev, hsb, partySkyContrast(),
+    );
     r.trackDraws(this.skyGpu.meshes.length);
     draw.setCull('none');
     draw.setDepth();
@@ -618,12 +631,12 @@ export class GameInstance {
       }
       return true;
     };
-    const pushPointer = (obj: SpaceObject): void => {
+    const pushPointer = (obj: SpaceObject, enemy: boolean): void => {
       if (inFrustum(obj)) {
         if (obj instanceof SpaceShip) {
           const p = this.project(obj.pos[0], obj.pos[1], obj.pos[2]);
           out.push({
-            x: p.x, y: p.y, w: 48, h: 48, iconUrl: null, over: true,
+            x: p.x, y: p.y, w: 48, h: 48, iconUrl: null, over: true, enemy,
             color: obj.team.color, label: Math.floor(obj.lifePercentage() * 100) + '%',
           });
           return;
@@ -669,7 +682,7 @@ export class GameInstance {
       vy = Math.max(-sizeOverY, Math.min(sizeOverY, vy));
       out.push({
         x: sizeOverX + vx, y: sizeOverY + vy, w: iw, h: ih,
-        iconUrl: icon ? icon.url : null, over: false, color: c, label: null,
+        iconUrl: icon ? icon.url : null, over: false, enemy, color: c, label: null,
       });
     };
     {
@@ -677,19 +690,19 @@ export class GameInstance {
       this.map.octree.sphereSelectInteractive(sel.sx, sel.sy, sel.sz, 256, found);
       for (const o of found) {
         if (o instanceof SpaceObject && sel.team.enemys.includes(o.team) && !(o instanceof Base)) {
-          pushPointer(o);
+          pushPointer(o, true);
         }
       }
     }
     for (const t of sel.team.allies) {
       for (const ob of t.objects) {
-        if (ob !== sel) pushPointer(ob);
+        if (ob !== sel) pushPointer(ob, false);
       }
     }
-    if (this.map.path.length > 0) pushPointer(this.map.path[0]);
+    if (this.map.path.length > 0) pushPointer(this.map.path[0], false);
     for (const t of sel.team.enemys) {
-      if (t.base) pushPointer(t.base);
-      if (t.flag && t.flag.getOwner() !== sel) pushPointer(t.flag);
+      if (t.base) pushPointer(t.base, true);
+      if (t.flag && t.flag.getOwner() !== sel) pushPointer(t.flag, true);
     }
     // King of the System: mark the scoring region (the sun at its centre) so
     // it can be found from anywhere in the arena, clamped to the screen edge
@@ -721,7 +734,7 @@ export class GameInstance {
       }
       out.push({
         x: sx, y: sy, w: iw, h: ih,
-        iconUrl: icon ? icon.url : null, over: false,
+        iconUrl: icon ? icon.url : null, over: false, enemy: false,
         color: [0.55, 1, 0.65], label: null,
       });
     }
