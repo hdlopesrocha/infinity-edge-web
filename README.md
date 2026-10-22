@@ -83,11 +83,11 @@ composition; the compiled XNB is exact. It is kept only for reference.
 | `?username=<name>` | sets and saves the pilot name (search string or hash query), e.g. `#/menu?username=Bob` |
 | `#/single-player` | CTF / TIME TRIAL |
 | `#/ctf`, `#/tt`, `#/tt/{easy,normal,hard}` | Difficulty menus; TT lists Track 01.. / Demo Track |
-| `#/briefing/:level` | Level Menu.xml: scoreBoard (10 rows) + briefing textBox + "start" |
+| `#/briefing/:level` | Level Menu.xml: briefing textBox + scoreBoard + the editable roster (players + every bot) and "start" |
 | `#/game/:level` | Level.xml game (TT race or CTF 10v9) |
 | `#/options` (`#/settings`) | Options (ranges 128–512 / 4–0 / 0–1, player/enemy colour palettes, party mode, frame-time readout toggle, VR dwell 0.5–5 s, saves on "save") |
 | `#/about` | Credits (verbatim) |
-| `#/victory/:level`, `#/defeat/:level` | "Congratulations <user>!" + medal / defeat message |
+| `#/victory/:level`, `#/defeat/:level`, `#/draw/:level` | "Congratulations <user>!" + medal / defeat message / "The match is a draw." |
 | unknown | empty chrome, no invented text |
 
 Back/forward and deep links work; the WebGL context persists across routes —
@@ -108,8 +108,10 @@ the same action column, with no nested panel frames (only their content
 differs). Every menu reserves the **right eighth of the design width**
 for an actions column (fullscreen toggle, primary action such as
 save/start/create/play, context actions and back) and gives the remaining seven
-eighths (to its left) to content; `src/game/ui/layout.ts` owns that split and is
-shared by the menus, the lobby, the room and the in-match pause screen.
+eighths (to its left) to content; the game/HUD scene toggles that column off
+programmatically and reclaims the full 1280 px. `src/game/ui/layout.ts` owns
+that split and is shared by the menus, the lobby, the room and the in-match
+pause screen.
 
 ## WebSocket asset channel (optional)
 
@@ -179,6 +181,29 @@ the C++ server sends, so guests run the same render-only `NetGame` client.
 - Room/IPC/signalling details, configuration and the e2e tooling are documented
   in `docs/multiplayer.md`.
 
+## Currency (Lightning / NWC)
+
+The economy is the player's **own Lightning wallet**, linked in-game with a
+NIP-47 `nostr+walletconnect://` URI (Alby, Zeus, Phoenix, …). The navbar and the
+hangar show that wallet's satoshi balance; nothing is minted by the game and the
+C++ `ie-server` hosts no bank.
+
+- **Balance / payments** — `src/game/ln/nwc.ts` speaks NIP-47 over encrypted
+  Nostr events (`get_balance`, `pay_invoice`, `make_invoice`); `src/game/wallet.ts`
+  is the app-level façade (it persists the connection URI and mirrors the
+  balance into the store).
+- **Shop** — `src/game/shop.ts` prices the premium aimbot presets in satoshis,
+  asks the seller's LUD-16 address for a BOLT-11 invoice (`src/game/ln/lnurl.ts`)
+  and pays it with the linked wallet. `VITE_IE_SHOP_LUD16` configures the seller;
+  with it empty the shop is read-only.
+- **Bets** — a room bet is settled *after* the match (there is no escrow): the
+  host announces who owes whom and every losing client pays each winner in sats
+  over Lightning.
+- **High scores** — every finished run is merged into a replaceable per-user
+  event (NIP-78: kind `30078`, `d = ie3d-scores`, see `src/game/scores.ts`), so
+  each player's best times/scores live in their Nostr profile. The Social page
+  reads everyone's profiles for the public board.
+
 ## Game server (authoritative, C++)
 
 `server/` is a second, independent WebSocket service: a hand-rolled C++17
@@ -224,7 +249,10 @@ loads in the background.
 **Party Mode** (Options → DISPLAY **Party Mode**, also in the pause menu's options)
 analyses the music before the volume gain, detects **bass onsets** and rotates
 the current player's hue further on every bass hit, with a brief
-saturation/brightness flash scaled by the bass amplitude. The player hull is
+saturation/brightness flash scaled by the bass amplitude. The rotating hue is
+kept clear of every team colour (the enemy colour and any other combatant
+team) by at least ~32°, so the player never reads as a foe while the music
+cycles. The player hull is
 tinted, every ship's engine smoke takes its **own team colour** (the player's
 live/flashing colour in party mode, enemies their static colour), asteroids and
 bullets rotate hue, and the sky gets a small ±10° hue sway plus a stronger
@@ -262,25 +290,28 @@ Two paths, in order:
   including its roll - instead of being stabilized against a world horizon.
   The head pose adds yaw, pitch and roll on top of that ship-relative base.
   The in-game HUD (score, clock, speed, life pools, missile/nitro items, aim
-  reticle and target markers) is a
-  **head-locked panel at 0.75 m, close to the camera, fitted to 86% of the eye's
-  half-view so the 2 px frame and the blurred world veil remain visible around
-  it**: it is painted once with the cyclops/head-centre view and drawn in each
-  eye, so the score/time/items stay fixed to the head rotation. The panel
-  matches that same head view at its distance, so projected aim/marker
-  positions are exact inside it and are pinned to the panel's edge when they
-  fall outside (they stick to the plane instead of the eye's screen). With the frame-time option
-  enabled (Options or the pause menu's options), the smoothed WebGL frame interval
-  is shown at the bottom centre of that plane. On the 2D page the HUD stays a
-  screen-space overlay. The menus, lobby and room menu are the **same
-  WebGL UI** as the 2D pages (including the in-game pause screen), not a
-  second VR menu: the screen is painted once
-  into a texture and drawn as a plane in the scene (16:9, at most 4 world units
-  wide, 1.5 m in front of the base view, uniformly scaled down per eye so its
-  projected rectangle stays 7% inside the viewport). Distance and world size are
-  halved together versus the old 3 m/8-unit plane, so it sits closer for more
-  comfortable stereo while the on-screen rectangle and the screen-space blur
-  feather are unchanged. A crosshair with a dwell ring follows the headset's gaze ray on
+  reticle and target markers) and every menu/lobby/room screen use **one
+  generic world-space UI scene** (`src/engine/uiscene.ts`): one 16:9 plane,
+  centred on the VR reset origin and placed at the midpoint between the
+  camera's near and far planes, sized to 80% of the fullscreen frustum
+  rectangle at that depth. Menus render to it with no head rotation, centred
+  on the eye projection's principal point, so the gaze ray sweeps a still
+  panel; the live game UI renders to the same plane but rotates it with the
+  head around the reset origin, so the interface is always visible. The HUD is
+  painted with a camera looking along the rotated plane normal, so projected
+  aim/marker positions are exact inside it and are pinned to the plane's edge
+  when they fall outside. The UI pass uses a nearer depth clip than the
+  runtime eye projection so the plane is never clipped. With the frame-time option
+  enabled (Options or the pause menu's options), the smoothed WebGL frame
+  interval is shown at the bottom centre of that plane. On the 2D page the HUD
+  stays a screen-space overlay.
+  Menus, the lobby and the room menu are the **same WebGL UI** as the 2D pages
+  (including the in-game pause screen), not a second VR menu: the screen is
+  painted once into the same texture/plane. The scene-level action column is
+  **on for menus and off for the game HUD**; pausing turns it on and moves
+  RESUME, OPTIONS and LEAVE out of the content panel into that column, so the
+  frozen match keeps the left side.
+  A crosshair with a dwell ring follows the headset's gaze ray on
   that plane; the controller trigger (session `select`) clicks the item under
   it, and dwelling selects without a controller (2 s by default, configurable
   as **VR Dwell Time** in Options). The dwell only restarts when the crosshair
@@ -328,20 +359,25 @@ ancestry for cold deep links. Reload rebuilds the stack.
   5 UI / 6 final, zoom blur + lens flare), `noise.ts` (tileable 3D Perlin
   field for smoke/plume + runtime Perlin cloud sprites for the level scenery),
   `hud3d.ts` (WebGL HUD overlay for stage 5),
-  `vrpanel.ts` (the same ScreenUi on a world-space VR panel + gaze cursor).
+  `uiscene.ts` (one generic world-space plane shared by the HUD and every
+  ScreenUi menu), `vrpanel.ts` (plane math, ScreenUi texture, projected border
+  and gaze cursor).
 - `src/game/` — math (GetH/GetV verbatim), life pools (Life1/Life3 quirks),
   physics presets + NextPosition + PreviewDirection, Team/Score/Reward/
-  Conditions (Destroyed = !active, MorePoints = strictly above minimum),
+  Conditions (Destroyed = !active, MorePoints = strictly ahead of every
+  combatant, DrawPoints = tied at the top), four combatant teams + the neutral
+  ambient team, an editable per-level combatant roster (players + every level
+  AI ship + added bots; AI + team per entry, applied by GameInstance),
   full 37_T object hierarchy (GetMatrix fresh, pos-centered spheres, ship
   homings=2, shield absorb + HUD /10), 13 AIs + XM_Actions factories, Map
   (stack timers, outsider root+box rule, first-hit bullets, walls), GameInstance
-  (build/update/draw order, ghost record/playback, scores, victory/defeat),
+  (build/update/draw order, ghost record/playback, scores, victory/draw/defeat),
   controls (touch + keyboard + gamepad), resources (Options XML, LOD/color caches),
   audio (SFX/voices + music), net (framed binary + gzip), ghost (framed+gzip
   persistence), store (options/scores/nav→scene map), level catalogue.
 - `src/game/hud.ts` — shared HUD snapshot (frame loop and WebXR session).
-- `src/game/xr.ts` — WebXR immersive session driver (per eye, HUD, menu panel
-  and gaze pointer).
+- `src/game/xr.ts` — WebXR immersive session driver (per eye, the shared UI
+  scene/plane and gaze pointer).
 - `src/game/vr.ts` — VR state, gyro + drag-look fallback, calibration.
 - `src/components/`, `src/views/`, `src/router/` — canvas host, the in-match
   HUD (scoreboard, aim, pointers, life bar, touch controls), the WebGL menu
@@ -387,10 +423,11 @@ ancestry for cold deep links. Reload rebuilds the stack.
      exposure knee. Ships are re-drawn sharp on top of the blurred frame.
 - **Focus frame**: the exact boundary where the focus veil reaches zero carries
   a 2 CSS px player-colour stroke just inside the sharp UI rectangle. It follows
-  flat menus/lobby/room, the HUD inset, split-screen eyes, and the projected
-  immersive menu/HUD planes. Immersive planes are uniformly fitted to 86% of the
-  eye's half-view so all four frame sides stay on-screen and the world outside
-  remains visible and blurred through a short veil ramp.
+  flat menus/lobby/room, the HUD inset, split-screen eyes, and the single
+  projected immersive UI plane. The immersive plane is 80% of the mid-depth
+  fullscreen rectangle; the veil follows its four projected corners. The
+  stroke is drawn only for menus (the live game HUD is borderless), and the
+  world outside stays visible and blurred through a short veil ramp.
 - **Player-colour chrome and enemy markers**: menu/lobby/room buttons, action
   labels, inputs, the respawn/timer bars, the pre-match countdown and the HUD
   action counts read the live player colour (including party-mode hue/flash);
@@ -411,19 +448,25 @@ ancestry for cold deep links. Reload rebuilds the stack.
 - **VR**: WebXR immersive session (per-eye pose/projection into the XR
   framebuffer) with a split-screen fallback; the chase base follows the ship's
   up vector with gyro yaw/pitch/roll composed on top; trigger/tap re-centres
-  every time; the WebGL menus render on
-  a world-space panel with a gaze
-  crosshair (trigger click + configurable dwell, 2 s default) instead of a separate VR menu, and the
-  in-game HUD is a head-locked plane at 0.75 m, close to the camera (painted once
-  from the cyclops view; projected positions clamp to its edges), both
-  verified by the panel
-  math/pointer unit tests; enterable without a gamepad;
+  every time; the WebGL menus and the in-game HUD share one generic
+  world-space plane at the near/far midpoint with a gaze
+  crosshair (trigger click + configurable dwell, 2 s default) instead of a separate VR menu, and
+  projected positions clamp to its edges; menus turn the action column on, the
+  game HUD turns it off, and pausing moves RESUME/OPTIONS/LEAVE into that
+  column, all verified by the panel math/pointer unit tests; enterable without
+  a gamepad;
   the same Settings menu is shared with the WebGL pause menu (live apply,
   save/revert); pausing shows only that menu over the frozen match and the HUD
   comes back on RESUME.
 - **Gameplay**: 5 s pre-match countdown (world frozen, world units per second
   "SPD" display, missile-lock warning, red lock crosshair, death-cause line in
-  the respawn panel, draw distance in VR matches the setting).
+  the respawn panel, draw distance in VR matches the setting). CTF ends at
+  5:00: the side with the most captures wins, equal captures show the **draw**
+  screen (only real combatant teams count; the neutral ambient team and empty
+  teams are ignored). The **briefing** carries the whole combatant roster:
+  players plus every bot, including the AIs the level ships with. Each bot can
+  be retagged (one of up to four teams) and rebrain (any AI), removed, and extra
+  bots can be added — all applied when the match starts.
 - **Navigation**: LIFO back, a clickable breadcrumb path at the top of every
   menu (persisted across reloads), `router.replace()` for finished matches.
 - **No context menu / long-press callout / image saving** anywhere in the UI.
@@ -470,7 +513,7 @@ ancestry for cold deep links. Reload rebuilds the stack.
   caches drop, scene rebuilds), 2x DPR backing store, no page errors. Run
   against both the dev server and the production build, over HTTP and over the
   WebSocket channel.
-- `npm test`: 211 unit tests (protocol framing/gzip/threshold/malformed input,
+- `npm test`: 213 unit tests (protocol framing/gzip/threshold/malformed input,
   frustum + ocTree culling, converted model sidecars, physics and life pools,
   BIP-340/NIP-19 vectors, Nostr event signing, multiplayer rooms over a local
   relay, the browser host's frame production decoded by the client codec,
@@ -509,8 +552,8 @@ ancestry for cold deep links. Reload rebuilds the stack.
   and stays out of the match, the guest joins the same roster, chat text and
   mic PCM travel over WebRTC (synthetic microphone), both team pickers are
   exercised, PLAY starts the match for both, the host's own ship moved to its
-  picked team (`alien`), the guest flies its picked team (`human`, 11 human /
-  12 alien ships, 2 flags) on the render-only `NetGame`, and chat still relays
+  picked team (`team2`), the guest flies its picked team (`team1`, 11 team1 /
+  12 team2 ships, 2 flags) on the render-only `NetGame`, and chat still relays
   during the match. It fails on any missing step; screenshots of both room
   menus and both matches are written to `/tmp/opencode/shots`.
 - Game channel (server authoritative): Node load client against the C++ server

@@ -12,3 +12,8 @@ tools/shots/
 
 # dedicated multiplayer server identity
 ie-server-nostr.key
+
+# local secrets & configuration (see .env.example)
+.env
+.env.local
+.env.*.local
