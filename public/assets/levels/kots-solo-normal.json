@@ -39,13 +39,13 @@
    "amount": 700
   },
   {
-   "team": "human",
+   "team": "team1",
    "type": "base",
    "model": "Base",
    "position": "400|400|400"
   },
   {
-   "team": "human",
+   "team": "team1",
    "type": "spaceShipRespawn",
    "model": "Fighter3",
    "position": "around",

@@ -46,19 +46,19 @@
    "amount": 700
   },
   {
-   "team": "human",
+   "team": "team1",
    "type": "base",
    "model": "Base",
    "position": "400|400|400"
   },
   {
-   "team": "alien",
+   "team": "team2",
    "type": "base",
    "model": "Base",
    "position": "-400|-400|-400"
   },
   {
-   "team": "human",
+   "team": "team1",
    "type": "spaceShipRespawn",
    "model": "Fighter3",
    "position": "around",
@@ -66,7 +66,7 @@
    "life": "100|100|100"
   },
   {
-   "team": "human",
+   "team": "team1",
    "type": "spaceShipRespawn",
    "model": "Fighter3",
    "position": "around",
@@ -74,7 +74,7 @@
    "life": "100|100|100"
   },
   {
-   "team": "human",
+   "team": "team1",
    "type": "spaceShipRespawn",
    "model": "Fighter3",
    "position": "around",
@@ -82,7 +82,7 @@
    "life": "100|100|100"
   },
   {
-   "team": "human",
+   "team": "team1",
    "type": "spaceShipRespawn",
    "model": "Fighter3",
    "position": "around",
@@ -90,7 +90,7 @@
    "life": "100|100|100"
   },
   {
-   "team": "alien",
+   "team": "team2",
    "type": "spaceShipRespawn",
    "model": "Fighter3",
    "position": "around",
@@ -98,7 +98,7 @@
    "life": "100|100|100"
   },
   {
-   "team": "alien",
+   "team": "team2",
    "type": "spaceShipRespawn",
    "model": "Fighter3",
    "position": "around",
@@ -106,7 +106,7 @@
    "life": "100|100|100"
   },
   {
-   "team": "alien",
+   "team": "team2",
    "type": "spaceShipRespawn",
    "model": "Fighter3",
    "position": "around",
@@ -114,7 +114,7 @@
    "life": "100|100|100"
   },
   {
-   "team": "alien",
+   "team": "team2",
    "type": "spaceShipRespawn",
    "model": "Fighter3",
    "position": "around",

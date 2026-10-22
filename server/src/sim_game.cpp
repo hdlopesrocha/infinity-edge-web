@@ -104,9 +104,11 @@ static const struct {
   const char* name;
   Vec3 color;
 } kTeams[] = {
-    {"human", v3(64 / 255.0f, 224 / 255.0f, 208 / 255.0f)},
+    {"team1", v3(64 / 255.0f, 224 / 255.0f, 208 / 255.0f)},
+    {"team2", v3(1, 0, 0)},
+    {"team3", v3(0.3f, 0.85f, 1)},
+    {"team4", v3(1, 0.55f, 0.9f)},
     {"ambient", v3(50 / 255.0f, 205 / 255.0f, 50 / 255.0f)},
-    {"alien", v3(1, 0, 0)},
     {"falcon", v3(1, 0.78f, 0.24f)},
     {"viper", v3(0.72f, 0.45f, 1)},
     {"raptor", v3(0.35f, 0.62f, 1)},
@@ -158,9 +160,33 @@ class CondMorePoints : public Condition {
  public:
   explicit CondMorePoints(Team* team) : team(team) {}
   bool check(Game& gi) override {
-    float minP = 99999;
-    for (auto& kv : gi.teams) minP = std::min(minP, kv.second->points);
-    return team->points > minP;
+    const float mine = team->points;
+    for (auto& kv : gi.teams) {
+      Team* t = kv.second.get();
+      if (t == team || t->name == "ambient" || t->objects.empty()) continue;
+      if (t->points >= mine) return false;
+    }
+    return true;
+  }
+
+ private:
+  Team* team;
+};
+
+/** CTF draw: tied for the top score with at least one other combatant. */
+class CondDrawPoints : public Condition {
+ public:
+  explicit CondDrawPoints(Team* team) : team(team) {}
+  bool check(Game& gi) override {
+    const float mine = team->points;
+    bool tied = false;
+    for (auto& kv : gi.teams) {
+      Team* t = kv.second.get();
+      if (t == team || t->name == "ambient" || t->objects.empty()) continue;
+      if (t->points > mine) return false;
+      if (t->points == mine) tied = true;
+    }
+    return tied;
   }
 
  private:
@@ -453,7 +479,7 @@ bool Game::create(const Level& def) {
   upgradeAIShips(*this, smartAI);
   for (const LevelGoalSet& g : def.goals) {
     const std::string& r = g.reward;
-    const bool known = r == "Gold" || r == "Silver" || r == "Bronze" || r == "Victory" || r == "Defeat";
+    const bool known = r == "Gold" || r == "Silver" || r == "Bronze" || r == "Victory" || r == "Defeat" || r == "Draw";
     auto reward = std::make_unique<Reward>(known ? r : "None", g.message);
     for (const LevelGoal& goal : g.goals) {
       if (goal.name == "NoPath") {
@@ -476,6 +502,9 @@ bool Game::create(const Level& def) {
       } else if (goal.name == "MorePoints") {
         Team* t = team(goal.value);
         if (t) reward->conditions.push_back(std::make_unique<CondMorePoints>(t));
+      } else if (goal.name == "DrawPoints") {
+        Team* t = team(goal.value);
+        if (t) reward->conditions.push_back(std::make_unique<CondDrawPoints>(t));
       }
     }
     goals.push_back(std::move(reward));
@@ -523,18 +552,18 @@ void Game::update(float dtMs) {
   }
   for (auto& r : goals) {
     if (r->check(*this)) {
-      if (r->reward != "Defeat") {
-        resultSet = true;
-        resultWon = true;
-        resultReward = r->reward;
-        resultMessage = r->message;
+      resultSet = true;
+      resultReward = r->reward;
+      resultMessage = r->message;
+      if (r->reward == "Defeat") {
+        resultWon = false;
+        voices.push_back("youLost");
+      } else if (r->reward == "Draw") {
+        resultWon = false;
         voices.push_back("objectiveCompleted");
       } else {
-        resultSet = true;
-        resultWon = false;
-        resultReward = r->reward;
-        resultMessage = r->message;
-        voices.push_back("youLost");
+        resultWon = true;
+        voices.push_back("objectiveCompleted");
       }
       finished = true;
       break;

@@ -10,6 +10,13 @@ import json, os
 OUT = os.path.join(os.path.dirname(__file__), '..', 'public', 'assets', 'levels')
 
 SKIES = ['Sky2', 'Sky1', 'Sky3']
+
+# The web build renamed the two classic teams (human/alien -> team1/team2); the
+# generator keeps its internal names so the ship names (HS1/AS1) and the camera
+# action stay stable, but writes the renamed team id into the level.
+def out_team(team):
+    return {'human': 'team1', 'alien': 'team2'}.get(team, team)
+
 # Bases sit ~690 u from the centre: close enough that a respawned ship is back
 # in the fight in ~10 s, far enough that the sun/region stay clear.
 BASE_POS = {
@@ -23,11 +30,11 @@ BASE_POS = {
 }
 
 def ship(team, name, pos='around', model='Fighter3', life='100|100|100'):
-    return {'team': team, 'type': 'spaceShipRespawn', 'model': model,
+    return {'team': out_team(team), 'type': 'spaceShipRespawn', 'model': model,
             'position': pos, 'name': name, 'life': life}
 
 def base(team):
-    return {'team': team, 'type': 'base', 'model': 'Base', 'position': BASE_POS[team]}
+    return {'team': out_team(team), 'type': 'base', 'model': 'Base', 'position': BASE_POS[team]}
 
 def kots_objects(teams, human_count, alien_count, solo_count):
     objs = [

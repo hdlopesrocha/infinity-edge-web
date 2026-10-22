@@ -15,14 +15,14 @@
   ],
   "objects": [
     {
-      "team": "human",
+      "team": "team1",
       "type": "base",
       "model": "Base",
       "position": "0|0|0",
       "name": "HB"
     },
     {
-      "team": "human",
+      "team": "team1",
       "type": "spaceShipRespawn",
       "model": "Fighter3",
       "position": "0|0|0",
