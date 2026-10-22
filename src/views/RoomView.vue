@@ -9,6 +9,7 @@ import { RoomUi } from '../game/mp/roomui';
 import { mp } from '../game/mp/manager';
 import { VoiceChat } from '../game/mp/voice';
 import { audio } from '../game/audio';
+import { goBack } from '../game/nav';
 
 export default defineComponent({
   name: 'RoomView',
@@ -63,9 +64,10 @@ export default defineComponent({
       // Going back does NOT delete the hosted room: the host keeps it (and its
       // roster/chat) alive and can re-open it from the lobby. Closing is the
       // lobby's room-row DELETE (or leaving the hosted match). Guests just
-      // leave the room.
+      // leave the room. Pop (not push) so the lobby's own back still reaches
+      // the main menu.
       if (!mp.hosting) mp.leaveGuestRoom();
-      void router.push('/multiplayer');
+      goBack(router, '/multiplayer');
     }
 
     function play(): void {

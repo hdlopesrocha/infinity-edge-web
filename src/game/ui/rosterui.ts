@@ -10,7 +10,7 @@
 
 import type { Rgb } from '../colors';
 import { teamDisplayName } from '../team';
-import { cssColor } from './theme';
+import { cssColor, readableAccent } from './theme';
 
 export interface RosterOption {
   value: string;
@@ -115,4 +115,192 @@ export function paintOptionList(p: OptionListPaint): { value: string; x: number;
   });
   ctx.restore();
   return out;
+}
+
+// ---------------------------------------------------- roster list component
+//
+// One shared "players & bots" list, painted by both the single-player briefing
+// (MenuUi) and the multiplayer waiting room (RoomUi): a team filter, then one
+// row per entry with the name in its team colour, optional badges, an optional
+// AI chip and a team chip, and an optional remove control.
+
+/** A clickable rectangle the caller registers with its own id. */
+export interface UiRect {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** One player or bot shown by the shared roster list. */
+export interface RosterEntry {
+  id: string;
+  name: string;
+  /** Team id; '' = auto (the level default). */
+  team: string;
+  teamOptions: readonly RosterOption[];
+  /** Bot brain id + options (omit for a player). */
+  ai?: string;
+  aiOptions?: readonly RosterOption[];
+  /** Show the × remove control (bots). */
+  removable?: boolean;
+  /** Small badges after the name (HOST, MIC, YOU…). */
+  badges?: readonly string[];
+  /** Draw the TEAM chip (default true). */
+  showTeam?: boolean;
+}
+
+export interface RosterRowPaint {
+  ctx: CanvasRenderingContext2D;
+  /** Device-pixel rectangle of the row. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  scale: number;
+  entry: RosterEntry;
+  hover: string | null;
+  accent: Rgb;
+  accentText: Rgb;
+  font: string;
+  fontPx: number;
+  /** Team colour tinting the name, the stripe and the TEAM chip. */
+  teamRgb: Rgb;
+  /** Region ids for the clickable parts (omit a part to hide it). */
+  ids: { team?: string; ai?: string; remove?: string };
+  /** Chip width in design px (default 122). */
+  chipW?: number;
+  /** Chip label prefixes (defaults "TEAM: " / "AI: "). */
+  teamPrefix?: string;
+  aiPrefix?: string;
+  /** Tint the row background (the current player's row). */
+  highlight?: boolean;
+}
+
+/** Paint one roster row; returns the clickable parts to register. */
+export function paintRosterRow(p: RosterRowPaint): UiRect[] {
+  const { ctx, entry, scale } = p;
+  const rects: UiRect[] = [];
+  const midY = p.y + p.h / 2;
+  const chipW = (p.chipW ?? 122) * scale;
+  const chipH = Math.max(24 * scale, p.h - 8 * scale);
+  const gap = 8 * scale;
+  const removeW = 24 * scale;
+  const labelFont = p.fontPx;
+  const chipFont = Math.max(12 * scale, p.fontPx - 2 * scale);
+
+  if (p.highlight) {
+    ctx.fillStyle = cssColor(p.accent, 0.1);
+    ctx.fillRect(p.x - 10 * scale, p.y, p.w + 14 * scale, p.h);
+  }
+  // A team-coloured stripe down the row's left edge.
+  ctx.fillStyle = cssColor(p.teamRgb, 0.9);
+  ctx.fillRect(p.x - 10 * scale, p.y, 3 * scale, p.h);
+
+  let right = p.x + p.w;
+  if (entry.removable && p.ids.remove) {
+    const rx = right - removeW;
+    const hovered = p.hover === p.ids.remove;
+    ctx.fillStyle = hovered ? 'rgba(130,36,28,0.6)' : 'rgba(70,18,18,0.42)';
+    ctx.fillRect(rx, p.y, removeW, p.h);
+    ctx.strokeStyle = 'rgba(255,122,82,0.5)';
+    ctx.lineWidth = Math.max(1, scale);
+    ctx.strokeRect(rx, p.y, removeW, p.h);
+    ctx.font = `700 ${15 * scale}px ${p.font}`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffb0a0';
+    ctx.fillText('×', rx + removeW / 2, midY + 1);
+    ctx.textAlign = 'left';
+    rects.push({ id: p.ids.remove, x: rx, y: p.y, w: removeW, h: p.h });
+    right -= removeW + gap;
+  }
+  if (entry.showTeam !== false && p.ids.team) {
+    const cx = right - chipW;
+    paintChip({
+      ctx, x: cx, y: midY - chipH / 2, w: chipW, h: chipH,
+      text: (p.teamPrefix ?? 'TEAM: ') + optionLabel(entry.teamOptions, entry.team || 'auto'),
+      hovered: p.hover === p.ids.team,
+      accent: p.teamRgb, accentText: readableAccent(p.teamRgb), lineWidth: scale,
+      fontPx: chipFont, font: p.font,
+    });
+    rects.push({ id: p.ids.team, x: cx, y: midY - chipH / 2, w: chipW, h: chipH });
+    right -= chipW + gap;
+  }
+  if (entry.ai !== undefined && p.ids.ai) {
+    const cx = right - chipW;
+    paintChip({
+      ctx, x: cx, y: midY - chipH / 2, w: chipW, h: chipH,
+      text: (p.aiPrefix ?? 'AI: ') + optionLabel(entry.aiOptions ?? [], entry.ai),
+      hovered: p.hover === p.ids.ai,
+      accent: p.accent, accentText: p.accentText, lineWidth: scale,
+      fontPx: chipFont, font: p.font,
+    });
+    rects.push({ id: p.ids.ai, x: cx, y: midY - chipH / 2, w: chipW, h: chipH });
+    right -= chipW + gap;
+  }
+  void right;
+
+  // Name + badges on the left.
+  ctx.font = `700 ${labelFont}px ${p.font}`;
+  ctx.fillStyle = cssColor(readableAccent(p.teamRgb));
+  ctx.fillText(entry.name, p.x, midY + 1);
+  let bx = p.x + ctx.measureText(entry.name).width + 8 * scale;
+  for (const badge of entry.badges ?? []) {
+    ctx.font = `700 ${10 * scale}px ${p.font}`;
+    const bw = ctx.measureText(badge).width + 12 * scale;
+    ctx.fillStyle = cssColor(p.teamRgb, 0.85);
+    ctx.fillRect(bx, midY - 8 * scale, bw, 16 * scale);
+    ctx.fillStyle = '#0a0e16';
+    ctx.fillText(badge, bx + 6 * scale, midY + 1);
+    bx += bw + 6 * scale;
+  }
+  return rects;
+}
+
+export interface TeamFilterPaint {
+  ctx: CanvasRenderingContext2D;
+  /** Device-pixel top-left of the chip row. */
+  x: number;
+  y: number;
+  scale: number;
+  hover: string | null;
+  accent: Rgb;
+  font: string;
+  /** Team ids present (the ALL chip is added automatically). */
+  teams: readonly string[];
+  /** Active team id, or null for ALL. */
+  active: string | null;
+  /** Region id prefix, e.g. `filter:` or `roster-filter:`. */
+  idPrefix: string;
+  /** Team colour lookup. */
+  colorOf: (team: string) => Rgb;
+  height?: number;
+  fontPx?: number;
+}
+
+/** Paint the ALL + per-team filter chips; returns their clickable rectangles. */
+export function paintTeamFilter(p: TeamFilterPaint): UiRect[] {
+  const rects: UiRect[] = [];
+  const h = (p.height ?? 20) * p.scale;
+  const fontPx = (p.fontPx ?? 11) * p.scale;
+  let x = p.x;
+  const chip = (id: string, label: string, color: Rgb, active: boolean): void => {
+    p.ctx.font = `700 ${fontPx}px ${p.font}`;
+    const w = p.ctx.measureText(label).width + 18 * p.scale;
+    p.ctx.fillStyle = active ? cssColor(color, 0.3) : 'rgba(10,14,22,0.72)';
+    p.ctx.fillRect(x, p.y, w, h);
+    p.ctx.strokeStyle = cssColor(color, active ? 0.9 : 0.35);
+    p.ctx.lineWidth = Math.max(1, p.scale);
+    p.ctx.strokeRect(x, p.y, w, h);
+    p.ctx.fillStyle = active ? cssColor(color) : 'rgba(255,255,255,0.7)';
+    p.ctx.textAlign = 'center';
+    p.ctx.fillText(label, x + w / 2, p.y + h / 2 + 1);
+    p.ctx.textAlign = 'left';
+    rects.push({ id, x, y: p.y, w, h });
+    x += w + 6 * p.scale;
+  };
+  chip(p.idPrefix + 'all', 'ALL', p.accent, p.active === null);
+  for (const t of p.teams) chip(p.idPrefix + t, teamDisplayName(t), p.colorOf(t), p.active === t);
+  return rects;
 }

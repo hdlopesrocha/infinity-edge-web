@@ -338,6 +338,12 @@ export default defineComponent({
         void toggleFullscreen().finally(() => rebuild());
         return;
       }
+      if (id.startsWith('roster-filter:')) {
+        const team = id.slice('roster-filter:'.length);
+        screens.setBriefingTeamFilter(team === 'all' ? null : team);
+        rebuild();
+        return;
+      }
       if (id === 'agent:add') {
         const roster = agentRosters[briefingLevel];
         if (!roster) return;
@@ -395,10 +401,10 @@ export default defineComponent({
         case 'team4Color': o.teamColors.team4 = normalizeHexColor(value, teamDefaultColor('team4')); break;
         case 'axisX': o.axisX = Boolean(value); break;
         case 'axisY': o.axisY = Boolean(value); break;
-        case 'social-to': store.socialTo = String(value).slice(0, 80); return;
-        case 'social-body': store.socialBody = String(value).slice(0, 200); return;
-        case 'identity-nsec': store.identityInput = String(value).slice(0, 80); return;
-        case 'nwc-uri': store.nwcUri = String(value).slice(0, 400); return;
+        case 'social-to': store.socialTo = String(value).slice(0, 80); break;
+        case 'social-body': store.socialBody = String(value).slice(0, 200); break;
+        case 'identity-nsec': store.identityInput = String(value).slice(0, 80); break;
+        case 'nwc-uri': store.nwcUri = String(value).slice(0, 400); break;
         default: break;
       }
       // Agent roster dropdowns (briefing): AI / TEAM.

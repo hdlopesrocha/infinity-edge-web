@@ -198,21 +198,33 @@ describe('menu screens', () => {
     expect(briefing.primary?.id).toBe('start');
     // No separate skirmish menu any more.
     expect(briefing.actions).toBeUndefined();
-    // One sectioned row list: PLAYERS (the user's own team is editable) then
-    // BOTS (one compact AI+TEAM+remove row each), then Add Bot.
+    // One shared roster list (players + bots) then Add Bot; the team filter
+    // lists the teams present.
     const ids = (briefing.left?.rows ?? []).map((r) => (r.kind === 'info' ? '' : r.id));
-    expect(ids).toEqual(['', 'player:HS1:team', '', 'HS2', 'AS1', 'agent:add']);
-    const player = briefing.left?.rows?.find((r) => r.kind === 'select' && r.id === 'player:HS1:team');
-    expect(player && player.kind === 'select' && player.value).toBe('team1');
-    expect(player && player.kind === 'select' && player.options.some((o) => o.label === 'Team 2')).toBe(true);
-    const hs2 = briefing.left?.rows?.find((r) => r.kind === 'agent' && r.id === 'HS2');
-    expect(hs2 && hs2.kind === 'agent' && hs2.ai).toBe('AIFlagCap');
-    expect(hs2 && hs2.kind === 'agent' && hs2.aiOptions.some((o) => o.label === 'Flag Runner')).toBe(true);
-    const as1 = briefing.left?.rows?.find((r) => r.kind === 'agent' && r.id === 'AS1');
-    expect(as1 && as1.kind === 'agent' && as1.team).toBe('team2');
-    expect(as1 && as1.kind === 'agent' && as1.teamOptions.some((o) => o.label === 'Team 2')).toBe(true);
+    expect(ids).toEqual(['HS1', 'HS2', 'AS1', 'agent:add']);
+    expect(briefing.left?.filter?.teams).toEqual(['team1', 'team2']);
+    const player = briefing.left?.rows?.find((r) => r.kind === 'roster' && r.id === 'HS1');
+    expect(player && player.kind === 'roster' && player.entry.team).toBe('team1');
+    expect(player && player.kind === 'roster' && player.entry.badges).toContain('YOU');
+    expect(player && player.kind === 'roster' && player.entry.teamOptions.some((o) => o.label === 'Team 2')).toBe(true);
+    const hs2 = briefing.left?.rows?.find((r) => r.kind === 'roster' && r.id === 'HS2');
+    expect(hs2 && hs2.kind === 'roster' && hs2.entry.ai).toBe('AIFlagCap');
+    expect(hs2 && hs2.kind === 'roster' && hs2.entry.aiOptions?.some((o) => o.label === 'Flag Runner')).toBe(true);
+    const as1 = briefing.left?.rows?.find((r) => r.kind === 'roster' && r.id === 'AS1');
+    expect(as1 && as1.kind === 'roster' && as1.entry.team).toBe('team2');
+    expect(as1 && as1.kind === 'roster' && as1.entry.teamOptions.some((o) => o.label === 'Team 2')).toBe(true);
     // The disabled bot is not listed.
     expect(ids).not.toContain('AS2');
+    // Filtering by a team hides the others.
+    try {
+      screens.setBriefingTeamFilter('team2');
+      const filtered = screens.briefingScreen('ctf-easy', 'hello', [], roster);
+      const filteredIds = (filtered.left?.rows ?? []).map((r) => r.id);
+      expect(filteredIds).toEqual(['AS1', 'agent:add']);
+      expect(filtered.left?.filter?.active).toBe('team2');
+    } finally {
+      screens.setBriefingTeamFilter(null);
+    }
     // High scores moved into the mission panel.
     expect(briefing.right?.lines?.some((l) => 'text' in l && l.text === 'HIGH SCORES')).toBe(true);
 

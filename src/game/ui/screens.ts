@@ -15,6 +15,7 @@ import { teamDisplayName } from '../team';
 import { teamDefaultColor } from '../colors';
 import { P } from '../physics';
 import type { MenuPanel, MenuRow, MenuScreen, MenuTab, PanelLine } from './menuui';
+import type { RosterEntry } from './rosterui';
 
 /** TEAMS / SOLO switch on the King of the System and Survival menus. */
 let teamsMode = true;
@@ -149,11 +150,18 @@ export function tracksMenu(diff: string): MenuScreen {
 
 // ---------------------------------------------------------------- briefing
 /**
- * The briefing carries the whole roster in two sections: the player(s) as
- * compact lines, then every bot as one row with inline AI and TEAM dropdowns
- * and a remove control. The level's own bots and the added ones share the list;
- * GameInstance.create applies it.
+ * The briefing carries the whole roster (players + bots) as one shared list —
+ * the same roster component the multiplayer waiting room paints. The team
+ * filter above it narrows the visible entries to one team; the player's own
+ * team is editable, bots keep their AI/TEAM dropdowns and remove control.
  */
+let briefingTeamFilter: string | null = null;
+
+/** Set (or clear with null) the briefing roster's team filter. */
+export function setBriefingTeamFilter(team: string | null): void {
+  briefingTeamFilter = team;
+}
+
 export function briefingScreen(
   levelKey: string, text: string, rows: string[], roster: AgentConfig[],
 ): MenuScreen {
@@ -161,29 +169,29 @@ export function briefingScreen(
   const bots = roster.filter((a) => a.role === 'bot' && a.enabled);
   const aiOptions = BOT_AIS.map((a) => ({ value: a.id, label: a.label }));
   const teamOptions = SKIRMISH_TEAMS.map((t) => ({ value: t, label: teamDisplayName(t) }));
-  const rosterRows: MenuRow[] = [];
-  // Players: the current user can change its own team here too.
-  rosterRows.push({ kind: 'info', text: `PLAYERS · ${players.length}` });
-  for (const p of players) {
-    rosterRows.push({
-      kind: 'select', id: `player:${p.id}:team`,
-      label: `${p.name} · you`, value: p.team, options: teamOptions,
-    });
-  }
-  // Bots: one compact row each (AI + TEAM dropdowns + remove).
-  rosterRows.push({ kind: 'info', text: `BOTS · ${bots.length}` });
-  for (const b of bots) {
-    rosterRows.push({
-      kind: 'agent', id: b.id, name: b.name,
-      ai: b.ai, aiOptions, team: b.team, teamOptions, removable: true,
-    });
-  }
-  rosterRows.push({ kind: 'button', id: 'agent:add', label: 'Add Bot' });
+  // One entry per combatant, players first — the shared roster component.
+  const entries: RosterEntry[] = [
+    ...players.map((p): RosterEntry => ({
+      id: p.id, name: p.name, team: p.team, teamOptions, badges: ['YOU'],
+    })),
+    ...bots.map((b): RosterEntry => ({
+      id: b.id, name: b.name, team: b.team, teamOptions,
+      ai: b.ai, aiOptions, removable: true,
+    })),
+  ];
+  const teamsPresent = [...new Set(entries.map((e) => e.team || SKIRMISH_TEAMS[0]))].sort();
+  const active = briefingTeamFilter && teamsPresent.includes(briefingTeamFilter) ? briefingTeamFilter : null;
+  const visible = entries.filter((e) => active === null || (e.team || SKIRMISH_TEAMS[0]) === active);
+  const rosterRows: MenuRow[] = [
+    ...visible.map((e): MenuRow => ({ kind: 'roster', id: e.id, entry: e })),
+    { kind: 'button', id: 'agent:add', label: 'Add Bot' },
+  ];
   const scores = rows.filter((r) => r.trim().length > 0);
   return {
     title: 'BRIEFING',
     left: {
-      heading: `ROSTER · ${players.length + bots.length}`,
+      heading: `ROSTER · ${visible.length}/${entries.length}`,
+      filter: { teams: teamsPresent, active },
       rows: rosterRows,
     },
     right: {

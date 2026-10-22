@@ -9,11 +9,12 @@
 // as `onSelect` / `onChange` callbacks.
 
 import { nextUiVersion } from '../../engine/overlay';
-import { COLOR_PALETTE, DEFAULT_PLAYER_COLOR, normalizeHexColor } from '../colors';
+import { COLOR_PALETTE, DEFAULT_PLAYER_COLOR, normalizeHexColor, teamColor } from '../colors';
 import type { Rgb } from '../colors';
 import { satsLabel } from '../wallet';
 import { store } from '../store';
-import { optionLabel, optionListHeight, paintChip, paintOptionList } from './rosterui';
+import { optionLabel, optionListHeight, paintChip, paintOptionList, paintRosterRow, paintTeamFilter } from './rosterui';
+import type { RosterEntry } from './rosterui';
 import { FS_REGION } from './fullscreen';
 import { VR_REGION } from './vrchrome';
 import { cssColor, accentMoved, currentPlayerAccent, readableAccent } from './theme';
@@ -76,6 +77,16 @@ export type MenuRow =
   | { kind: 'button'; id: string; label: string; value?: string; disabled?: boolean }
   | {
       /**
+       * One shared roster row (a player or a bot): name + badges, optional AI
+       * and TEAM chips and an optional remove control. Regions:
+       * `agent:<id>:ai|team|remove`.
+       */
+      kind: 'roster';
+      id: string;
+      entry: RosterEntry;
+    }
+  | {
+      /**
        * One compact agent row: the bot's name plus inline AI and TEAM
        * dropdowns and a remove control. Regions: `agent:<id>:ai|team|remove`.
        */
@@ -99,6 +110,8 @@ export interface MenuPanel {
   lines?: PanelLine[];
   watermark?: string;
   footer?: string;
+  /** Team filter chips painted above the rows (the shared roster component). */
+  filter?: { teams: readonly string[]; active: string | null };
 }
 
 /** One tab in the tab bar painted above the content panels. */
@@ -648,6 +661,16 @@ export class MenuUi implements ScreenUi {
     if (p.buttons) y = this.paintButtons(ctx, p.buttons, col, y, s, X, Y, U);
     if (p.table) y = this.paintTable(ctx, p.table, col, y, s, X, Y, U);
     if (p.lines) y = this.paintLines(ctx, p.lines, col, y, s, X, Y, U);
+    if (p.filter) {
+      // The shared roster component's team filter sits above the rows.
+      const rects = paintTeamFilter({
+        ctx, x: X(col.x + 20), y: Y(y - 6), scale: s, hover: this.hover,
+        accent: this.accent, font: FONT, teams: p.filter.teams, active: p.filter.active,
+        idPrefix: 'roster-filter:', colorOf: (t) => teamColor(t, store.options),
+      });
+      for (const r of rects) this.regions.push(r);
+      y += 26;
+    }
     if (p.rows) {
       // Spread a short list over the enlarged panel instead of leaving a large
       // empty tail; info rows still keep their compact vertical rhythm.
@@ -951,6 +974,24 @@ export class MenuUi implements ScreenUi {
         this.regions.push({ id: 'row:' + row.id, x: bx, y: Y(y) - bh / 2, w: bw, h: bh });
         return y + rowH;
       }
+      case 'roster': {
+        // The shared roster component paints the row (also used by the room).
+        const rects = paintRosterRow({
+          ctx, x: labelX, y: Y(y) - U(rowH) / 2, w: valueRight - labelX, h: U(rowH - 6), scale: s,
+          entry: row.entry,
+          hover: this.hover,
+          accent: this.accent, accentText: this.accentText, font: FONT,
+          fontPx: U(fs),
+          teamRgb: teamColor(row.entry.team || 'team1', store.options),
+          ids: {
+            ai: row.entry.ai !== undefined ? `agent:${row.id}:ai` : undefined,
+            team: `agent:${row.id}:team`,
+            remove: row.entry.removable ? `agent:${row.id}:remove` : undefined,
+          },
+        });
+        for (const r of rects) this.regions.push(r);
+        return y + rowH;
+      }
       case 'agent': {
         const bh = U(Math.max(24, Math.min(30, rowH - 8)));
         const chipFont = Math.max(12, Math.min(14, rowH * 0.32));
@@ -1189,15 +1230,20 @@ export class MenuUi implements ScreenUi {
         return;
       }
       const row = this.rowById(botId);
-      if (row?.kind === 'agent') {
+      const opts = row?.kind === 'agent'
+        ? (field === 'ai' ? row.aiOptions : row.teamOptions)
+        : row?.kind === 'roster'
+          ? (field === 'ai' ? row.entry.aiOptions : row.entry.teamOptions)
+          : undefined;
+      const value = row?.kind === 'agent'
+        ? (field === 'ai' ? row.ai : row.team)
+        : row?.kind === 'roster'
+          ? (field === 'ai' ? row.entry.ai : row.entry.team)
+          : '';
+      if (opts) {
         const anchor = this.regions.find((r) => r.id === id);
         if (anchor) {
-          this.dropdown = {
-            id,
-            options: field === 'ai' ? row.aiOptions : row.teamOptions,
-            value: field === 'ai' ? row.ai : row.team,
-            anchor,
-          };
+          this.dropdown = { id, options: opts, value: value ?? '', anchor };
           this.hover = null;
           this.bump();
         }

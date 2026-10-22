@@ -7,7 +7,6 @@
 import { nextUiVersion } from '../../engine/overlay';
 import type { ScreenUi } from '../../engine/overlay';
 import type { RoomSnapshot } from './manager';
-import { teamDisplayName } from '../team';
 import { FS_REGION, toggleFullscreen } from '../ui/fullscreen';
 import { VR_REGION, clickVrToggle } from '../ui/vrchrome';
 import type { Rgb } from '../colors';
@@ -16,8 +15,8 @@ import { DEFAULT_TEAM } from './host';
 import { satsLabel } from '../wallet';
 import { store } from '../store';
 import { cssColor, accentMoved, currentPlayerAccent, readableAccent } from '../ui/theme';
-import { optionListHeight, paintChip, paintOptionList, teamOptions } from '../ui/rosterui';
-import type { RosterOption } from '../ui/rosterui';
+import { optionListHeight, paintOptionList, paintRosterRow, paintTeamFilter, teamOptions } from '../ui/rosterui';
+import type { RosterEntry, RosterOption } from '../ui/rosterui';
 import {
   UI_FONT as FONT, CONTENT_CX, CONTENT_W, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
   paintActionColumn, paintContentShell, paintNavbar, contentFocusRect,
@@ -192,37 +191,23 @@ export class RoomUi implements ScreenUi {
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('PLAYERS', X(x0 + 20), Y(y0 + 26));
 
-    // Team filter: ALL plus every team the pilots are on. Only the picked
-    // team's rows stay visible; each chip carries its team colour.
-    const teamsPresent: string[] = [];
-    for (const p of snap.players) {
-      const t = p.team || DEFAULT_TEAM;
-      if (!teamsPresent.includes(t)) teamsPresent.push(t);
-    }
-    teamsPresent.sort();
+    // The shared roster component: the same team filter and rows the briefing
+    // uses, fed from the room snapshot.
+    const options = teamOptions(snap.teams);
+    const entries: RosterEntry[] = snap.players.map((p) => ({
+      id: p.pubkey,
+      name: p.name,
+      team: p.team,
+      teamOptions: options,
+      badges: [...(p.host ? ['HOST'] : []), ...(p.mic ? ['MIC'] : [])],
+    }));
+    const teamsPresent = [...new Set(entries.map((e) => e.team || DEFAULT_TEAM))].sort();
     if (this.teamFilter !== null && !teamsPresent.includes(this.teamFilter)) this.teamFilter = null;
-    const chipH = 20;
-    const fy = y0 + 42;
-    let fx = x0 + 20;
-    const filterChip = (id: string, label: string, color: Rgb, active: boolean): void => {
-      ctx.font = `700 ${U(11)}px ${FONT}`;
-      const cw = ctx.measureText(label).width / s + 18;
-      ctx.fillStyle = active ? cssColor(color, 0.3) : 'rgba(10,14,22,0.72)';
-      ctx.fillRect(X(fx), Y(fy), U(cw), U(chipH));
-      ctx.strokeStyle = cssColor(color, active ? 0.9 : 0.35);
-      ctx.lineWidth = Math.max(1, s);
-      ctx.strokeRect(X(fx), Y(fy), U(cw), U(chipH));
-      ctx.fillStyle = active ? cssColor(color) : 'rgba(255,255,255,0.7)';
-      ctx.textAlign = 'center';
-      ctx.fillText(label, X(fx + cw / 2), Y(fy + chipH / 2 + 1));
-      ctx.textAlign = 'left';
-      this.regions.push({ id, x: X(fx), y: Y(fy), w: U(cw), h: U(chipH) });
-      fx += cw + 6;
-    };
-    filterChip('filter:all', 'ALL', this.accent, this.teamFilter === null);
-    for (const t of teamsPresent) {
-      filterChip('filter:' + t, teamDisplayName(t), teamColor(t, store.options), this.teamFilter === t);
-    }
+    this.regions.push(...paintTeamFilter({
+      ctx, x: X(x0 + 20), y: Y(y0 + 42), scale: s, hover: this.hover,
+      accent: this.accent, font: FONT, teams: teamsPresent, active: this.teamFilter,
+      idPrefix: 'filter:', colorOf: (t) => teamColor(t, store.options),
+    }));
 
     const rowH = 44;
     let y = y0 + 76;
@@ -231,46 +216,15 @@ export class RoomUi implements ScreenUi {
       if (this.teamFilter !== null && team !== this.teamFilter) return;
       const me = i === snap.meIndex;
       const canPick = snap.isHost || me;
-      const rgb = teamColor(team, store.options);
-      const rgbText = readableAccent(rgb);
-      if (me) {
-        ctx.fillStyle = cssColor(this.accent, 0.1);
-        ctx.fillRect(X(x0 + 12), Y(y - 4), U(w - 24), U(rowH - 6));
-      }
-      // A team-coloured stripe down the row's left edge.
-      ctx.fillStyle = cssColor(rgb, 0.9);
-      ctx.fillRect(X(x0 + 12), Y(y - 4), U(3), U(rowH - 6));
-      ctx.font = `700 ${U(15)}px ${FONT}`;
-      ctx.fillStyle = cssColor(rgbText);
-      ctx.fillText(player.name, X(x0 + 22), Y(y + 6));
-      // Badges: HOST, MIC.
-      let badgeX = x0 + 22 + ctx.measureText(player.name).width / s + 14;
-      const badge = (text: string, color: string): void => {
-        ctx.font = `700 ${U(10)}px ${FONT}`;
-        const bw = ctx.measureText(text).width / s + 12;
-        ctx.fillStyle = color;
-        ctx.fillRect(X(badgeX), Y(y - 2), U(bw), U(16));
-        ctx.fillStyle = '#0a0e16';
-        ctx.fillText(text, X(badgeX + 6), Y(y + 6));
-        badgeX += bw + 6;
-      };
-      if (player.host) badge('HOST', cssColor(rgbText, 0.9));
-      if (player.mic) badge('MIC', 'rgba(255,212,121,0.95)');
-      // Team picker on the right: the same select chip the briefing roster uses,
-      // tinted with the team's colour.
-      const tw = 150;
-      const bx = X(x0 + w - tw - 22);
-      const by = Y(y - 6);
-      const bw2 = U(tw);
-      const bh2 = U(28);
-      paintChip({
-        ctx, x: bx, y: by, w: bw2, h: bh2,
-        text: player.team ? teamDisplayName(player.team) : 'auto',
-        hovered: this.hover === 'team:' + i,
-        accent: rgb, accentText: rgbText, lineWidth: s,
-        fontPx: U(13), font: FONT,
-      });
-      if (canPick) this.regions.push({ id: 'team:' + i, x: bx, y: by, w: bw2, h: bh2 });
+      this.regions.push(...paintRosterRow({
+        ctx, x: X(x0 + 22), y: Y(y - 4), w: U(w - 44), h: U(rowH - 6), scale: s,
+        entry: entries[i],
+        hover: this.hover,
+        accent: this.accent, accentText: this.accentText, font: FONT, fontPx: U(15),
+        teamRgb: teamColor(team, store.options),
+        ids: { team: canPick ? 'team:' + i : undefined },
+        teamPrefix: '', chipW: 150, highlight: me,
+      }));
       y += rowH;
     });
     // Fill the empty slots so the room size is visible (only when unfiltered).
