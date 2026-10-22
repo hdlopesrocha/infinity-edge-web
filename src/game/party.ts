@@ -53,6 +53,36 @@ export const party: PartyState = {
 
 const FALLBACK_PLAYER: Rgb = [64 / 255, 224 / 255, 208 / 255];
 
+// ---- Bass response tuning -------------------------------------------------
+// Every value here is deliberately larger than the first pass of the effect so
+// the low end reads clearly: the player hull turns further per kick and flashes
+// harder, and the sky both sways through more hue and brightens with the bass.
+// The player hue is still advanced through the smoothed `shownHue`, so none of
+// this snaps — a kick looks like a sweep, not a cut.
+
+/** Hue step added to the player hue target on a bass onset, in turns. */
+export const PARTY_BEAT_HUE_BASE = 0.09;
+/** Extra hue step per unit of bass amplitude+envelope, in turns (0.46 ≈ 166°). */
+export const PARTY_BEAT_HUE_BASS = 0.46;
+/** Saturation added to the player colour at a full-strength bass hit. */
+export const PARTY_HIT_SATURATION = 0.40;
+/** Value (brightness) added to the player colour at a full-strength bass hit. */
+export const PARTY_HIT_VALUE = 0.26;
+/** Allowed hue swing of the sky from the smoothed beat hue, in degrees. */
+export const PARTY_SKY_HUE_DEG = 26;
+/** Extra sky hue swing from the bass onset envelope, in degrees. */
+export const PARTY_SKY_HUE_KICK_DEG = 12;
+/** Sky brightness gain from overall music energy. */
+export const PARTY_SKY_VALUE_ENERGY = 0.30;
+/** Sky brightness gain from the bass band/envelope. */
+export const PARTY_SKY_VALUE_BASS = 0.55;
+/** Sky contrast gain from overall music energy. */
+export const PARTY_SKY_CONTRAST_ENERGY = 0.45;
+/** Sky contrast gain from the beat pulse on each bass hit. */
+export const PARTY_SKY_CONTRAST_PULSE = 0.20;
+/** Sky contrast gain from the bass band/envelope. */
+export const PARTY_SKY_CONTRAST_BASS = 0.15;
+
 function clamp01(v: number): number {
   return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
 }
@@ -95,11 +125,13 @@ export function applyMusicFrame(state: PartyState, levels: MusicLevels, dtMs: nu
     state.clock - state.lastBeat > 140;
   if (beat) {
     state.lastBeat = state.clock;
-    // A bass onset turns the player much further than the old mixed-energy
-    // detector did: roughly 22-130 degrees, scaled by how hard the bass hit.
-    state.hue = (state.hue + 0.06 + state.bass * 0.30) % 1;
+    // The onset envelope rides the raw bass amplitude, so a deep kick turns the
+    // player further than a quiet note. Both the amplitude and the envelope feed
+    // the step, and `shownHue` below smooths it into a sweep instead of a snap.
+    state.bassPulse = clamp01(state.bass);
+    const hit = clamp01(state.bass * 0.5 + state.bassPulse * 0.5);
+    state.hue = (state.hue + PARTY_BEAT_HUE_BASE + hit * PARTY_BEAT_HUE_BASS) % 1;
     state.pulse = 1;
-    state.bassPulse = state.bass;
   } else {
     state.pulse *= Math.exp(-dt / 160);
     state.bassPulse *= Math.exp(-dt / 110);
@@ -130,13 +162,13 @@ export function partyPlayerColor(
   if (!options.partyMode || !party.active) return base;
   const hsv = rgbToHsv(base);
   hsv[0] = ((hsv[0] + party.shownHue) % 1 + 1) % 1;
-  // The bass hit also lifts saturation and brightness briefly. Scaling by the
-  // bass amplitude makes a deep drop flash harder than a quiet bass note, and
-  // keeps the effect visible for neutral player colours where hue alone is
-  // almost invisible.
-  const flash = party.bassPulse;
-  hsv[1] = Math.min(1, hsv[1] + flash * 0.22);
-  hsv[2] = Math.min(1, hsv[2] + flash * 0.14);
+  // The bass hit also lifts saturation and brightness briefly. The flash is
+  // scaled by both the bass amplitude and the decaying onset envelope, so a
+  // deep drop flashes much harder than a quiet note, while the scaling keeps it
+  // visible for neutral player colours where the hue rotation alone is subtle.
+  const flash = clamp01(party.bassPulse * (0.7 + 0.5 * clamp01(party.bass)));
+  hsv[1] = Math.min(1, hsv[1] + flash * PARTY_HIT_SATURATION);
+  hsv[2] = Math.min(1, hsv[2] + flash * PARTY_HIT_VALUE);
   return hsvToRgb(hsv);
 }
 
@@ -145,12 +177,46 @@ export function partyShiftColor(color: Rgb): Rgb {
   return party.active ? hueShiftRgb(color, party.shownHue) : ([...color] as Rgb);
 }
 
-/** Sky hue offset in degrees: deliberately small so the level stays readable. */
+/**
+ * Sky hue offset in degrees. A pure rotation of the level's own sky hue: it
+ * never references a team colour, so the dome can never be tinted toward the
+ * player or an enemy. Two layers move together: a wide sway from the smoothed
+ * beat hue and an extra kick from the bass onset envelope.
+ */
 export function partySkyHue(): number {
-  return party.active ? Math.sin(party.shownHue * Math.PI * 2) * 10 : 0;
+  if (!party.active) return 0;
+  const sway = Math.sin(party.shownHue * Math.PI * 2) * PARTY_SKY_HUE_DEG;
+  const kick = Math.sin(clamp01(party.bassPulse) * Math.PI * 0.5) * PARTY_SKY_HUE_KICK_DEG;
+  return sway + kick;
 }
 
-/** Sky contrast multiplier: the one sky property allowed to move strongly. */
+/** The stronger of the current bass band and the decaying onset envelope. */
+function bassLevel(): number {
+  return clamp01(Math.max(party.bass, party.bassPulse));
+}
+
+/**
+ * Apply the party response to a level's sky HSB. Only the hue is rotated, and
+ * only by the level's own hue offset (never a team colour); brightness and
+ * contrast carry the energy/bass so the dome brightens on the low end. Returns
+ * a fresh triple, leaving the instance's stored skyHsb untouched.
+ */
+export function partySkyHsb(hsb: readonly [number, number, number]): [number, number, number] {
+  if (!party.active) return [hsb[0], hsb[1], hsb[2]];
+  const brightness =
+    1 + party.energy * PARTY_SKY_VALUE_ENERGY + bassLevel() * PARTY_SKY_VALUE_BASS;
+  return [
+    hsb[0] + partySkyHue(),
+    hsb[1],
+    Math.min(1.6, hsb[2] * brightness),
+  ];
+}
+
+/** Sky contrast multiplier: energy and every bass hit push it up. */
 export function partySkyContrast(): number {
-  return party.active ? 1 + party.energy * 0.35 + party.pulse * 0.08 : 1;
+  if (!party.active) return 1;
+  return 1 +
+    party.energy * PARTY_SKY_CONTRAST_ENERGY +
+    party.pulse * PARTY_SKY_CONTRAST_PULSE +
+    bassLevel() * PARTY_SKY_CONTRAST_BASS;
 }

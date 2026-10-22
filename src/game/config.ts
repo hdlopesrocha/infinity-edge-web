@@ -71,9 +71,14 @@ export interface TeamCfg {
 }
 
 export const TEAMS: TeamCfg[] = [
-  { name: 'human', color: [64 / 255, 224 / 255, 208 / 255] },
+  // The two classic combatant teams (formerly `human`/`alien`). The web build
+  // supports up to four teams so skirmish bots can fight on their own side;
+  // team1..team4 are mutually hostile whenever they field objects.
+  { name: 'team1', color: [64 / 255, 224 / 255, 208 / 255] },
+  { name: 'team2', color: [1, 0, 0] },
+  { name: 'team3', color: [0.3, 0.85, 1] },
+  { name: 'team4', color: [1, 0.55, 0.9] },
   { name: 'ambient', color: [50 / 255, 205 / 255, 50 / 255] },
-  { name: 'alien', color: [1, 0, 0] },
   // Free-for-all competitors (King of the System / Survival, solo): each one
   // fields a single ship, and every competitor is every other's enemy.
   { name: 'falcon', color: [1, 0.78, 0.24] },
@@ -82,6 +87,9 @@ export const TEAMS: TeamCfg[] = [
   { name: 'comet', color: [1, 0.45, 0.25] },
   { name: 'nova', color: [0.45, 1, 0.75] },
 ];
+
+/** The four team ids the skirmish bot setup can assign bots to. */
+export const SKIRMISH_TEAMS: readonly string[] = ['team1', 'team2', 'team3', 'team4'];
 
 export const VOICES: { field: string; file: string; text: string }[] = [
   { field: 'welcome', file: 'Welcome', text: 'Welcome to Infinity Edge!' },

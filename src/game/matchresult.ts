@@ -5,6 +5,8 @@
 
 export interface PendingMatchResult {
   won: boolean;
+  /** True when the match ended level (a CTF draw): shows the draw screen. */
+  draw?: boolean;
   reward: string;
   message: string | null;
 }

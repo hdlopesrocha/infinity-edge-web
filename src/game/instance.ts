@@ -11,18 +11,25 @@ import { Ark, Asteroid, Base, Bullet, Flag, HomingMissile, SpaceObject, SpaceShi
 import { simHooks } from './mp/bridge';
 import {
   Team, GameScore, Reward, CondDestroyed, CondMoreTime, CondLessTime, CondMorePoints, CondNoPath,
-  CondTopScore, parseTimeSpan,
+  CondTopScore, CondDrawPoints, parseTimeSpan, teamDisplayName,
 } from './team';
-import type { RewardType, ScoreEntry } from './team';
+import type { RewardType, ScoreEntry, ScoreType } from './team';
 import { TEAMS, SKY_HSB } from './config';
+import { radialBasePosition } from './basearrangement';
 import { Control } from './controls';
+import { P } from './physics';
+import { stringToLife } from './life';
 import { applyAction, upgradeAIShips } from './ai';
 import { addScore } from './store';
+import { mp } from './mp/manager';
+import { fetchScoreProfiles, publishScoreProfile, runsFromGameScore } from './scores';
+import { rosterFor, applyRoster } from './agents';
+import type { AgentConfig } from './agents';
 import { loadGhostFile, saveGhostFile } from './ghost';
 import type { GhostRecord } from './ghost';
 import type { LevelDef } from './levels';
 import type { RC } from './resources';
-import { partySkyContrast, partySkyHue } from './party';
+import { partySkyContrast, partySkyHsb } from './party';
 
 export type GameType = 'CTF' | 'TT' | 'BACK' | 'KOTS' | 'SURV';
 
@@ -95,7 +102,7 @@ export class GameInstance {
    */
   deathCauses = new Map<SpaceObject, string>();
   aimedTarget: SpaceObject | null = null;
-  result: { won: boolean; reward: RewardType; message: string | null } | null = null;
+  result: { won: boolean; draw?: boolean; reward: RewardType; message: string | null } | null = null;
   skyGpu: import('../engine/model').GpuModel | null = null;
   skyTex: TexEntry | null = null;
   /** Hue (deg), saturation and value multipliers for the single skysphere. */
@@ -147,9 +154,15 @@ export class GameInstance {
       }
     }
     for (const cfg of TEAMS) gi.teams.set(cfg.name, new Team(cfg.name, [...cfg.color] as [number, number, number]));
+    // The briefing roster decides which level AI ships are kept, whether their
+    // team/AI was retuned, and which extra bots to spawn. The level's own bots
+    // and the added ones are the same kind of entry here.
+    const roster = rosterFor(def.key, def);
+    const applied = applyRoster(def, roster);
     // Every team that fields objects fights every other one (two factions in
-    // CTF, free-for-all in the solo King of the System / Survival levels).
-    const combatants = [...new Set(def.objects.map((o) => o.team))].filter((n) => n !== 'ambient');
+    // CTF, up to four in a skirmish, free-for-all in the solo modes). Added
+    // bots may field teams the level itself does not use.
+    const combatants = applied.teams;
     for (const a of combatants) {
       const ta = gi.teams.get(a);
       if (!ta) continue;
@@ -159,7 +172,7 @@ export class GameInstance {
         if (tb) ta.enemys.push(tb);
       }
     }
-    for (const o of def.objects) {
+    for (const o of applied.objects) {
       gi.map.buildObject(
         { team: o.team, type: o.type, model: o.model, position: o.position, name: o.name, life: o.life, amount: o.amount },
         gi,
@@ -174,7 +187,25 @@ export class GameInstance {
       gi.cameraTarget = vec3.fromValues(v[0] || 0, v[1] || 0, v[2] || 0);
     }
     renderer.camera.far = rc.options.distance;
-    for (const a of def.actions) applyAction(gi, a.name, a.from, a.to ?? null);
+    // Each bot gets its chosen brain; the player's HILocal (and any other level
+    // action) is applied as-is. A disabled bot is skipped (it has no ship).
+    for (const a of def.actions) {
+      const cfg = applied.levelBots.get(a.from);
+      if (cfg) {
+        if (!cfg.enabled) continue;
+        const team = gi.teams.get(cfg.team);
+        applyAction(gi, cfg.ai, a.from, team ? gi.botTarget(cfg.ai, team) : null);
+        const ship = gi.objects.get(a.from) as SpaceShip | undefined;
+        if (ship && !ship.intelligence) applyAction(gi, 'AIGoRandomOffensive', a.from, null);
+      } else {
+        applyAction(gi, a.name, a.from, a.to ?? null);
+      }
+    }
+    // Bases ignore the level's fixed (diagonal) positions and are distributed
+    // radially around the arena centre, evenly spaced in the ground plane.
+    // This runs before the added bots spawn so they land around their base.
+    gi.arrangeBasesRadially();
+    gi.spawnAddedBots(applied.added);
     // Web addition: every AI ship hunts the addons it can use (repair, nitro,
     // missiles, shield) and fires its homing missiles / nitro; `?ai=smart`
     // layers the experimental brain underneath. The arena guard is always on.
@@ -182,7 +213,7 @@ export class GameInstance {
     for (const g of def.goals) {
       const reward = (
         g.reward === 'Gold' || g.reward === 'Silver' || g.reward === 'Bronze' ||
-        g.reward === 'Victory' || g.reward === 'Defeat' ? g.reward : 'None'
+        g.reward === 'Victory' || g.reward === 'Defeat' || g.reward === 'Draw' ? g.reward : 'None'
       ) as RewardType;
       const r = new Reward(reward, g.message ?? null);
       for (const goal of g.goals) {
@@ -202,6 +233,9 @@ export class GameInstance {
         } else if (goal.name === 'MorePoints') {
           const team = gi.teams.get(goal.value ?? '');
           if (team) r.addCondition(new CondMorePoints(team));
+        } else if (goal.name === 'DrawPoints') {
+          const team = gi.teams.get(goal.value ?? '');
+          if (team) r.addCondition(new CondDrawPoints(team));
         }
       }
       gi.goals.push(r);
@@ -212,6 +246,77 @@ export class GameInstance {
     }
     gi.snapCamera();
     return gi;
+  }
+
+  /**
+   * Spawn the bots added on the briefing: one ship per entry, around its
+   * team's base (or a random point when the team has no base), flying the
+   * chosen AI brain. `upgradeAIShips` wraps these afterwards, exactly like the
+   * level's own AI ships.
+   */
+  private spawnAddedBots(bots: readonly AgentConfig[]): void {
+    if (this.gameType === 'BACK' || bots.length === 0) return;
+    const model = this.rc.model('Fighter3');
+    if (!model) return;
+    const base = this.rc.model('Base');
+    bots.forEach((cfg, i) => {
+      const team = this.teams.get(cfg.team);
+      if (!team) return;
+      const pos = team.base
+        ? team.base.randomAround(this.rc.random)
+        : this.map.randomPosition();
+      const ship = new SpaceShip(P.SS1R, this, team, pos, model, stringToLife('100|100|100'), base);
+      // Never clobber a level object that happens to share the id.
+      let name = cfg.id || ('BOT' + (i + 1));
+      if (this.objects.has(name)) name += '_' + (i + 1);
+      this.objects.set(name, ship);
+      applyAction(this, cfg.ai, name, this.botTarget(cfg.ai, team));
+      // An AI that needs a target (guard/raider) must never leave the ship
+      // inert: fall back to a self-sufficient skirmisher.
+      if (!ship.intelligence) applyAction(this, 'AIGoRandomOffensive', name, null);
+    });
+  }
+
+  /**
+   * Lay every combatant base out on a circle around the arena centre, evenly
+   * spaced in the plane perpendicular to world UP (+Y). The teams are ordered
+   * by the stable TEAMS config order, so the layout is deterministic; the flag
+   * trails its owner base and is moved (and re-inserted) with it.
+   */
+  private arrangeBasesRadially(): void {
+    const order = new Map(TEAMS.map((c, i) => [c.name, i]));
+    const withBase = [...this.teams.values()]
+      .filter((t) => t.base !== null)
+      .sort((a, b) => (order.get(a.name) ?? 0) - (order.get(b.name) ?? 0));
+    const count = withBase.length;
+    withBase.forEach((team, i) => {
+      const base = team.base;
+      if (!base) return;
+      const [x, y, z] = radialBasePosition(i, count, this.map.size);
+      vec3.set(base.pos, x, y, z);
+      base.update();
+      this.map.refreshObject(base);
+      if (team.flag) {
+        vec3.copy(team.flag.pos, base.pos);
+        team.flag.update();
+        this.map.refreshObject(team.flag);
+      }
+    });
+  }
+
+  /** The `to` object for the bot AIs that need one (guard/raider). */
+  private botTarget(ai: string, team: Team): string | null {
+    const nameOf = (predicate: (o: SpaceObject) => boolean): string | null => {
+      for (const [name, obj] of this.objects) if (predicate(obj)) return name;
+      return null;
+    };
+    if (ai === 'AIBodyGuard') {
+      return team.base ? nameOf((o) => o === team.base) : null;
+    }
+    if (ai === 'AISpawnKiller') {
+      return nameOf((o) => o instanceof Base && o.team !== team);
+    }
+    return null;
   }
 
   /** Turn the menu's ship/base in place (the sky and camera stay fixed). */
@@ -353,12 +458,15 @@ export class GameInstance {
     }
     for (const r of this.goals) {
       if (r.check(this)) {
-        if (r.reward !== 'Defeat') {
-          this.result = { won: true, reward: r.reward, message: r.message };
-          this.rc.playVoice('objectiveCompleted');
-        } else {
+        if (r.reward === 'Defeat') {
           this.result = { won: false, reward: r.reward, message: r.message };
           this.rc.playVoice('youLost');
+        } else if (r.reward === 'Draw') {
+          this.result = { won: false, draw: true, reward: r.reward, message: r.message };
+          this.rc.playVoice('objectiveCompleted');
+        } else {
+          this.result = { won: true, reward: r.reward, message: r.message };
+          this.rc.playVoice('objectiveCompleted');
         }
         this.finished = true;
         this.onFinish();
@@ -409,9 +517,21 @@ export class GameInstance {
     if (!this.result) return;
     if (this.result.won) {
       const gs = this.getGameScore();
-      const best = addScore(gs, this.gameType === 'BACK' ? 'CTF' : this.gameType, this.savefile);
+      const type = (this.gameType === 'BACK' ? 'CTF' : this.gameType) as ScoreType;
+      const best = addScore(gs, type, this.savefile);
       if (best && this.ghostFile) saveGhostFile(this.ghostFile, this.ghostRecords);
+      void this.publishScores(gs, type);
     }
+  }
+
+  /** Mirror the run into the player's Nostr score profile (best-effort). */
+  private async publishScores(gs: GameScore, type: ScoreType): Promise<void> {
+    try {
+      const runs = runsFromGameScore(gs, type, this.savefile, Math.floor(Date.now() / 1000));
+      const mine = await fetchScoreProfiles(mp);
+      const existing = mine.find((p) => p.pubkey === mp.pubkey)?.profile.scores ?? [];
+      await publishScoreProfile(mp, runs, existing);
+    } catch { /* offline: the local board still keeps the run */ }
   }
 
   getGameScore(): GameScore {
@@ -420,7 +540,7 @@ export class GameInstance {
       if (t.objects.length > 0 && this.selectedObject) {
         const control = t === this.selectedObject.team;
         gs.scores.push({
-          name: control ? this.rc.options.username : t.name,
+          name: control ? this.rc.options.username : teamDisplayName(t.name),
           points: t.points,
           timeMs: t.timeMs,
           control,
@@ -525,13 +645,11 @@ export class GameInstance {
     // translation keeps its motion-blur velocity at zero (it is "at infinity").
     const prev = mat4.create();
     mat4.fromTranslation(prev, r.prevCameraPos);
-    // Party mode only nudges the sky: a small hue oscillation and a contrast
-    // lift from the music energy keep the level's colour identity intact.
-    const hsb: [number, number, number] = [
-      this.skyHsb[0] + partySkyHue(),
-      this.skyHsb[1],
-      this.skyHsb[2],
-    ];
+    // Party mode only nudges the sky: a wide hue sway plus an energy/bass
+    // brightness lift keep the level's colour identity intact. The hue added
+    // here is a rotation of the level's own hue — the sky is never tinted with
+    // a team colour.
+    const hsb = partySkyHsb(this.skyHsb);
     draw.drawUnlit(
       this.skyGpu, this.skyTex, m, r.camera.view, r.camera.proj,
       [1, 1, 1], 1, prev, hsb, partySkyContrast(),

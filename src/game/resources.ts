@@ -8,10 +8,11 @@ import { createCloudTextures } from '../engine/noise';
 import type { Renderer } from '../engine/renderer';
 import type { ModelData } from './objects';
 import { MODELS, TEXTURES } from './config';
-import { DEFAULT_ENEMY_COLOR, DEFAULT_PLAYER_COLOR, normalizeHexColor } from './colors';
+import { DEFAULT_ENEMY_COLOR, DEFAULT_PLAYER_COLOR, TEAM_DEFAULT_COLORS, normalizeHexColor } from './colors';
 import { LEVEL_FILES, loadLevel } from './levels';
 import { ensureManifests, modelFiles, textureFiles } from './assetmanifest';
 import { audio } from './audio';
+import { DEFAULT_AIMBOT_ID, resolveAimbot } from './aimbot';
 
 export interface Options {
   username: string;
@@ -31,6 +32,10 @@ export interface Options {
   /** #rrggbb colours for the player's team and every enemy team. */
   playerColor: string;
   enemyColor: string;
+  /** Per-team #rrggbb overrides (team1..team4); '' = use player/enemy. */
+  teamColors: Record<string, string>;
+  /** Selected aimbot preset id (see game/aimbot.ts). */
+  aimbot: string;
   cheats: boolean;
   axisX: boolean;
   axisY: boolean;
@@ -68,6 +73,11 @@ export function defaultOptions(): Options {
     musicVolume: 0.5, billboards: true,
     zoomBlur: true, showMs: true, partyMode: false, dwellTime: 2,
     playerColor: DEFAULT_PLAYER_COLOR, enemyColor: DEFAULT_ENEMY_COLOR,
+    teamColors: {
+      team1: TEAM_DEFAULT_COLORS[0], team2: TEAM_DEFAULT_COLORS[1],
+      team3: TEAM_DEFAULT_COLORS[2], team4: TEAM_DEFAULT_COLORS[3],
+    },
+    aimbot: DEFAULT_AIMBOT_ID,
     cheats: false, axisX: false, axisY: false,
   };
 }
@@ -121,6 +131,15 @@ function loadOptionsStored(): Options {
       dwellTime: Number.isFinite(dwell) ? Math.max(0.5, Math.min(5, dwell)) : d.dwellTime,
       playerColor: normalizeHexColor(g('_playerColor', d.playerColor), d.playerColor),
       enemyColor: normalizeHexColor(g('_enemyColor', d.enemyColor), d.enemyColor),
+      teamColors: {
+        // Fill any missing team colour from the old player/enemy colours (or the
+        // four team defaults): the settings now exposes exactly these four.
+        team1: normalizeHexColor(g('_team1Color', ''), '') || normalizeHexColor(g('_playerColor', ''), '') || d.teamColors.team1,
+        team2: normalizeHexColor(g('_team2Color', ''), '') || normalizeHexColor(g('_enemyColor', ''), '') || d.teamColors.team2,
+        team3: normalizeHexColor(g('_team3Color', ''), '') || d.teamColors.team3,
+        team4: normalizeHexColor(g('_team4Color', ''), '') || d.teamColors.team4,
+      },
+      aimbot: resolveAimbot(g('_aimbot', d.aimbot)).id,
       axisX: b('_axisX', d.axisX),
       axisY: b('_axisY', d.axisY),
       cheats: d.cheats,
@@ -140,6 +159,11 @@ export function saveOptions(o: Options): void {
         `_partyMode="${o.partyMode}" _dwellTime="${o.dwellTime}" ` +
         `_playerColor="${normalizeHexColor(o.playerColor, DEFAULT_PLAYER_COLOR)}" ` +
         `_enemyColor="${normalizeHexColor(o.enemyColor, DEFAULT_ENEMY_COLOR)}" ` +
+        `_team1Color="${normalizeHexColor(o.teamColors?.team1 ?? '', '')}" ` +
+        `_team2Color="${normalizeHexColor(o.teamColors?.team2 ?? '', '')}" ` +
+        `_team3Color="${normalizeHexColor(o.teamColors?.team3 ?? '', '')}" ` +
+        `_team4Color="${normalizeHexColor(o.teamColors?.team4 ?? '', '')}" ` +
+        `_aimbot="${resolveAimbot(o.aimbot).id}" ` +
         `_axisY="${o.axisY}" _axisX="${o.axisX}" />`,
     );
   } catch { /* ignore */ }

@@ -6,6 +6,30 @@ import type { Options } from './resources';
 import { GameScore } from './team';
 import type { ScoreEntry, ScoreType } from './team';
 
+/** Item ownership, persisted in localStorage (the Shop mirrors this list). */
+const OWNED_KEY = 'ie.shop.owned';
+
+/** Owned shop item ids, read from localStorage. */
+export function loadOwnedItems(): string[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const raw = localStorage.getItem(OWNED_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw) as unknown;
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Persist the owned shop item ids (deduplicated). */
+export function saveOwnedItems(items: readonly string[]): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(OWNED_KEY, JSON.stringify([...new Set(items)]));
+  } catch { /* private mode */ }
+}
+
 /** One life-bar segment (the HUD builds the coloured bar from these). */
 export interface HudLifeSegment {
   value: number;
@@ -26,6 +50,9 @@ export interface HudPointer {
   label: string | null;
 }
 
+/** One skirmish bot roster entry is now `AgentConfig` (see game/agents.ts);
+ *  the per-level rosters live in `agentRosters`, not in the store. */
+
 export const store = reactive({
   options: defaultOptions() as Options,
   route: 'boot' as string,
@@ -35,6 +62,14 @@ export const store = reactive({
   /** True while the WebGL pause menu is open: the world stops, the scene
    *  keeps rendering so option changes are visible behind it. */
   paused: false,
+  /** Network pause: the match is frozen because a guest disconnected. */
+  netPaused: false,
+  /** Names of the guests the frozen match is waiting for. */
+  netPausedBy: '',
+  /** True when this client is the host (it may drop a missing guest). */
+  netPausedHost: false,
+  /** Bumped to force GameCanvas to rebuild the NetGame (guest reconnect). */
+  sceneEpoch: 0,
   /** VR mode: head-tracked view, gamepad-only input (see game/vr.ts). */
   vr: false,
   /** The HUD (score, clock, aim, life, markers) renders in GL as stage 5 of
@@ -45,7 +80,35 @@ export const store = reactive({
   scoreboard: null as { title: string; rows: string[] } | null,
   username: '' as string,
   levelText: '' as string,
-  result: null as { won: boolean; reward: string; message: string | null; level: string } | null,
+  /** Social: the best run of each game mode, read from Nostr score profiles. */
+  gameHighScores: [] as import('./social').GameHighScore[],
+  /** Social: received human DMs, newest first. */
+  socialInbox: [] as import('./social').InboxMessage[],
+  /** Social: status / error line under the message composer. */
+  socialStatus: '' as string,
+  /** Social: recipient (npub or hex) and message body being composed. */
+  socialTo: '' as string,
+  socialBody: '' as string,
+  result: null as { won: boolean; draw?: boolean; reward: string; message: string | null; level: string } | null,
+  /** Lightning balance in satoshis of the wallet linked to our npub. */
+  sats: null as number | null,
+  /** True when a NIP-47 (NWC) wallet is linked. */
+  walletConnected: false as boolean,
+  /** Wallet status / error line. */
+  walletStatus: '' as string,
+  /** The `nostr+walletconnect://` URI being edited. */
+  nwcUri: '' as string,
+  /** Nostr identity shown on the Social page (mirrored from the mp manager). */
+  identityNpub: '' as string,
+  identityNsec: '' as string,
+  identityRevealed: false as boolean,
+  /** The nsec / hex being entered in the import field. */
+  identityInput: '' as string,
+  identityStatus: '' as string,
+  /** Shop: status line for purchases and wallet actions. */
+  shopStatus: '' as string,
+  /** Owned shop item ids; each unlocks one premium aimbot preset. */
+  ownedItems: loadOwnedItems() as string[],
   /** Eager asset load (all models/textures/levels) shown by the boot screens. */
   loading: { active: true, done: 0, total: 0, failed: 0 },
   /**
@@ -75,6 +138,8 @@ export const store = reactive({
     missileWarn: false,
     /** An enemy is under the crosshair inside missile range. */
     lockOn: false,
+    /** The spaceship auto-aim is currently steering at an enemy. */
+    aimbot: false,
     /** Pre-match countdown in seconds (0 = running). */
     countdown: 0,
     /** How the player's ship was destroyed (empty when alive). */
@@ -112,7 +177,8 @@ export function syncSceneState(routeName: string, param?: string): void {
   store.route = routeName;
   store.sceneKey = sceneForRoute(routeName, param);
   store.levelKey =
-    routeName === 'game' || routeName === 'briefing' || routeName === 'victory' || routeName === 'defeat'
+    routeName === 'game' || routeName === 'briefing'
+      || routeName === 'victory' || routeName === 'defeat' || routeName === 'draw'
       ? (param ?? '')
       : '';
   store.interactive = routeName === 'game';

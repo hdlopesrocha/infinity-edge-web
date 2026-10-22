@@ -3,6 +3,27 @@
 import type { GameInstance } from './instance';
 import type { SpaceObject } from './objects';
 
+/**
+ * Human-readable name for a team id. `team1`..`team4` become "Team 1".."Team 4";
+ * every other id (the free-for-all competitors, a custom id) is capitalised.
+ */
+export function teamDisplayName(name: string): string {
+  const m = /^team(\d+)$/.exec(name);
+  if (m) return 'Team ' + m[1];
+  if (!name) return name;
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/** Combatant teams: everything that fields objects, minus the neutral ambient. */
+function combatants(gi: GameInstance): Team[] {
+  const out: Team[] = [];
+  for (const t of gi.teams.values()) {
+    if (t.name === 'ambient' || t.objects.length === 0) continue;
+    out.push(t);
+  }
+  return out;
+}
+
 export class Team {
   points = 0;
   timeMs = 0;
@@ -151,7 +172,7 @@ function fmtTime(timeMs: number): string {
   return (h !== 0 ? p2(h) + ':' : '') + p2(m) + ':' + p2(sec) + '.' + String(mmm).padStart(3, '0');
 }
 
-export type RewardType = 'Gold' | 'Silver' | 'Bronze' | 'Victory' | 'Defeat' | 'None';
+export type RewardType = 'Gold' | 'Silver' | 'Bronze' | 'Victory' | 'Defeat' | 'Draw' | 'None';
 
 export abstract class Condition {
   abstract check(gi: GameInstance): boolean;
@@ -192,10 +213,36 @@ export class CondMorePoints extends Condition {
     super();
   }
 
+  /** True when `team` has strictly more points than every other combatant. */
   check(gi: GameInstance): boolean {
-    let min = 99999;
-    for (const t of gi.teams.values()) min = Math.min(min, t.points);
-    return this.team.points > min;
+    const mine = this.team.points;
+    for (const t of combatants(gi)) {
+      if (t === this.team) continue;
+      if (t.points >= mine) return false;
+    }
+    return true;
+  }
+}
+
+/**
+ * CTF draw: `team` is tied for the top score with at least one other combatant
+ * (nobody is strictly ahead, and at least one other shares the lead). A team
+ * that is strictly ahead is a win, not a draw.
+ */
+export class CondDrawPoints extends Condition {
+  constructor(private team: Team) {
+    super();
+  }
+
+  check(gi: GameInstance): boolean {
+    const mine = this.team.points;
+    let tied = false;
+    for (const t of combatants(gi)) {
+      if (t === this.team) continue;
+      if (t.points > mine) return false;
+      if (t.points === mine) tied = true;
+    }
+    return tied;
   }
 }
 

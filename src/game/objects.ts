@@ -376,7 +376,43 @@ export class SpaceShip extends SpaceObject {
   isPlayer = false;
   /** Seconds since the last hit (used by the experimental AISmart brain). */
   hitAge = 99;
+  /** Auto-aim parameters: engage when a close enemy is this aligned. */
+  aimbotAngle = 0.9;
+  aimbotDistance = 128;
+  /** Engage only when the analog stick magnitude is <= this (barely steering). */
+  aimbotThreshold = 0.35;
+  /** True while the assist is steering this frame. */
+  aimbotActive = false;
+  aimbotTarget: SpaceObject | null = null;
   private lol = 0;
+
+  /**
+   * Closest enemy in front, inside the aimbot distance and at least
+   * `aimbotAngle` dot-product aligned with the ship's direction.
+   */
+  findAimbotTarget(gi: GameInstance): SpaceObject | null {
+    const found: OctItem[] = [];
+    gi.map.octree.sphereSelectInteractive(
+      this.pos[0], this.pos[1], this.pos[2], this.aimbotDistance, found,
+    );
+    let best: SpaceObject | null = null;
+    let bestDot = this.aimbotAngle;
+    for (const o of found) {
+      if (!(o instanceof SpaceObject) || o === this || !o.active) continue;
+      if (!this.team.enemys.includes(o.team)) continue;
+      const dx = o.pos[0] - this.pos[0];
+      const dy = o.pos[1] - this.pos[1];
+      const dz = o.pos[2] - this.pos[2];
+      const l = Math.hypot(dx, dy, dz) || 1;
+      if (l > this.aimbotDistance) continue;
+      const dot = (this.dir[0] * dx + this.dir[1] * dy + this.dir[2] * dz) / l;
+      if (dot > bestDot) {
+        bestDot = dot;
+        best = o;
+      }
+    }
+    return best;
+  }
 
   constructor(
     physics: Physics, gi: GameInstance, team: Team, position: vec3,
@@ -400,10 +436,12 @@ export class SpaceShip extends SpaceObject {
     const L = this.lod(d, 'solid');
     if (!L) return;
     // Party mode tints the player's hull toward the current music hue; enemy
-    // ships and addons keep their normal materials.
+    // ships and addons keep their normal materials. The tint strength rides the
+    // overall energy *and* the bass onset envelope, so the hull flashes harder
+    // on a kick while enemies stay untouched.
     const tint: [number, number, number] = [1, 1, 1];
     if (this.isPlayer && party.active) {
-      const k = 0.62 + 0.18 * party.energy;
+      const k = Math.min(1, 0.62 + 0.18 * party.energy + 0.16 * party.bassPulse);
       tint[0] = 1 + (this.team.color[0] - 1) * k;
       tint[1] = 1 + (this.team.color[1] - 1) * k;
       tint[2] = 1 + (this.team.color[2] - 1) * k;

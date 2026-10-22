@@ -71,6 +71,7 @@ export class AnalogAcel {
   padWasThrust = false;
   /** True while the throttle is being commanded by the keyboard. */
   keyThrust = false;
+
   // Area/Back rectangles: Area (W-96, H-400, 96x400); Back (Area.X+48, Area.Y+48, 16x304)
   areaX = 0;
   areaY = 0;
@@ -214,8 +215,15 @@ export class Control {
     if (typeof navigator === 'undefined' || !navigator.getGamepads) return;
     const pads = navigator.getGamepads();
     let pad: Gamepad | null = null;
+    // Prefer a real standard-mapped gamepad; an XR runtime can expose its
+    // controllers as virtual pads and they must not shadow the physical one.
     for (const p of pads) {
-      if (p && p.connected) { pad = p; break; }
+      if (p && p.connected && p.mapping === 'standard') { pad = p; break; }
+    }
+    if (!pad) {
+      for (const p of pads) {
+        if (p && p.connected) { pad = p; break; }
+      }
     }
     if (!pad) { this.padActive = false; return; }
     this.padActive = true;
@@ -224,10 +232,9 @@ export class Control {
     const y = padAxis(pad.axes[1] ?? 0);
     if (x !== 0) this.analogStick.value.x = x;
     if (y !== 0) this.analogStick.value.y = y;
-    // Throttle: right trigger (analog), or A held down as a fallback.
+    // Acceleration: right trigger only (A is fire, not throttle).
     const rt = pad.buttons[7]?.value ?? 0;
-    const a = pad.buttons[PAD_FIRE]?.pressed ? 1 : 0;
-    const thrust = Math.max(rt, a * 0.999);
+    const thrust = rt;
     if (thrust > 0.05) {
       this.analogAcel.value = Math.max(this.analogAcel.value, thrust);
       this.analogAcel.keyThrust = true;

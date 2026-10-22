@@ -6,8 +6,28 @@ import type { Command, HomingMissile, SpaceObject, SpaceShip } from './objects';
 import { previewDirection } from './physics';
 import type { GameInstance } from './instance';
 import type { RC } from './resources';
+import { aimbotAssist, aimbotEngages, applyAimbotPreset, resolveAimbot } from './aimbot';
 
 export type { Command };
+
+/**
+ * The AI brains a skirmish bot may be given, in the order the setup screen
+ * cycles them. `id` is the level action name `applyAction` understands.
+ */
+export const BOT_AIS: readonly { id: string; label: string }[] = [
+  { id: 'AIGoRandomOffensive', label: 'Skirmisher' },
+  { id: 'AIHunt', label: 'Hunter' },
+  { id: 'AIFlagCap', label: 'Flag Runner' },
+  { id: 'AIFlagProt', label: 'Flag Guard' },
+  { id: 'AIBodyGuard', label: 'Escort' },
+  { id: 'AISpawnKiller', label: 'Base Raider' },
+  { id: 'AIKingOfHill', label: 'Hill Holder' },
+];
+
+/** Human-readable label for a bot AI id (falls back to the raw id). */
+export function botAiLabel(id: string): string {
+  return BOT_AIS.find((a) => a.id === id)?.label ?? id;
+}
 
 /**
  * The input read surface `HILocal` needs. The game's `Control` satisfies it
@@ -431,7 +451,7 @@ export class HILocal implements Command {
   inside = true;
 
   constructor(
-    private gi: GameInstance, private obj: SpaceObject,
+    private gi: GameInstance, private obj: SpaceShip,
     private control: ShipControl, private rc: RC,
   ) {}
 
@@ -439,6 +459,10 @@ export class HILocal implements Command {
     const o = this.obj;
     const c = this.control;
     const opts = this.rc.options;
+    // The player's auto-aim tuning comes from the selected preset. Only the
+    // ship HILocal drives is retuned; AI ships keep the class defaults.
+    const preset = resolveAimbot(opts.aimbot);
+    if (o.isPlayer) applyAimbotPreset(o, preset);
     vec3.scale(o.accel, o.dir, o.physics.accelMax * c.analogAcel.value);
     const q = quat.create();
     const invX = (c.invertX ?? opts.axisX) ? -1 : 1;
@@ -454,7 +478,21 @@ export class HILocal implements Command {
     vec3.transformQuat(want, want, q);
     vec3.normalize(want, want);
     const stickLen = Math.hypot(c.analogStick.value.x, c.analogStick.value.y);
-    steerTo(o, o.pos[0] + want[0] * 100, o.pos[1] + want[1] * 100, o.pos[2] + want[2] * 100, o.physics.maxAngular * stickLen);
+    // Auto-aim: once roughly aligned with a close enemy *and* the player is
+    // barely steering (stick magnitude within the preset threshold), take over
+    // the steering and point the velocity vector straight at it. Steering
+    // harder than the threshold disables the assist entirely.
+    const aimbot = aimbotEngages(stickLen, o.aimbotThreshold) ? o.findAimbotTarget(this.gi) : null;
+    o.aimbotActive = aimbot !== null;
+    o.aimbotTarget = aimbot;
+    if (aimbot) {
+      const ed = vec3.subtract(vec3.create(), aimbot.pos, o.pos);
+      vec3.normalize(ed, ed);
+      vec3.scale(o.accel, ed, o.physics.accelMax * aimbotAssist(preset, c.analogAcel.value));
+      steerTo(o, aimbot.pos[0], aimbot.pos[1], aimbot.pos[2], o.physics.maxAngular);
+    } else {
+      steerTo(o, o.pos[0] + want[0] * 100, o.pos[1] + want[1] * 100, o.pos[2] + want[2] * 100, o.physics.maxAngular * stickLen);
+    }
     o.update();
     if (!o.insideMap) {
       if (!this.warning) this.gi.shipNotification(o, 'leavingFieldOfBattle');
