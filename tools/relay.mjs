@@ -87,8 +87,8 @@ export async function startRelay({ port = 0, verbose = false } = {}) {
           return;
         }
         if (evt.kind === 5) {
-          // NIP-09: drop the referenced addressable event when the author
-          // matches, but keep the deletion itself (clients query it).
+          // NIP-09: drop the referenced events when the author matches, but
+          // keep the deletion itself (clients query it).
           for (const tag of evt.tags) {
             if (tag[0] === 'a' && typeof tag[1] === 'string') {
               const [kind, pubkey, d] = tag[1].split(':');
@@ -98,6 +98,10 @@ export async function startRelay({ port = 0, verbose = false } = {}) {
                 if (target) stored.delete(target);
                 addressable.delete(key);
               }
+            } else if (tag[0] === 'e' && typeof tag[1] === 'string') {
+              // Regular events (e.g. room comments): only the author may delete.
+              const target = stored.get(tag[1]);
+              if (target && target.pubkey === evt.pubkey) stored.delete(tag[1]);
             }
           }
           index(evt);

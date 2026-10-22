@@ -41,12 +41,18 @@ export const ROOM_BOARD_PUBKEY = (() => {
   return decoded ? bytesToHex(decoded.bytes) : '';
 })();
 /**
- * Extra `t` tag on host-published offers. Offers are unaddressed (no `p`
- * tag), so a joining guest filters on this tag to discover them.
+ * Room comment kind (a stored post). The host's SDP offer is posted as a
+ * comment under the room event, so a late guest always finds it (unlike the
+ * old ephemeral offer signals the relays do not store).
  */
-export const TAG_OFFER = 'ie3d-mp-offer';
+export const KIND_OFFER = 1;
 /** Protocol version of the payloads below (content `v`). */
 export const MP_PROTOCOL = 1;
+
+/** Addressable coordinate of a room: `30333:<host>:<roomId>`. */
+export function roomCoordinate(room: { id: string; hostPubkey: string }): string {
+  return `${KIND_ROOM}:${room.hostPubkey}:${room.id}`;
+}
 
 export interface EventTemplate {
   kind: number;
@@ -307,14 +313,62 @@ export interface SignalMessage {
 export function signalTemplate(roomId: string, toPubkey: string, msg: Omit<SignalMessage, 'v' | 'room' | 'to'>): EventTemplate {
   const content: SignalMessage = { v: MP_PROTOCOL, room: roomId, to: toPubkey, ...msg };
   const tags: string[][] = [['d', roomId]];
-  // An empty recipient is a broadcast (host offers): no `p` tag, and the
-  // extra offer tag lets joining guests discover it.
   if (toPubkey) tags.push(['p', toPubkey]);
-  if (msg.kind === 'offer') tags.push(['t', TAG_OFFER]);
   return {
     kind: KIND_SIGNAL,
     tags,
     content: JSON.stringify(content),
+  };
+}
+
+/**
+ * A room comment: the host's SDP offer, posted under the room. `a` = the room
+ * coordinate, `e` = the room event it comments, `p` = the host. Stored, so a
+ * guest that joins late still finds the offer.
+ */
+export function offerCommentTemplate(
+  room: { id: string; hostPubkey: string; eventId: string },
+  body: Omit<SignalMessage, 'v' | 'room' | 'to'>,
+): EventTemplate {
+  const content: SignalMessage = { v: MP_PROTOCOL, room: room.id, to: '', ...body };
+  return {
+    kind: KIND_OFFER,
+    tags: [
+      ['a', roomCoordinate(room)],
+      ['e', room.eventId],
+      ['p', room.hostPubkey],
+    ],
+    content: JSON.stringify(content),
+  };
+}
+
+/** Parse a room comment as a host offer; null when foreign/malformed. */
+export function offerFromEvent(
+  evt: NostrEvent, room: { id: string; hostPubkey: string },
+): SignalMessage | null {
+  if (evt.kind !== KIND_OFFER) return null;
+  if (evt.pubkey !== room.hostPubkey) return null;
+  if (tagValue(evt, 'a') !== roomCoordinate(room)) return null;
+  let msg: SignalMessage;
+  try {
+    msg = JSON.parse(evt.content) as SignalMessage;
+  } catch {
+    return null;
+  }
+  if (!msg || msg.v !== MP_PROTOCOL || msg.room !== room.id || msg.to !== '') return null;
+  if (msg.kind !== 'offer') return null;
+  return msg;
+}
+
+/** NIP-09 deletion for room comments (offers) by event id. */
+export function offerDeletionTemplate(eventIds: string[]): EventTemplate {
+  return {
+    kind: KIND_DELETE,
+    tags: [
+      ['k', String(KIND_OFFER)],
+      ...eventIds.map((id) => ['e', id]),
+    ],
+    content: 'stale offer',
   };
 }
 

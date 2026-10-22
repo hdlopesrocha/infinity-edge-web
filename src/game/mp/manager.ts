@@ -11,14 +11,16 @@
 // room list and calls createRoom/joinRoom/deleteRoom (plus rejoinRoom to
 // re-open a hosted room that was left alive).
 //
-// Browser-hosted rooms are host-offered: the host publishes the SDP offer
-// (see publishOffer) and a joining guest answers it. Password-protected rooms
-// seal the signalling with a password-derived AES-GCM key (mp/crypto.ts).
+// Browser-hosted rooms are host-offered: the host posts its SDP offer as a
+// comment under the room post (see publishOffer), and a joining guest answers
+// it with a NIP-04 DM. Password-protected rooms seal the signalling with a
+// password-derived AES-GCM key (mp/crypto.ts).
 
 import {
-  candidateInit, finalizeEvent, KIND_DELETE, KIND_ROOM, KIND_SIGNAL, MP_PROTOCOL, newRoomId,
+  candidateInit, finalizeEvent, KIND_DELETE, KIND_OFFER, KIND_ROOM, KIND_SIGNAL, MP_PROTOCOL, newRoomId,
   roomFromEvent, roomTemplate, signalFromEvent, signalTemplate, tagValues, verifyEvent,
-  deletionTemplate, signalDeletionTemplate, TAG_OFFER, ROOM_BOARD_PUBKEY,
+  deletionTemplate, ROOM_BOARD_PUBKEY,
+  offerCommentTemplate, offerDeletionTemplate, offerFromEvent, roomCoordinate,
 } from '../nostr/event';
 import type { NostrEvent, RoomContent, RoomInfo, SignalCandidate, SignalMessage } from '../nostr/event';
 import { deriveKey, newSalt, openSignal, sealSignal } from './crypto';
@@ -59,11 +61,6 @@ const HEARTBEAT_MS = 4 * 60 * 1000;
 const JOIN_TIMEOUT_MS = 30000;
 /** How long a guest tries one host offer before switching to another. */
 const OFFER_ANSWER_TIMEOUT_MS = 8000;
-/**
- * Host offers are ephemeral (relays do not store them), so they are refreshed
- * periodically; a joining guest also asks for a refresh with a `join` signal.
- */
-const OFFER_REFRESH_MS = 15000;
 /**
  * Signals created more than this many seconds before the session started are
  * stale. Generous, because clocks on different machines drift; the session id
@@ -359,7 +356,6 @@ export class Multiplayer implements DmTransport {
   private pendingChannels: { pubkey: string; name: string; transport: GameTransport; team: string }[] = [];
   private session: HostSession | null = null;
   private heartTimer = 0;
-  private offerTimer = 0;
   private sigSub: (() => void) | null = null;
   /** Current signalling session id (rotated when the host re-enters). */
   private hostSid = '';
@@ -817,9 +813,8 @@ export class Multiplayer implements DmTransport {
     void this.loadTeams(opts.game);
     this.subscribeSignals();
     this.heartTimer = setInterval(() => void this.heartbeat(), HEARTBEAT_MS);
-    // Host-published offers: one per guest slot, refreshed for late guests.
+    // Host offers: one stored comment per free guest slot (no refresh needed).
     this.ensureOffers();
-    this.offerTimer = setInterval(() => this.refreshOffers(), OFFER_REFRESH_MS);
     this.emit();
     this.onRoom?.();
     return room;
@@ -969,10 +964,6 @@ export class Multiplayer implements DmTransport {
       clearInterval(this.heartTimer);
       this.heartTimer = 0;
     }
-    if (this.offerTimer) {
-      clearInterval(this.offerTimer);
-      this.offerTimer = 0;
-    }
     const session = this.session;
     const peers = [...this.hostPeers.values(), ...this.hostOffers.values()];
     const pending = this.pendingChannels.splice(0);
@@ -1017,7 +1008,7 @@ export class Multiplayer implements DmTransport {
       const evt = finalizeEvent(deletionTemplate({ id: room.id, hostPubkey: room.hostPubkey }), this.sk);
       void this.pool.publish(evt);
       if (offerEventIds.length > 0) {
-        const del = finalizeEvent(signalDeletionTemplate(room.id, offerEventIds), this.sk);
+        const del = finalizeEvent(offerDeletionTemplate(offerEventIds), this.sk);
         void this.pool.publish(del);
       }
       this.roomRevisions.delete(room.hostPubkey + ':' + room.id);
@@ -1293,7 +1284,6 @@ export class Multiplayer implements DmTransport {
       this.subscribeSignals();
     }
     if (!this.heartTimer) this.heartTimer = setInterval(() => void this.heartbeat(), HEARTBEAT_MS);
-    if (!this.offerTimer) this.offerTimer = setInterval(() => this.refreshOffers(), OFFER_REFRESH_MS);
     this.ensureOffers();
     this.roomPhase = 'waiting';
     void this.heartbeat();
@@ -1316,7 +1306,7 @@ export class Multiplayer implements DmTransport {
     }
     this.hostOffers.clear();
     if (this.pool && oldOffers.length > 0) {
-      const del = finalizeEvent(signalDeletionTemplate(room.id, oldOffers), this.sk);
+      const del = finalizeEvent(offerDeletionTemplate(oldOffers), this.sk);
       void this.pool.publish(del);
     }
     // Republish the room (and later fresh offers) under the new session id.
@@ -1381,10 +1371,9 @@ export class Multiplayer implements DmTransport {
     if (msg.sid && msg.sid !== this.hostSid) return; // another session
     if (msg.kind === 'answer') return this.onHostAnswer(evt, msg);
     if (msg.kind === 'join') {
-      // A joining guest asked for an offer: republish the open offers (the
-      // relays do not store ephemeral events, so the offer must be live).
+      // A joining guest asked for an offer: make sure every free slot has one.
       trace('host.join', { from: evt.pubkey.slice(0, 8) });
-      this.refreshOffers();
+      this.ensureOffers();
       return;
     }
     if (msg.kind === 'ice') {
@@ -1448,6 +1437,10 @@ export class Multiplayer implements DmTransport {
     if (this.hostPeers.has(pubkey)) return; // one connection per guest
     if (this.hostPeers.size >= room.maxPlayers - 1) return; // room is full
     this.hostOffers.delete(offerId);
+    // The slot is taken: retire the offer comment so it stops advertising.
+    if (peer.offerEventId) {
+      void this.pool.publish(finalizeEvent(offerDeletionTemplate([peer.offerEventId]), this.sk));
+    }
     peer.guestPubkey = pubkey;
     peer.name = body.name || 'Pilot';
     this.hostPeers.set(pubkey, peer);
@@ -1491,17 +1484,6 @@ export class Multiplayer implements DmTransport {
       this.dropOffer(first.value);
     }
     while (this.hostOffers.size < target) void this.publishOffer();
-  }
-
-  /** Republish the open offers with a fresh timestamp (late guests). */
-  private refreshOffers(): void {
-    const room = this.hostingRoom;
-    if (!room || !this.pool) return;
-    if (this.hostOffers.size === 0) {
-      this.ensureOffers();
-      return;
-    }
-    for (const peer of this.hostOffers.values()) void this.publishOfferEvent(peer);
   }
 
   private async publishOffer(): Promise<void> {
@@ -1564,26 +1546,34 @@ export class Multiplayer implements DmTransport {
     }
   }
 
-  /** Publish (or republish) an offer event with the current timestamp. */
+  /** Post (or re-post) the offer as a comment under the room event. */
   private async publishOfferEvent(peer: HostPeer): Promise<void> {
     const room = this.hostingRoom;
     if (!room || !this.pool) return;
-    const evt = finalizeEvent(signalTemplate(room.id, '', { sid: this.hostSid, ...peer.offerBody }), this.sk);
+    const prev = peer.offerEventId;
+    const evt = finalizeEvent(
+      offerCommentTemplate(room, { sid: this.hostSid, ...peer.offerBody }), this.sk);
     peer.offerEventId = evt.id;
     peer.offerAt = evt.created_at;
     await this.pool.publish(evt);
+    // One live offer per slot: delete the comment we are replacing.
+    if (prev && prev !== evt.id) {
+      void this.pool.publish(finalizeEvent(offerDeletionTemplate([prev]), this.sk));
+    }
   }
 
   /**
-   * Retire an unanswered offer. Ephemeral offers expire on the relays on their
-   * own, so no NIP-09 publish is needed here (reconnect cleanup deletes the
-   * whole previous session's offers in {@link rotateHostSession}).
+   * Retire an unanswered offer: close its peer and delete the comment (NIP-09)
+   * so the room does not accumulate dead offers.
    */
   private dropOffer(offerId: string): void {
     const peer = this.hostOffers.get(offerId);
     if (!peer) return;
     this.hostOffers.delete(offerId);
     try { peer.pc.close(); } catch { /* already closed */ }
+    if (peer.offerEventId && this.pool) {
+      void this.pool.publish(finalizeEvent(offerDeletionTemplate([peer.offerEventId]), this.sk));
+    }
   }
 
   /** Host: trickle ICE to a guest (sealed when the room is protected). */
@@ -2068,10 +2058,10 @@ export class Multiplayer implements DmTransport {
       candidates.push(candidateInit(e.candidate));
       if (!flushTimer) flushTimer = setTimeout(flush, 250);
     };
-    // Offers (by tag) plus anything addressed to us (host ICE, bye).
+    // Offers are comments under the room post; host ICE/bye arrive addressed.
     const sub = pool.subscribe('mp-sig-guest', [
+      { kinds: [KIND_OFFER], '#a': [roomCoordinate(room)] },
       { kinds: [KIND_SIGNAL], '#d': [roomId], '#p': [this.pubkey] },
-      { kinds: [KIND_SIGNAL], '#d': [roomId], '#t': [TAG_OFFER] },
     ], (evt) => void this.onGuestSignal(evt, room, certKey, key, pc));
     const result = await new Promise<GameTransport>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(room.host + ' did not answer')), JOIN_TIMEOUT_MS);
@@ -2193,19 +2183,23 @@ export class Multiplayer implements DmTransport {
     if (!join || join.pc !== pc) return;
     if (!verifyEvent(evt)) return;
     if (evt.pubkey !== room.hostPubkey) return;
-    const msg = signalFromEvent(evt, this.pubkey, room.id, { broadcast: true });
-    if (!msg) return;
-    // Reconnect cleanup: ignore offers from another host session.
-    if (msg.sid && room.sid && msg.sid !== room.sid) return;
-    if (msg.kind === 'offer') {
+    // Offers are stored comments under the room post.
+    const offer = offerFromEvent(evt, room);
+    if (offer) {
+      // Reconnect cleanup: ignore offers from another host session.
+      if (offer.sid && room.sid && offer.sid !== room.sid) return;
       // Always remember the newest offer so a retry can answer it again.
-      join.lastOffer = msg;
+      join.lastOffer = offer;
       if (join.answered || join.answering) return;
-      const offerId = msg.offerId ?? '';
+      const offerId = offer.offerId ?? '';
       if (offerId && join.tried.has(offerId)) return;
-      await this.tryAnswerOffer(join, msg);
+      await this.tryAnswerOffer(join, offer);
       return;
     }
+    // Everything else (host ICE, bye) is addressed to us.
+    const msg = signalFromEvent(evt, this.pubkey, room.id);
+    if (!msg) return;
+    if (msg.sid && room.sid && msg.sid !== room.sid) return;
     if (msg.kind === 'ice') {
       const body = await openSignal(key, msg);
       if (!body) return;

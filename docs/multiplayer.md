@@ -55,8 +55,9 @@ Two custom event kinds (all payloads are JSON in `content`):
 | Kind | NIP class | Purpose |
 |---|---|---|
 | `30333` | addressable (30000–39999) | A room (a "post"): `d` = room id, `p` = the room-board profile (below), `t` = game type, `expiration` = NIP-40 TTL. Content: `{v, game, type, title, host, players, max, ice, created, cert, sid, pw?, salt?, srv?}` (`srv: true` = dedicated server, join starts immediately; `pw: true` + `salt` = password protected, the password itself is never published; `sid` = the current signalling session id). Replaced by the host on heartbeats/player changes; only the author's key can replace or delete it. |
-| `25050` | ephemeral (20000–29999) | Signalling: `d` = room id, `p` = recipient pubkey (absent on broadcast offers, which carry `t = ie3d-mp-offer` instead). Content: `{v, room, to, kind: offer\|answer\|ice\|bye\|join, sdp?, candidates?[], name?, sig?, offerId?, sid?, enc?}`. Relays forward these without storing them. |
-| `5` | NIP-09 | Room deletion: an `a` tag `30333:<hostPubkey>:<roomId>`, `p` = the room-board profile. Only an event signed by the room's author deletes it. On a host reconnect the previous session's offer events are deleted the same way (`e` tags). |
+| `1` | regular (stored) | A room **comment**: the host's SDP offer, posted under the room. `a` = the room coordinate (`30333:<host>:<roomId>`), `e` = the room event it comments, `p` = the host. Content: the same signal JSON. Stored, so a guest that joins late still finds the offer; deleted (NIP-09 `e`) once claimed or replaced. |
+| `25050` | ephemeral (20000–29999) | Signalling: `d` = room id, `p` = recipient pubkey. Content: `{v, room, to, kind: offer\|answer\|ice\|bye\|join, sdp?, candidates?[], name?, sig?, offerId?, sid?, enc?}`. Relays forward these without storing them. Browser-hosted offers are comments (kind 1); this kind carries the guest's `join` and the host's ICE/bye. |
+| `5` | NIP-09 | Room deletion: an `a` tag `30333:<hostPubkey>:<roomId>`, `p` = the room-board profile. Offer comments are deleted by `e` tag. Only an event signed by the author deletes it. |
 
 **The lobby is a profile.** There is no global room tag/key: a room is just a
 post that tags the board profile
@@ -72,34 +73,34 @@ validation and re-verifies a room event when joining it.
 ### Connection setup
 
 The **host is the offerer** for browser-hosted rooms (dedicated-server rooms
-keep the guest-offer flow the C++ server implements). Relayed signalling is
-ephemeral, so offers are not stored: a joining guest first sends a `join`
-signal, the host then publishes a fresh, unaddressed offer (tagged
-`ie3d-mp-offer`) and the guest answers it. `offerId` ties the answer and the
-ICE candidates back to the right guest slot.
+keep the guest-offer flow the C++ server implements). When the host enters the
+room it **comments on the room post** with its SDP offer (a stored kind-1 event
+tagged `a` = the room coordinate); the guest answers that comment with a
+**NIP-04 DM** to the host, and the host starts the data channel when it receives
+the answer. `offerId` ties the answer and the ICE candidates back to the right
+guest slot.
 
 ```
 guest                                   host (room creator)
-  │ subscribe to the room's signals
-  │ publish {kind:"join", name} ───────────────────────────────▶
-  │                                        create RTCPeerConnection + channel "game"
+  │ subscribe to the room's comments (a) + signals addressed to us
+  │                                        enter the room, create RTCPeerConnection + "game"
   │                                        createOffer, sign the SDP (room certificate)
-  │ ◀────────────── publish {kind:"offer", offerId, sdp, sig} (broadcast)
+  │ ◀────── comment {kind:"offer", offerId, sdp, sig} on the room post
   │ setRemoteDescription, verify the certificate signature
   │ createAnswer
-  │ publish {kind:"answer", offerId, sdp, name} ───────────────▶
+  │ send {kind:"answer", offerId, sdp, name} as a NIP-04 DM ───▶
   │                                        setRemoteDescription (completes that peer)
-  │                                        publish a fresh offer for the next client
-  │ ◀──────────────────── publish {kind:"ice", offerId, candidates}
-  │ publish {kind:"ice", offerId, candidates} ─────────────────▶
+  │                                        delete the claimed comment, post the next offer
+  │ ◀──────────────────── DM {kind:"ice", offerId, candidates}
+  │ DM {kind:"ice", offerId, candidates} ──────────────────────▶
   │ ◀═══════════ RTCDataChannel "game" open (binary) ═══════════▶
-  │ publish {kind:"auth-request", nonce} (channel challenge) ──▶
+  │ send {kind:"auth-request", nonce} (channel challenge) ─────▶
   │ ◀────────────────────── {kind:"auth-ok", sig}
 ```
 
-The host keeps one offer per free guest slot (`hostOffers`) and republishes
-them on a 15-second timer so a guest that joins later still finds one; the
-`join` signal triggers an immediate refresh. Every guest gets its own
+The host keeps one offer comment per free guest slot (`hostOffers`); because the
+comments are stored, a guest that joins later still finds one (no timer or
+`join`-triggered refresh is needed). Every guest gets its own
 `RTCPeerConnection` and data channel (the host creates the channel because it
 is the offerer), so one host serves several players concurrently. ICE servers
 default to
@@ -273,8 +274,9 @@ it. On top of that the client enforces two bindings before it even sends a
    Nostr key** over `ie3d-mp-cert-v1|room|host|created|expires|key`. The host
    signs every **SDP it produces** (which carries the DTLS fingerprint) with
    the certificate key: `ie3d-mp-answer-v1|room|from|to|sha256(sdp)` — the
-   host's **offer** for a browser-hosted room (with an empty `to`, since it is
-   unaddressed), or the **answer** the C++ server sends to a guest's offer. A
+   host's **offer comment** for a browser-hosted room (with an empty `to`,
+   since it is unaddressed), or the **answer** the C++ server sends to a
+   guest's offer. A
    guest refuses to negotiate with an SDP whose certificate signature does not
    verify — another client or a relay cannot substitute its own WebRTC
    endpoint. This is implemented identically in the browser host

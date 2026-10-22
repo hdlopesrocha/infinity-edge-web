@@ -9,7 +9,8 @@ import { Multiplayer } from '../src/game/mp/manager';
 import { RelayPool } from '../src/game/nostr/relay';
 import {
   finalizeEvent, signalFromEvent, signalTemplate, roomTemplate, tagValues,
-  KIND_SIGNAL, MP_PROTOCOL, roomFromEvent, TAG_OFFER,
+  KIND_OFFER, KIND_SIGNAL, MP_PROTOCOL, roomFromEvent,
+  offerCommentTemplate, offerFromEvent,
 } from '../src/game/nostr/event';
 import type { NostrEvent } from '../src/game/nostr/event';
 import type { DmMessage } from '../src/game/nostr/dm';
@@ -230,15 +231,22 @@ describe('room persistence (local relay)', () => {
     host.close();
   });
 
-  it('only broadcasts host offers with the offer tag (parsed with broadcast)', () => {
+  it('posts host offers as comments under the room (parsed from the `a` tag)', () => {
+    const hostSk = randomBytes(32);
+    const hostPub = bytesToHex(schnorrPubkey(hostSk));
+    const room = { id: 'abcabcabcabcabcabcabcabc', hostPubkey: hostPub };
     const evt = finalizeEvent(
-      signalTemplate('abcabcabcabcabcabcabcabc', '', { kind: 'offer', sdp: 'v=0', offerId: 'o1' }),
-      randomBytes(32),
+      offerCommentTemplate({ ...room, eventId: 'e'.repeat(64) }, { kind: 'offer', sdp: 'v=0', offerId: 'o1' }),
+      hostSk,
     );
-    expect(tagValues(evt, 'p')).toHaveLength(0);
-    expect(tagValues(evt, 't')).toContain(TAG_OFFER);
-    expect(signalFromEvent(evt, 'me', 'abcabcabcabcabcabcabcabc')).toBeNull();
-    const msg = signalFromEvent(evt, 'me', 'abcabcabcabcabcabcabcabc', { broadcast: true });
+    expect(evt.kind).toBe(KIND_OFFER);
+    expect(tagValues(evt, 'a')).toEqual([`30333:${hostPub}:${room.id}`]);
+    expect(tagValues(evt, 'e')).toEqual(['e'.repeat(64)]);
+    // A comment from another key, or for another room, is ignored.
+    const other = bytesToHex(schnorrPubkey(randomBytes(32)));
+    expect(offerFromEvent(evt, { id: room.id, hostPubkey: other })).toBeNull();
+    expect(offerFromEvent(evt, { id: 'ffffffffffffffffffffffff', hostPubkey: hostPub })).toBeNull();
+    const msg = offerFromEvent(evt, room);
     expect(msg?.kind).toBe('offer');
     expect(msg?.offerId).toBe('o1');
   });
@@ -282,7 +290,7 @@ class FakePeer {
 }
 
 const isOffer = (e: NostrEvent): boolean => {
-  if (e.kind !== KIND_SIGNAL) return false;
+  if (e.kind !== KIND_OFFER) return false;
   try { return (JSON.parse(e.content) as { kind?: string }).kind === 'offer'; } catch { return false; }
 };
 
@@ -297,13 +305,13 @@ describe('host-published offers (local relay)', () => {
     (globalThis as Record<string, unknown>).RTCPeerConnection = savedRtc;
   });
 
-  /** A pool that records every signalling event it sees. */
+  /** A pool that records every signalling/offer event it sees. */
   async function watchSignals(): Promise<{ pool: RelayPool; signals: NostrEvent[] }> {
     const pool = new RelayPool([relay.url]);
     pool.connect();
     await pool.waitOpen(4000);
     const signals: NostrEvent[] = [];
-    pool.subscribe('watch', [{ kinds: [KIND_SIGNAL] }], (e) => signals.push(e));
+    pool.subscribe('watch', [{ kinds: [KIND_OFFER, KIND_SIGNAL] }], (e) => signals.push(e));
     return { pool, signals };
   }
 
@@ -316,15 +324,14 @@ describe('host-published offers (local relay)', () => {
     await waitFor(() => signals.filter(isOffer).length >= 3);
     expect(host.debugOffers()).toHaveLength(3);
     const evt = signals.filter(isOffer)[0];
-    // A broadcast offer: no `p` tag, tagged for discovery.
-    expect(tagValues(evt, 'p')).toHaveLength(0);
-    expect(tagValues(evt, 't')).toContain(TAG_OFFER);
-    const offer = signalFromEvent(evt, host.pubkey, room.id, { broadcast: true })!;
+    // A comment under the room: `a` = room coordinate, `e` = room event.
+    expect(tagValues(evt, 'a')).toEqual([`30333:${host.pubkey}:${room.id}`]);
+    expect(tagValues(evt, 'e')).toHaveLength(1);
+    const offer = offerFromEvent(evt, { id: room.id, hostPubkey: host.pubkey })!;
     expect(offer.kind).toBe('offer');
     expect(offer.offerId).toBeTruthy();
     expect(offer.sdp).toContain('fake-offer');
     expect(offer.sid).toBe(room.sid);
-    expect(signalFromEvent(evt, host.pubkey, room.id)).toBeNull();
 
     // The guest answers: the host completes that peer and tops the pool up
     // with a fresh offer for the next client.
@@ -348,7 +355,7 @@ describe('host-published offers (local relay)', () => {
     const guestSk = randomBytes(32);
     const room = await host.createRoom({ game: 'kots-solo-easy', type: 'KOTS', title: 'K', maxPlayers: 4 });
     await waitFor(() => signals.filter(isOffer).length >= 1);
-    const offer = signalFromEvent(signals.filter(isOffer)[0], host.pubkey, room.id, { broadcast: true })!;
+    const offer = offerFromEvent(signals.filter(isOffer)[0], { id: room.id, hostPubkey: host.pubkey })!;
     const stale = finalizeEvent(signalTemplate(room.id, host.pubkey, {
       kind: 'answer', offerId: offer.offerId, sid: 'dead'.repeat(6), sdp: 'v=0', name: 'Ghost',
     }), guestSk);
@@ -370,7 +377,7 @@ describe('host-published offers (local relay)', () => {
     const evt = signals.filter(isOffer)[0];
     // The SDP never travels in the clear.
     expect(evt.content).not.toContain('fake-offer');
-    const msg = signalFromEvent(evt, host.pubkey, room.id, { broadcast: true })!;
+    const msg = offerFromEvent(evt, { id: room.id, hostPubkey: host.pubkey })!;
     expect(msg.enc).toBeTruthy();
     expect(msg.sdp).toBeUndefined();
     const key = await deriveKey('s3cret', room.salt);
@@ -410,7 +417,7 @@ describe('host-published offers (local relay)', () => {
     expect(secondSid).not.toBe(firstSid);
     // The republished offers carry the new session id.
     await waitFor(() => signals.filter(isOffer).some((e) => {
-      const m = signalFromEvent(e, host.pubkey, room.id, { broadcast: true });
+      const m = offerFromEvent(e, { id: room.id, hostPubkey: host.pubkey });
       return m?.sid === secondSid;
     }));
     host.closeRoom();
@@ -424,7 +431,7 @@ describe('host-published offers (local relay)', () => {
     const guest = instance();
     const room = await host.createRoom({ game: 'ctf-easy', type: 'CTF', title: 'Private', maxPlayers: 4 });
     await waitFor(() => signals.filter(isOffer).length >= 1);
-    const offer = signalFromEvent(signals.filter(isOffer)[0], host.pubkey, room.id, { broadcast: true })!;
+    const offer = offerFromEvent(signals.filter(isOffer)[0], { id: room.id, hostPubkey: host.pubkey })!;
     // Private signalling: the answer is an encrypted DM, not a KIND_SIGNAL.
     await guest.sendDm(host.pubkey, JSON.stringify({
       v: MP_PROTOCOL, room: room.id, to: host.pubkey, sid: room.sid,
