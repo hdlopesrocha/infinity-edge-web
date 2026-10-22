@@ -8,6 +8,7 @@ import { mat4, vec3 } from '../engine/math';
 import { GameInstance } from '../game/instance';
 import { NetGame, resolveGameWsUrl } from '../game/netgame';
 import { mp } from '../game/mp/manager';
+import { attachWallet } from '../game/wallet';
 import { RC } from '../game/resources';
 import { loadLevel } from '../game/levels';
 import { ensureManifests, warmManifests } from '../game/assetmanifest';
@@ -24,6 +25,8 @@ import { audio } from '../game/audio';
 import { loadWordmarkFont } from '../game/fonts';
 import { PauseMenuUi } from '../game/ui/pauseui';
 import { goBack } from '../game/nav';
+import { allowGameExit } from '../router';
+import { markInternalBack } from '../game/backguard';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const glError = ref('');
@@ -65,7 +68,7 @@ async function rebuild(): Promise<void> {
     return;
   }
   engineScene = null;
-  const token = key + '|' + store.options.billboards;
+  const token = key + '|' + store.options.billboards + '|' + store.sceneEpoch;
   if (building === token) return;
   building = token;
   const gen = ++buildGen;
@@ -333,6 +336,7 @@ function onKeyDown(e: KeyboardEvent): void {
       store.paused = true;
       return;
     }
+    markInternalBack();
     router.back();
     return;
   }
@@ -346,6 +350,14 @@ function onKeyDown(e: KeyboardEvent): void {
 
 function onKeyUp(e: KeyboardEvent): void {
   instance?.control.keys.delete(e.code);
+}
+
+/** A controller/system back must not silently close a live match. */
+function onBeforeUnload(e: BeforeUnloadEvent): void {
+  if (store.interactive && !store.paused) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
 }
 
 function canvasPos(e: PointerEvent): { x: number; y: number } {
@@ -415,10 +427,36 @@ function onPointerUp(e: PointerEvent): void {
 function finishMatch(): boolean {
   const result = takeMatchResult(instance, store.route, store.levelKey);
   if (!result) return false;
+  // A guest whose match link dropped reconnects to the host instead of taking
+  // the 'Connection lost' defeat: the host's match is frozen waiting for us.
+  if (!result.won && result.message === 'Connection lost' && mp.guestSession && !mp.hosting) {
+    store.netPaused = true;
+    store.netPausedBy = '';
+    store.netPausedHost = false;
+    void mp.reconnectMatch().then((ok) => {
+      if (ok) {
+        store.netPaused = false;
+      } else {
+        store.result = result;
+        void router.replace('/defeat/' + result.level);
+      }
+    });
+    return true;
+  }
   store.result = result;
+  // Matching no longer pays an in-game reward: the economy is the player's own
+  // Lightning wallet (NIP-47). The host still settles a room's bet after the
+  // match (see below).
+  // The host settles the room's bet after the match (winners/losers by team; a
+  // draw or missing result voids it). Guests never settle; with no escrow each
+  // losing client pays the winners in sats over Lightning.
+  if (mp.hosting && mp.sessionActive) {
+    void mp.settleBet(result);
+  }
   // Replace: a finished match must not stay in the stack, or back from the
   // result screen would re-enter the game.
-  void router.replace((result.won ? '/victory/' : '/defeat/') + result.level);
+  const target = result.draw ? '/draw/' : result.won ? '/victory/' : '/defeat/';
+  void router.replace(target + result.level);
   return true;
 }
 
@@ -432,6 +470,7 @@ function tryImmersive(): void {
 function leaveMatch(): void {
   store.paused = false;
   closePauseMenu();
+  allowGameExit();
   goBack(router, '/briefing/' + String(store.levelKey));
 }
 
@@ -505,9 +544,28 @@ onMounted(() => {
     // The XR session loop owns simulation while a headset is active; let it
     // hand a finished match back to this page so the result route can run.
     setXrMatchEndHandler(finishMatch);
+    // Network pause: mirror the manager's state into the reactive store so the
+    // HUD overlay and the frame loop can react to it.
+    const syncNetPause = (): void => {
+      store.netPaused = mp.netPaused;
+      store.netPausedBy = mp.netPausedBy;
+      store.netPausedHost = !!mp.hosting;
+    };
+    mp.onNetPause = syncNetPause;
+    syncNetPause();
     warmManifests();
     syncOptionsFromRC(rc.options);
     audio.setMusicVolume(rc.options.musicVolume);
+    // Wallet: mirror the Lightning balance and connection state into the store
+    // (the HANGAR/SHOP/navbar read it). A no-op until a NWC wallet is linked.
+    const wallet = attachWallet(() => {
+      store.sats = wallet.balanceSats;
+      store.walletConnected = wallet.connected;
+      store.walletStatus = wallet.statusText;
+    });
+    store.sats = wallet.balanceSats;
+    store.walletConnected = wallet.connected;
+    store.walletStatus = wallet.statusText;
     (window as unknown as { __ieRenderer?: Renderer }).__ieRenderer = renderer;
     (window as unknown as { __ieStore?: typeof store }).__ieStore = store;
     (window as unknown as { __ieRC?: RC }).__ieRC = rc;
@@ -657,7 +715,7 @@ onMounted(() => {
         // frozen world, while the pause menu takes over the UI layer. The HUD
         // returns only after the player resumes.
         if (store.paused) pollPausedGamepad();
-        if (!store.paused) instance.update(dtMs);
+        if (!store.paused && !mp.netPaused) instance.update(dtMs);
         // The match can finish in this update; leave VR and show the result
         // menu instead of drawing and looping on a frozen final frame.
         if (finishMatch()) return;
@@ -698,8 +756,12 @@ onMounted(() => {
           // In a live match the HUD owns the eye's padded inset. A paused
           // match, like the menus, leaves the whole screen to the ScreenUi
           // rectangle instead.
-          if (store.interactive && !store.paused) setHudFocus(eyeCssW, fullH);
+          const liveGame = store.interactive && !store.paused;
+          if (liveGame) setHudFocus(eyeCssW, fullH);
           else renderer.focusRect = null;
+          // No focus stroke in the live game: only menus keep the border.
+          renderer.focusBorderEnabled = !liveGame;
+          renderer.suppressUiFocusFallback = false;
           renderer.endFrame(null);
           if (renderer.renderOptions.zoom > 0) {
             instance.drawShipsSharp(null, { x: eye * half, y: 0, w: half, h });
@@ -739,18 +801,22 @@ onMounted(() => {
         instance.canvasH = canvasRef.value?.clientHeight || 720;
         pollPausedGamepad();
         renderer.focusRect = null;
+        renderer.focusBorderEnabled = true;
+        renderer.suppressUiFocusFallback = false;
         renderer.beginFrame();
         instance.draw();
         renderer.endFrame(null);
         return;
       }
-      mp.preTick(dtMs);
-      instance.update(dtMs);
+      if (!mp.netPaused) { mp.preTick(dtMs); instance.update(dtMs); }
+      // Stream frames even while the match is frozen, so every client keeps
+      // showing the last state and the pause message stays in sync.
       mp.postTick(dtMs);
       // Same-frame result: do not draw another frame before the route changes.
       if (finishMatch()) return;
       if (store.interactive) setHudFocus(instance.canvasW, instance.canvasH);
       else renderer.focusRect = null;
+      renderer.focusBorderEnabled = true;
       renderer.beginFrame();
       instance.draw();
       renderer.endFrame(null);
@@ -767,6 +833,10 @@ onMounted(() => {
     void rebuild();
     renderer.start();
     sceneTimer = window.setInterval(() => {
+      // Safety net for the result hand-over: the frame loop normally consumes a
+      // finished match, but a throttled/paused rAF must never leave the player
+      // stuck on the frozen final frame until they touch the page.
+      if (finishMatch()) return;
       void rebuild();
       // The far plane follows the settings' draw distance unconditionally
       // (the old check only synced when the two mirrors disagreed, so a
@@ -774,6 +844,7 @@ onMounted(() => {
       if (renderer) renderer.camera.far = store.options.distance;
     }, 300);
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('beforeunload', onBeforeUnload);
     window.addEventListener('pointerdown', onVrDown, true);
     window.addEventListener('pointerup', onVrUp, true);
     window.addEventListener('pointermove', onVrMove, true);
@@ -788,9 +859,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   setXrMatchEndHandler(null);
+  mp.onNetPause = null;
   window.clearInterval(sceneTimer);
   resetVrPress();
   window.removeEventListener('keydown', onKeyDown);
+  window.removeEventListener('beforeunload', onBeforeUnload);
   window.removeEventListener('keyup', onKeyUp);
   window.removeEventListener('pointerdown', onVrDown, true);
   window.removeEventListener('pointerup', onVrUp, true);

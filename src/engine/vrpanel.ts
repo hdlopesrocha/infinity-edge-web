@@ -89,6 +89,48 @@ export function panelBasis(camPos: vec3, camDir: vec3, distance: number): PanelB
 }
 
 /**
+ * View-space ray that lands on the projected NDC centre `(ndcX, ndcY)`. The
+ * offset corrects for the projection's principal point (`m[8]`/`m[9]`), so ray
+ * aiming and the cursor stay at the true screen centre on asymmetric XR eyes.
+ */
+export function viewCenterRay(view: mat4, ndcX = 0, ndcY = 0): vec3 {
+  const right = vec3.fromValues(view[0], view[4], view[8]);
+  const up = vec3.fromValues(view[1], view[5], view[9]);
+  const forward = vec3.fromValues(-view[2], -view[6], -view[10]);
+  const dir = vec3.create();
+  vec3.scaleAndAdd(dir, forward, right, ndcX);
+  vec3.scaleAndAdd(dir, dir, up, ndcY);
+  if (!(vec3.length(dir) > 1e-5)) vec3.copy(dir, forward);
+  return vec3.normalize(dir, dir);
+}
+
+/**
+ * Panel basis from an explicit view matrix, with the centre placed on the
+ * view-space ray that projects to NDC `(ndcX, ndcY)` (0,0 = screen centre).
+ *
+ * `panelBasis` places the centre along the camera forward axis, which is only
+ * the screen centre for a symmetric projection. WebXR eye projections are
+ * often asymmetric (`m[8]`/`m[9]` shift the principal point), so a plane on the
+ * forward axis can appear left/up of centre. The view's own right/up axes keep
+ * the panel parallel to the view, and the centre correction makes the panel
+ * rectangle project centred even with that offset.
+ */
+export function viewPanelBasis(
+  view: mat4, center: vec3, distance: number, ndcX = 0, ndcY = 0,
+): PanelBasis {
+  const right = vec3.fromValues(view[0], view[4], view[8]);
+  const up = vec3.fromValues(view[1], view[5], view[9]);
+  const forward = vec3.fromValues(-view[2], -view[6], -view[10]);
+  if (vec3.length(right) > 1e-6) vec3.normalize(right, right);
+  if (vec3.length(up) > 1e-6) vec3.normalize(up, up);
+  if (vec3.length(forward) > 1e-6) vec3.normalize(forward, forward);
+  const dir = viewCenterRay(view, ndcX, ndcY);
+  const panelCenter = vec3.scaleAndAdd(vec3.create(), center, dir, distance);
+  const normal = vec3.negate(vec3.create(), forward);
+  return { center: panelCenter, right, up, normal };
+}
+
+/**
  * Intersect a world-space ray with the panel. Returns null when the ray points
  * away, runs parallel, or lands outside the panel's width/height.
  */
@@ -118,6 +160,41 @@ export function hitPanel(
   };
 }
 
+/** Four projected panel corners, UV bottom-left, in bl/br/tr/tl order. */
+export type PlaneQuad = [
+  number, number, number, number, number, number, number, number,
+];
+
+/**
+ * Project the four corners of a world-space panel into one eye's UV.
+ *
+ * A panel viewed straight-on projects to an axis-aligned rectangle, but the
+ * menu panel follows the ship/base view rather than the head. Turning the
+ * head therefore views it obliquely: the real silhouette is a trapezoid. Keep
+ * the corners so the focus frame can follow that silhouette instead of an
+ * axis-aligned bounding box that floats outside the panel.
+ */
+export function projectedPlaneQuad(
+  view: Float32Array, proj: Float32Array,
+  center: vec3, right: vec3, up: vec3, halfW: number, halfH: number,
+): PlaneQuad | null {
+  const m = mat4.multiply(mat4.create(), proj, view);
+  const out: number[] = [];
+  // Bottom-left, bottom-right, top-right, top-left in panel space.
+  for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const x = center[0] + right[0] * halfW * sx + up[0] * halfH * sy;
+    const y = center[1] + right[1] * halfW * sx + up[1] * halfH * sy;
+    const z = center[2] + right[2] * halfW * sx + up[2] * halfH * sy;
+    const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+    if (!(w > 1e-5)) return null;
+    const nx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+    const ny = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
+    out.push(nx * 0.5 + 0.5, ny * 0.5 + 0.5);
+  }
+  return out as PlaneQuad;
+}
+
 /**
  * Project a world-space rectangle (the menu/HUD panel) into one eye's UV.
  * The returned rectangle is in the composite's bottom-left UV convention, so
@@ -129,24 +206,12 @@ export function projectedPlaneRect(
   view: Float32Array, proj: Float32Array,
   center: vec3, right: vec3, up: vec3, halfW: number, halfH: number,
 ): { x: number; y: number; w: number; h: number } | null {
-  const m = mat4.multiply(mat4.create(), proj, view);
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (let sy = -1; sy <= 1; sy += 2) {
-    for (let sx = -1; sx <= 1; sx += 2) {
-      const x = center[0] + right[0] * halfW * sx + up[0] * halfH * sy;
-      const y = center[1] + right[1] * halfW * sx + up[1] * halfH * sy;
-      const z = center[2] + right[2] * halfW * sx + up[2] * halfH * sy;
-      const w = m[3] * x + m[7] * y + m[11] * z + m[15];
-      if (!(w > 1e-5)) continue;
-      const nx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
-      const ny = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
-      if (!Number.isFinite(nx) || !Number.isFinite(ny)) continue;
-      const u = nx * 0.5 + 0.5;
-      const v = ny * 0.5 + 0.5;
-      minX = Math.min(minX, u); maxX = Math.max(maxX, u);
-      minY = Math.min(minY, v); maxY = Math.max(maxY, v);
-    }
-  }
+  const quad = projectedPlaneQuad(view, proj, center, right, up, halfW, halfH);
+  if (!quad) return null;
+  const xs = [quad[0], quad[2], quad[4], quad[6]];
+  const ys = [quad[1], quad[3], quad[5], quad[7]];
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
   if (!(maxX > minX) || !(maxY > minY)) return null;
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
@@ -274,6 +339,11 @@ export class GazePointer {
   /** 0..1 dwell progress for the crosshair ring. */
   get progress(): number {
     return this.armed ? Math.min(1, this.dwell / this.dwellMs) : 0;
+  }
+
+  /** True while the crosshair is over a clickable target. */
+  get hasTarget(): boolean {
+    return this.target !== null;
   }
 
   /**
@@ -532,6 +602,11 @@ export class VrPanel {
     this.quad = quad(gl);
   }
 
+  /** Uploaded texture, shared with the generic UiScene's one plane. */
+  get texture(): WebGLTexture {
+    return this.tex;
+  }
+
   /** Repaint and upload when the UI changed. */
   update(ui: ScreenUi): void {
     if (ui.version === this.lastVersion) return;
@@ -647,15 +722,138 @@ export class WorldQuad {
   }
 }
 
+const BORDER_VERT = `#version 300 es
+layout(location=0) in vec2 aPos;
+out vec2 vUV;
+void main() {
+  vUV = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+const BORDER_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform vec2 uView;
+uniform vec2 uP0, uP1, uP2, uP3;
+uniform vec3 uColor;
+uniform float uThickness;
+out vec4 o;
+
+float cross2(vec2 a, vec2 b) { return a.x * b.y - a.y * b.x; }
+float segDist(vec2 p, vec2 a, vec2 b) {
+  vec2 ab = b - a;
+  float len2 = dot(ab, ab);
+  float t = len2 > 1e-6 ? clamp(dot(p - a, ab) / len2, 0.0, 1.0) : 0.0;
+  return length(p - (a + ab * t));
+}
+
+void main() {
+  vec2 p = vUV * uView;
+  vec2 p0 = uP0 * uView;
+  vec2 p1 = uP1 * uView;
+  vec2 p2 = uP2 * uView;
+  vec2 p3 = uP3 * uView;
+  // Convex quad, either winding; the border is stroked inside its silhouette.
+  float c0 = cross2(p1 - p0, p - p0);
+  float c1 = cross2(p2 - p1, p - p1);
+  float c2 = cross2(p3 - p2, p - p2);
+  float c3 = cross2(p0 - p3, p - p3);
+  bool allPos = c0 >= 0.0 && c1 >= 0.0 && c2 >= 0.0 && c3 >= 0.0;
+  bool allNeg = c0 <= 0.0 && c1 <= 0.0 && c2 <= 0.0 && c3 <= 0.0;
+  if (!allPos && !allNeg) discard;
+  float d = min(min(segDist(p, p0, p1), segDist(p, p1, p2)),
+                min(segDist(p, p2, p3), segDist(p, p3, p0)));
+  if (d > uThickness) discard;
+  o = vec4(uColor, 1.0);
+}`;
+
+/**
+ * Crisp screen-space focus stroke around a projected panel silhouette.
+ *
+ * The flat renderer can use axis-aligned strips, but the VR menu panel is
+ * viewed obliquely whenever the head turns. Its real projected edges are a
+ * trapezoid, not the bounding box `projectedPlaneRect()` returns, so drawing a
+ * rectangle border leaves strokes floating outside the panel. This pass tests
+ * each pixel against the four projected edges and paints the same 2 CSS px
+ * inside the silhouette.
+ */
+export class PanelBorder {
+  private gl: WebGL2RenderingContext;
+  private prog: WebGLProgram;
+  private quad: Quad;
+  private uView: WebGLUniformLocation | null;
+  private uP0: WebGLUniformLocation | null;
+  private uP1: WebGLUniformLocation | null;
+  private uP2: WebGLUniformLocation | null;
+  private uP3: WebGLUniformLocation | null;
+  private uColor: WebGLUniformLocation | null;
+  private uThickness: WebGLUniformLocation | null;
+
+  constructor(gl: WebGL2RenderingContext) {
+    this.gl = gl;
+    this.prog = program(gl, BORDER_VERT, BORDER_FRAG);
+    this.uView = gl.getUniformLocation(this.prog, 'uView');
+    this.uP0 = gl.getUniformLocation(this.prog, 'uP0');
+    this.uP1 = gl.getUniformLocation(this.prog, 'uP1');
+    this.uP2 = gl.getUniformLocation(this.prog, 'uP2');
+    this.uP3 = gl.getUniformLocation(this.prog, 'uP3');
+    this.uColor = gl.getUniformLocation(this.prog, 'uColor');
+    this.uThickness = gl.getUniformLocation(this.prog, 'uThickness');
+    this.quad = quad(gl);
+  }
+
+  draw(
+    fbo: WebGLFramebuffer | null, view: ClipRect, corners: PlaneQuad,
+    color: readonly [number, number, number], thicknessPx: number,
+  ): void {
+    if (view.w <= 0 || view.h <= 0) return;
+    const gl = this.gl;
+    const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+    const prevViewport = gl.getParameter(gl.VIEWPORT) as Int32Array;
+    const scissorOn = gl.isEnabled(gl.SCISSOR_TEST);
+    const prevScissor = gl.getParameter(gl.SCISSOR_BOX) as Int32Array;
+    withOverlayState(gl, () => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(view.x, view.y, view.w, view.h);
+      gl.viewport(view.x, view.y, view.w, view.h);
+      gl.useProgram(this.prog);
+      if (this.uView) gl.uniform2f(this.uView, view.w, view.h);
+      if (this.uP0) gl.uniform2f(this.uP0, corners[0], corners[1]);
+      if (this.uP1) gl.uniform2f(this.uP1, corners[2], corners[3]);
+      if (this.uP2) gl.uniform2f(this.uP2, corners[4], corners[5]);
+      if (this.uP3) gl.uniform2f(this.uP3, corners[6], corners[7]);
+      if (this.uColor) gl.uniform3f(this.uColor, color[0], color[1], color[2]);
+      if (this.uThickness) gl.uniform1f(this.uThickness, Math.max(1, thicknessPx));
+      gl.bindVertexArray(this.quad.vao);
+      gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+      gl.bindVertexArray(null);
+    });
+    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+    gl.viewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    if (scissorOn) gl.scissor(prevScissor[0], prevScissor[1], prevScissor[2], prevScissor[3]);
+    else gl.disable(gl.SCISSOR_TEST);
+  }
+
+  dispose(): void {
+    const gl = this.gl;
+    gl.deleteProgram(this.prog);
+    gl.deleteVertexArray(this.quad.vao);
+    gl.deleteBuffer(this.quad.vbo);
+    gl.deleteBuffer(this.quad.ibo);
+  }
+}
+
 const CURSOR_VERT = `#version 300 es
 layout(location=0) in vec2 aPos;
 uniform vec3 uCenter, uRight, uUp;
 uniform float uRadius;
+uniform float uAspect;
 uniform mat4 uView, uProj;
 out vec2 vUV;
 void main() {
   vUV = aPos * 0.5 + 0.5;
-  vec3 p = uCenter + uRight * (aPos.x * uRadius) + uUp * (aPos.y * uRadius);
+  vec3 p = uCenter + uRight * (aPos.x * uRadius * uAspect) + uUp * (aPos.y * uRadius);
   gl_Position = uProj * uView * vec4(p, 1.0);
 }`;
 
@@ -664,8 +862,16 @@ precision mediump float;
 in vec2 vUV;
 uniform vec3 uColor;
 uniform float uProgress;
+uniform sampler2D uIcon;
+uniform float uUseIcon;
 out vec4 o;
 void main() {
+  if (uUseIcon > 0.5) {
+    vec4 icon = texture(uIcon, vUV);
+    if (icon.a <= 0.01) discard;
+    o = vec4(icon.rgb, icon.a * 0.95);
+    return;
+  }
   vec2 p = vUV * 2.0 - 1.0;
   float r = length(p);
   float ring = smoothstep(0.10, 0.02, abs(r - 0.62));
@@ -685,6 +891,44 @@ void main() {
   o = vec4(col, a);
 }`;
 
+const SCREEN_CURSOR_VERT = `#version 300 es
+layout(location=0) in vec2 aPos;
+uniform vec2 uCenter;
+uniform vec2 uSize;
+out vec2 vUV;
+void main() {
+  vUV = aPos * 0.5 + 0.5;
+  gl_Position = vec4(uCenter + aPos * uSize, 0.0, 1.0);
+}`;
+
+const SCREEN_CURSOR_FRAG = `#version 300 es
+precision mediump float;
+in vec2 vUV;
+uniform sampler2D uIcon;
+uniform float uUseIcon;
+uniform vec3 uColor;
+uniform float uProgress;
+out vec4 o;
+void main() {
+  vec2 p = vUV * 2.0 - 1.0;
+  float r = length(p);
+  float ring = smoothstep(0.10, 0.02, abs(r - 0.62));
+  float ang = atan(p.x, p.y);
+  float frac = ang < 0.0 ? (ang + 6.2831853) / 6.2831853 : ang / 6.2831853;
+  float arc = (abs(r - 0.62) < 0.13 && uProgress > 0.001 && frac <= uProgress) ? 1.0 : 0.0;
+  // No target (or no dwell yet): no inner wheel, just the crosshair.
+  float wheel = uProgress > 0.001 ? max(ring, arc) : 0.0;
+  vec3 col = uColor;
+  float a = wheel;
+  if (uUseIcon > 0.5) {
+    vec4 icon = texture(uIcon, vUV);
+    col = mix(icon.rgb, uColor, wheel);
+    a = max(icon.a * 0.95, wheel);
+  }
+  if (a < 0.01) discard;
+  o = vec4(col, a);
+}`;
+
 /** Crosshair/dwell ring, billboarded at the gaze point of one eye. */
 export class GazeCursor {
   private gl: WebGL2RenderingContext;
@@ -698,10 +942,31 @@ export class GazeCursor {
   private uProj: WebGLUniformLocation | null;
   private uColor: WebGLUniformLocation | null;
   private uProgress: WebGLUniformLocation | null;
+  private uIcon: WebGLUniformLocation | null;
+  private uUseIcon: WebGLUniformLocation | null;
+  private uAspect: WebGLUniformLocation | null;
+  /** Optional spaceship `_aim.png` icon; when set the ring is replaced. */
+  private icon: WebGLTexture | null = null;
+  private iconAspect = 1;
+  /** Screen-space variant: same icon at the same spot in both eyes. */
+  private screenProg: WebGLProgram;
+  private sCenter: WebGLUniformLocation | null;
+  private sSize: WebGLUniformLocation | null;
+  private sIcon: WebGLUniformLocation | null;
+  private sUseIcon: WebGLUniformLocation | null;
+  private sColor: WebGLUniformLocation | null;
+  private sProgress: WebGLUniformLocation | null;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
     this.prog = program(gl, CURSOR_VERT, CURSOR_FRAG);
+    this.screenProg = program(gl, SCREEN_CURSOR_VERT, SCREEN_CURSOR_FRAG);
+    this.sCenter = gl.getUniformLocation(this.screenProg, 'uCenter');
+    this.sSize = gl.getUniformLocation(this.screenProg, 'uSize');
+    this.sIcon = gl.getUniformLocation(this.screenProg, 'uIcon');
+    this.sUseIcon = gl.getUniformLocation(this.screenProg, 'uUseIcon');
+    this.sColor = gl.getUniformLocation(this.screenProg, 'uColor');
+    this.sProgress = gl.getUniformLocation(this.screenProg, 'uProgress');
     this.uCenter = gl.getUniformLocation(this.prog, 'uCenter');
     this.uRight = gl.getUniformLocation(this.prog, 'uRight');
     this.uUp = gl.getUniformLocation(this.prog, 'uUp');
@@ -710,15 +975,74 @@ export class GazeCursor {
     this.uProj = gl.getUniformLocation(this.prog, 'uProj');
     this.uColor = gl.getUniformLocation(this.prog, 'uColor');
     this.uProgress = gl.getUniformLocation(this.prog, 'uProgress');
+    this.uIcon = gl.getUniformLocation(this.prog, 'uIcon');
+    this.uUseIcon = gl.getUniformLocation(this.prog, 'uUseIcon');
+    this.uAspect = gl.getUniformLocation(this.prog, 'uAspect');
     this.quad = quad(gl);
+  }
+
+  /** Use the same crosshair art as the spaceship HUD (`_aim.png`). */
+  setIcon(img: HTMLImageElement): void {
+    const gl = this.gl;
+    if (this.icon) gl.deleteTexture(this.icon);
+    const tex = gl.createTexture();
+    if (!tex) return;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    this.icon = tex;
+    this.iconAspect = img.width / Math.max(1, img.height);
   }
 
   dispose(): void {
     const gl = this.gl;
+    if (this.icon) gl.deleteTexture(this.icon);
+    this.icon = null;
     gl.deleteProgram(this.prog);
+    gl.deleteProgram(this.screenProg);
     gl.deleteVertexArray(this.quad.vao);
     gl.deleteBuffer(this.quad.vbo);
     gl.deleteBuffer(this.quad.ibo);
+  }
+
+  /**
+   * Draw the cursor in screen space at the centre of the current viewport.
+   * Both eyes get the exact same relative position, so the two images fuse
+   * instead of showing a separate left/right crosshair.
+   */
+  drawScreen(
+    fbo: WebGLFramebuffer | null, w: number, h: number,
+    ndcX: number, ndcY: number, sizePx: number,
+    progress = 0, color: readonly [number, number, number] = [0.5, 0.91, 0.85],
+  ): void {
+    const gl = this.gl;
+    const useIcon = this.icon !== null;
+    const sx = (sizePx * 2) / Math.max(1, w);
+    const sy = (sizePx * 2) / Math.max(1, h);
+    withOverlayState(gl, () => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.useProgram(this.screenProg);
+      if (this.sCenter) gl.uniform2f(this.sCenter, ndcX, ndcY);
+      if (this.sSize) gl.uniform2f(this.sSize, sx, sy);
+      if (this.sUseIcon) gl.uniform1f(this.sUseIcon, useIcon ? 1 : 0);
+      if (this.sColor) gl.uniform3f(this.sColor, color[0], color[1], color[2]);
+      if (this.sProgress) gl.uniform1f(this.sProgress, Math.max(0, Math.min(1, progress)));
+      if (useIcon && this.sIcon) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.icon);
+        gl.uniform1i(this.sIcon, 0);
+      }
+      gl.bindVertexArray(this.quad.vao);
+      gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+      gl.bindVertexArray(null);
+      if (useIcon) gl.bindTexture(gl.TEXTURE_2D, null);
+    });
   }
 
   draw(
@@ -726,13 +1050,21 @@ export class GazeCursor {
     center: vec3, right: vec3, up: vec3, radius: number, progress: number,
   ): void {
     const gl = this.gl;
+    const useIcon = this.icon !== null;
     withOverlayState(gl, () => {
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
       gl.useProgram(this.prog);
       if (this.uCenter) gl.uniform3fv(this.uCenter, center);
       if (this.uRight) gl.uniform3fv(this.uRight, right);
       if (this.uUp) gl.uniform3fv(this.uUp, up);
-      if (this.uRadius) gl.uniform1f(this.uRadius, Math.max(0.01, radius));
+      if (this.uRadius) gl.uniform1f(this.uRadius, Math.max(0.001, radius));
+      if (this.uAspect) gl.uniform1f(this.uAspect, useIcon ? this.iconAspect : 1);
+      if (this.uUseIcon) gl.uniform1f(this.uUseIcon, useIcon ? 1 : 0);
+      if (useIcon && this.uIcon) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.icon);
+        gl.uniform1i(this.uIcon, 0);
+      }
       if (this.uView) gl.uniformMatrix4fv(this.uView, false, view);
       if (this.uProj) gl.uniformMatrix4fv(this.uProj, false, proj);
       if (this.uColor) gl.uniform3f(this.uColor, 0.5, 0.91, 0.85);
@@ -740,6 +1072,7 @@ export class GazeCursor {
       gl.bindVertexArray(this.quad.vao);
       gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
       gl.bindVertexArray(null);
+      if (useIcon) gl.bindTexture(gl.TEXTURE_2D, null);
     });
   }
 }

@@ -13,8 +13,9 @@ import type { vec3 } from './math';
 
 type Hud = typeof store.hud;
 
-/** Screen/CSS pixels of padding around the painted HUD. The focus veil uses
- *  the same inset so the border it blurs is exactly the non-UI margin. */
+/** Screen/CSS pixels of padding around the painted HUD. The flat split-screen
+ *  path uses the same inset for its focus veil; the immersive shared UI plane
+ *  uses its projected edge instead. */
 export const HUD_PADDING = 64;
 
 /** Largest HUD texture edge (the texture itself takes the view's aspect). */
@@ -22,7 +23,7 @@ const MAX_HUD = 1600;
 
 // Same base the DOM HUD uses for its icons (GameView `base`).
 const TEX_BASE = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
-const AIM_URL = TEX_BASE + '_aim.png';
+export const AIM_URL = TEX_BASE + '_aim.png';
 const OVER_URL = TEX_BASE + '_over.png';
 const ACCEL_URL = TEX_BASE + '_accelAnalog.png';
 const FIRE_URL = TEX_BASE + '_fireButton.png';
@@ -305,6 +306,13 @@ export class HudOverlay {
       shadow(5);
       c.fillText(clock, W / 2, padY + 52 * sy);
     }
+    // Auto-aim indicator under the clock.
+    if (h.aimbot) {
+      c.fillStyle = accentTextCss;
+      c.font = `700 ${Math.round(16 * s)}px system-ui, sans-serif`;
+      shadow(4);
+      c.fillText('AIMBOT', W / 2, padY + 78 * sy);
+    }
     // Notification line.
     if (h.notify) {
       c.fillStyle = '#fff';
@@ -572,6 +580,21 @@ export class HudOverlay {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
     gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  /** Uploaded texture, shared with the generic UiScene's one plane. */
+  get texture(): WebGLTexture {
+    return this.tex;
+  }
+
+  /** Release the GL objects owned by this overlay. */
+  dispose(): void {
+    const gl = this.gl;
+    this.quad?.dispose();
+    this.quad = null;
+    gl.deleteTexture(this.tex);
+    gl.deleteProgram(this.prog);
+    gl.deleteVertexArray(this.vao);
   }
 
   /** Composite the painted HUD as a world-space panel (immersive VR). */

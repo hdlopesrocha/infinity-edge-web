@@ -48,6 +48,14 @@ export interface PresentOptions {
    * null/omitted disables the veil.
    */
   focus?: { x: number; y: number; w: number; h: number } | null;
+  /**
+   * Optional projected panel silhouette, bl/br/tr/tl in this view's UV.
+   * When present, the veil follows the quad instead of the axis-aligned
+   * rectangle, so an obliquely viewed VR menu keeps an exact sharp island.
+   */
+  focusQuad?: readonly [
+    number, number, number, number, number, number, number, number,
+  ] | null;
   /** Player/team colour used by the focus veil (linear 0..1 RGB). */
   focusTint?: [number, number, number];
   /** UV height over which the veil ramps from the rectangle edge to full. */
@@ -120,7 +128,9 @@ export class Post {
     this.uFocusScene = uniforms(gl, this.progFocusScene, ['uSky', 'uModels', 'uBloom', 'uBillboards']);
     this.uComposite = uniforms(gl, this.progComposite, [
       'uSky', 'uModels', 'uBloom', 'uFlareSrc', 'uBillboards', 'uUI', 'uUIRect',
-      'uSceneBlur', 'uFocusRect', 'uFocusTint', 'uFocusAspect', 'uFocusFeather', 'uFocusStrength',
+      'uSceneBlur', 'uFocusRect', 'uFocusQuadOn',
+      'uFocusQuad0', 'uFocusQuad1', 'uFocusQuad2', 'uFocusQuad3',
+      'uFocusTint', 'uFocusAspect', 'uFocusFeather', 'uFocusStrength',
       'uFocusView', 'uFocusBorderPx',
       'uFlareTex', 'uFlare', 'uExposureKnee', 'uZoomCenter', 'uZoom', 'uZoomSamples',
     ]);
@@ -449,13 +459,19 @@ export class Post {
       gl.uniform4f(this.uComposite.uUIRect, ur.x, ur.y, ur.w, ur.h);
       const fr = focus ?? { x: 0, y: 0, w: 1, h: 1 };
       gl.uniform4f(this.uComposite.uFocusRect, fr.x, fr.y, fr.w, fr.h);
+      const fq = opts.focusQuad;
+      gl.uniform1f(this.uComposite.uFocusQuadOn, fq ? 1 : 0);
+      gl.uniform2f(this.uComposite.uFocusQuad0, fq?.[0] ?? 0, fq?.[1] ?? 0);
+      gl.uniform2f(this.uComposite.uFocusQuad1, fq?.[2] ?? 0, fq?.[3] ?? 0);
+      gl.uniform2f(this.uComposite.uFocusQuad2, fq?.[4] ?? 0, fq?.[5] ?? 0);
+      gl.uniform2f(this.uComposite.uFocusQuad3, fq?.[6] ?? 0, fq?.[7] ?? 0);
       const tint = opts.focusTint ?? [0.25, 0.878, 0.816];
       gl.uniform3f(this.uComposite.uFocusTint, tint[0], tint[1], tint[2]);
       gl.uniform1f(this.uComposite.uFocusAspect, viewW / Math.max(1, viewH));
       gl.uniform1f(this.uComposite.uFocusFeather, Math.max(1e-4, opts.focusFeather ?? 0.16));
       gl.uniform1f(this.uComposite.uFocusStrength, focusStrength);
       gl.uniform2f(this.uComposite.uFocusView, viewW, viewH);
-      gl.uniform1f(this.uComposite.uFocusBorderPx, Math.max(1, opts.focusBorderPx ?? 2));
+      gl.uniform1f(this.uComposite.uFocusBorderPx, Math.max(0, opts.focusBorderPx ?? 2));
       this.bindTex(this.uComposite.uFlareTex, 5, opts.flareTex ? opts.flareTex.tex : null);
       gl.uniform1f(this.uComposite.uFlare, flare);
       gl.uniform1f(this.uComposite.uExposureKnee, 0.55);

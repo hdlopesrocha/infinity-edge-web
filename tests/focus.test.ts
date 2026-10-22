@@ -3,7 +3,9 @@
 import { describe, expect, it } from 'vitest';
 import { mat4 } from 'gl-matrix';
 import { contentFocusRect, FOCUS_H, FOCUS_W, FOCUS_X, FOCUS_Y } from '../src/game/ui/layout';
-import { planeFitScale, projectedPlaneRect } from '../src/engine/vrpanel';
+import {
+  planeFitScale, projectedPlaneQuad, projectedPlaneRect,
+} from '../src/engine/vrpanel';
 import { focusBorderStrips } from '../src/engine/focusborder';
 
 describe('contentFocusRect', () => {
@@ -98,6 +100,38 @@ describe('projectedPlaneRect', () => {
     expect(r.y).toBeCloseTo(0.25, 6);
     expect(r.w).toBeCloseTo(0.5, 6);
     expect(r.h).toBeCloseTo(0.5, 6);
+  });
+
+  it('returns the panel corners in bl/br/tr/tl order', () => {
+    const view = mat4.create();
+    const proj = mat4.ortho(mat4.create(), -2, 2, -2, 2, -1, 1);
+    const q = projectedPlaneQuad(
+      view, proj, new Float32Array([0, 0, 0]), new Float32Array([1, 0, 0]),
+      new Float32Array([0, 1, 0]), 1, 1,
+    )!;
+    expect(Array.from(q)).toEqual([
+      0.25, 0.25,
+      0.75, 0.25,
+      0.75, 0.75,
+      0.25, 0.75,
+    ]);
+  });
+
+  it('keeps the four corners for an obliquely viewed panel', () => {
+    const view = mat4.create();
+    const proj = mat4.perspective(mat4.create(), Math.PI / 2, 1, 0.1, 100);
+    const yaw = Math.PI / 6;
+    const q = projectedPlaneQuad(
+      view, proj, new Float32Array([0, 0, -3]),
+      new Float32Array([Math.cos(yaw), 0, -Math.sin(yaw)]),
+      new Float32Array([0, 1, 0]), 2, 1.125,
+    )!;
+    // A yawed panel projects as a trapezoid: its near and far vertical edges
+    // have different projected heights. The focus stroke must use the
+    // corners, not their axis-aligned bounding box.
+    const leftHeight = Math.abs(q[7] - q[1]);
+    const rightHeight = Math.abs(q[5] - q[3]);
+    expect(Math.abs(leftHeight - rightHeight)).toBeGreaterThan(0.05);
   });
 
   it('uses the panel basis so an off-centre panel moves in UV', () => {

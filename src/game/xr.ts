@@ -10,23 +10,30 @@
 //   XR: we draw the map directly into the XR framebuffer per eye.
 // - while a session is live, the normal rAF path only advances the simulation
 //   (renderer.xrActive) so nothing double-draws to the canvas.
-// - the menus are the same WebGL ScreenUi the 2D pages use: they are painted
-//   once into a texture and drawn as a world-space panel in front of the base
-//   view (src/engine/vrpanel.ts). The headset's gaze ray sweeps that panel and
-//   drives the UI's own pointer handler; trigger clicks instantly, dwelling
-//   (2 s by default, configurable in Options) selects without a controller.
-//   There is no separate VR menu.
+// - the game HUD and every menu use one generic world-space UI scene
+//   (src/engine/uiscene.ts): one 16:9 plane at the near/far midpoint, sized to
+//   80% of the fullscreen frustum at that depth and anchored on the VR reset
+//   origin. Menus paint their ScreenUi into it with the action column on and
+//   keep the reset orientation, so the gaze ray can sweep them; the live game
+//   paints the HUD into the same plane but rotates it with the head, so the
+//   interface is always visible. The headset's gaze ray drives the UI's own
+//   pointer handler; trigger clicks instantly, dwelling (2 s by default,
+//   configurable in Options) selects without a controller. There is no
+//   separate VR menu.
 import { mat4, vec3 } from '../engine/math';
 import type { GameInstance } from './instance';
 import { store } from './store';
+import { AIM_URL } from '../engine/hud3d';
 import { applyTeamColors } from './colors';
 import { partyPlayerColor, updateParty } from './party';
 import { syncHud } from './hud';
 import { extractFrustum } from '../engine/frustum';
 import {
-  GazeCursor, GazePointer, PANEL_H, PANEL_W, VrPanel, cyclopsView, hitPanel, panelBasis,
-  planeFitScale, projectedPlaneRect, withClipRect,
+  GazeCursor, GazePointer, PANEL_H, PANEL_W, cyclopsView, hitPanel, panelBasis,
+  projectedPlaneQuad, projectedPlaneRect, viewPanelBasis, withClipRect,
 } from '../engine/vrpanel';
+import type { PanelBasis } from '../engine/vrpanel';
+import { UiScene } from '../engine/uiscene';
 import type { ScreenUi } from '../engine/overlay';
 import { isVrLongPress, VR_LONG_PRESS_MS } from './vr';
 
@@ -65,39 +72,73 @@ function xr(): XrSystem | null {
   return n.xr ?? null;
 }
 
-/** Menu panel placement in world units.
- *
- * The panel used to sit 3 m ahead at 8 x 4.5 m. Both distance and world size
- * are now halved, so it is physically closer (more comfortable stereo depth
- * and less vergence) while projecting exactly the same rectangle in each eye.
- * Keep these two constants in step: changing only one changes the on-screen
- * size and the focus rectangle with it. */
-const PANEL_DISTANCE = 1.5;
-/** The non-interactive HUD keeps its earlier 0.75 m placement: it is already
- *  closer than the menu and its own focus rectangle must not move. */
-const HUD_DISTANCE = 0.75;
 /**
- * The HUD keeps the world size it had at 1.5 units while sitting at half that
- * distance, so it subtends twice the angle. The projection used to paint it is
- * widened by the same factor, so the painted aim/markers still land at the
- * correct angle on the quieter, bigger panel. The result is then fitted to the
- * eye's projection so the focus frame and the world veil remain visible around
- * it instead of running off the sides of the headset view.
+ * Clone an eye projection and move only its near clip inward. Keeps m[0]/m[5]/
+ * m[8]/m[9] untouched, so the UI plane has exactly the same x/y projection as
+ * the scene but a plane closer than the runtime's near plane is not clipped.
  */
-const HUD_FOV_SCALE = 2;
-const PANEL_WIDTH = 4;
-const PANEL_HEIGHT = PANEL_WIDTH * (PANEL_H / PANEL_W);
-/** Fraction of the eye's half-view a panel may occupy. The remaining margin
- *  is what makes the 2 px frame and the blurred veil outside it visible. */
-const PANEL_FIT = 0.86;
-/** XR has only a thin margin around the fitted panel; a shorter ramp reaches
- *  full veil strength before the eye edge instead of fading out.
+function uiProjection(out: mat4, eyeProj: Float32Array, far: number): Float32Array {
+  mat4.copy(out, eyeProj as unknown as mat4);
+  const near = UI_NEAR;
+  out[10] = -(far + near) / (far - near);
+  out[14] = -2 * far * near / (far - near);
+  out[11] = -1;
+  return out as unknown as Float32Array;
+}
+
+/**
+ * View-space offset of the NDC centre for one projection: the direction
+ * `(m[8]/m[0], m[9]/m[5])` is where the screen centre sits relative to the
+ * view axis. Averaged over the eyes, it centres the shared plane in the fused
+ * view instead of on the raw forward axis.
+ */
+function projectionCenter(projections: ArrayLike<number>[]): { x: number; y: number } {
+  let sx = 0, sy = 0, n = 0;
+  for (const p of projections) {
+    const m0 = Math.abs(p[0] ?? 0);
+    const m5 = Math.abs(p[5] ?? 0);
+    if (!(m0 > 1e-6) || !(m5 > 1e-6)) continue;
+    sx += (p[8] ?? 0) / m0;
+    sy += (p[9] ?? 0) / m5;
+    n++;
+  }
+  return n > 0 ? { x: sx / n, y: sy / n } : { x: 0, y: 0 };
+}
+
+/**
+ * Average x/y projection scale (`m[0]`, `m[5]`) across the eyes. At distance
+ * `d` the fullscreen frustum height is `2d / m[5]` and width `2d / m[0]`.
+ */
+function projectionScale(projections: ArrayLike<number>[]): { x: number; y: number } {
+  let sx = 0, sy = 0, n = 0;
+  for (const p of projections) {
+    const m0 = Math.abs(p[0] ?? 0);
+    const m5 = Math.abs(p[5] ?? 0);
+    if (!(m0 > 1e-6) || !(m5 > 1e-6)) continue;
+    sx += m0;
+    sy += m5;
+    n++;
+  }
+  return n > 0 ? { x: sx / n, y: sy / n } : { x: 1, y: 1 };
+}
+
+/** One UI plane for every scene (menus and game).
  *
- * This is a screen-space feather, not a world-space width. Halving the panel
- * distance and its world size together leaves `projectedPlaneRect()` and thus
- * the focus rectangle unchanged, so the blur ramp keeps exactly its previous
- * screen calibration. */
-const XR_FOCUS_FEATHER = 0.05;
+ * The plane sits at the midpoint between the camera's near and far planes and
+ * is sized to 80% of the frustum's fullscreen rectangle at that depth. Every
+ * scene draws into that same plane:
+ *   - menus keep the default (reset/initialised) orientation, so the plane
+ *     stays still and the gaze ray sweeps it;
+ *   - the game UI rotates the plane with the head so it is always visible.
+ * The plane's centre is the VR reset origin, projected along the default view
+ * forward by the midpoint distance. */
+const UI_PLANE_SCALE = 0.8;
+/** The UI keeps the eye's exact x/y projection but uses a near depth clip
+ *  smaller than the eye runtime's, so the plane is never clipped even when
+ *  the reset origin is close to the viewer. */
+const UI_NEAR = 0.01;
+/** Short screen-space feather for the immersive focus veil. */
+const UI_FOCUS_FEATHER = 0.03;
 
 let session: XRSession | null = null;
 let keepVrOnEnd = false;
@@ -105,6 +146,8 @@ let entering = false;
 let baselineYawAbs = 0;
 let latestHeadYawAbs = 0;
 let initialized = false;
+/** Default (reset) VR origin the single UI plane is anchored to. */
+let resetCenter: vec3 | null = null;
 
 /**
  * The XR session owns the simulation loop, so a match can finish without the
@@ -159,8 +202,11 @@ export async function enterXr(
     presentBounds: { w: number; h: number } | null;
     uiOverlay: ScreenUi | null;
     focusRect: { x: number; y: number; w: number; h: number } | null;
+    focusQuad: import('../engine/vrpanel').PlaneQuad | null;
     focusTint: [number, number, number];
     focusFeather: number;
+    focusBorderEnabled: boolean;
+    suppressUiFocusFallback: boolean;
     drawHudTo: (fbo: WebGLFramebuffer | null, rect: { x: number; y: number; w: number; h: number }, hud: typeof store.hud | null) => void;
     drawFocusBorder: (
       fbo?: WebGLFramebuffer | null,
@@ -212,16 +258,24 @@ export async function enterXr(
   if (layer.framebufferWidth > 0 && layer.framebufferHeight > 0) {
     renderer.presentBounds = { w: layer.framebufferWidth, h: layer.framebufferHeight };
   }
-  // The new UI (menus, lobby, room menu) on a world-space panel + gaze cursor.
-  // A driver that rejects the small shaders must not kill the session: the
-  // world and HUD still render, only the panel is missing.
-  let panel: VrPanel | null = null;
+  // One generic UI scene: the same plane carries the HUD and every menu. A
+  // driver that rejects the small shaders must not kill the session: the world
+  // still renders and the fallback HUD path remains available below.
+  let uiScene: UiScene | null = null;
   let cursor: GazeCursor | null = null;
   try {
-    panel = new VrPanel(gl);
-    cursor = new GazeCursor(gl);
+    uiScene = new UiScene(gl);
   } catch {
-    panel = null;
+    uiScene = null;
+  }
+  try {
+    cursor = new GazeCursor(gl);
+    // Menu gaze cursor uses the same `_aim.png` crosshair as the spaceship HUD.
+    const aimIcon = new Image();
+    aimIcon.crossOrigin = 'anonymous';
+    aimIcon.onload = () => cursor?.setIcon(aimIcon);
+    aimIcon.src = AIM_URL;
+  } catch {
     cursor = null;
   }
   let gaze: GazePointer | null = null;
@@ -246,6 +300,8 @@ export async function enterXr(
   const head = mat4.create();
   const chase = mat4.create();
   let last = 0;
+  /** True once a match frame has been drawn; used to re-anchor on exit. */
+  let wasInMatch = false;
 
   const loop = (time: number, frame: XRFrame): void => {
     if (!session) return;
@@ -265,19 +321,18 @@ export async function enterXr(
     renderer.focusTint[0] = tint[0];
     renderer.focusTint[1] = tint[1];
     renderer.focusTint[2] = tint[2];
+    // The immersive plane is the only focus island; never fall back to the
+    // flat UI rectangle when it is projected off-screen.
+    renderer.suppressUiFocusFallback = true;
     const pose = frame.getViewerPose(refSpace);
     if (!instance || !pose) return;
     const projections = pose.views.map((v) => v.projectionMatrix);
-    // Fit the quad inside each eye instead of letting its side edges cross the
-    // viewport. At the old fixed 8x4.5 units/3 m the panel subtended ~106
-    // degrees, so on a typical headset its projected rectangle was wider than
-    // the eye: the side frame strokes fell off-screen and almost the whole
-    // view was "inside", leaving no outside area to blur.
-    const panelScale = planeFitScale(
-      projections, PANEL_WIDTH, PANEL_HEIGHT, PANEL_DISTANCE, PANEL_FIT,
-    );
-    const panelW = PANEL_WIDTH * panelScale;
-    const panelH = PANEL_HEIGHT * panelScale;
+    // The one UI plane: centred at the midpoint between the camera's near and
+    // far planes, as 80% of the fullscreen frustum rectangle at that depth.
+    const midDistance = Math.max(renderer.camera.near + 1e-3, (renderer.camera.near + far) / 2);
+    const pscale = projectionScale(projections);
+    const planeW = (2 * midDistance / pscale.x) * UI_PLANE_SCALE;
+    const planeH = (2 * midDistance / pscale.y) * UI_PLANE_SCALE;
     // Re-centering: the head yaw that maps to "forward" is the one recorded
     // when VR starts, or the one recorded on a tap/trigger in a match (menus
     // use select for clicks instead).
@@ -296,7 +351,20 @@ export async function enterXr(
     instance.canvasH = fullH;
     const inMenu = !store.interactive;
     // Background/menu scenes still orbit their camera; only real matches freeze.
-    if (instance.gameType === 'BACK' || (!store.paused && !inMenu)) instance.update(dt);
+    if (store.paused) {
+      // Frozen match: poll the pad only, so START can resume from the headset.
+      instance.control.update(instance.canvasW, instance.canvasH);
+      if (instance.control.pauseRequested) {
+        instance.control.pauseRequested = false;
+        store.paused = false;
+      }
+    } else if (instance.gameType === 'BACK' || !inMenu) {
+      instance.update(dt);
+      if (instance.control.pauseRequested) {
+        instance.control.pauseRequested = false;
+        if (store.interactive) store.paused = true;
+      }
+    }
     // The session loop, not the page rAF, produced this frame: hand a finished
     // match to GameCanvas so it can route to the results screen. The session
     // stays live across that route: the result menu is a ScreenUi like every
@@ -307,95 +375,128 @@ export async function enterXr(
       onMatchEnd();
       return;
     }
-    // In-match HUD: a head-locked plane at 0.75 m, close to the camera. It is
-    // painted ONCE with the cyclops (head-centre) view and drawn in each eye,
-    // so the score/time/items stay fixed to the head rotation and the
-    // aim/markers keep their positions. The menu panel moved closer to 1.5 m,
-    // but the HUD stays at its previous (already close) distance so its screen
-    // rectangle is unchanged. Its painted projection is widened 2x so the
-    // texture still covers that rectangle.
+    // One UI plane serves both modes. A menu/pause screen is a ScreenUi panel
+    // on the base view; a live match paints the HUD into the same plane. The
+    // scene-level action column is on for menus and off for the game; it is
+    // switched here, programmatically, every frame.
     // A paused match is a menu frame: the pause ScreenUi panel is the only
-    // overlay, and the head-locked HUD is rebuilt only after resuming.
+    // overlay, and the HUD is rebuilt only after resuming.
     const inMatch = store.interactive && instance.gameType !== 'BACK' && !store.paused;
-    // Ship-up chase base for the scene and the menu panel; the head pose is
+    // Ship-up chase base for the scene and the menu plane; the head pose is
     // composed per eye, so head rotation follows the spaceship's rotation.
     renderer.camera.chaseView(chase);
-    let hudBoard: { center: vec3; right: vec3; up: vec3 } | null = null;
-    let hudHalfW = 0;
-    let hudHalfH = 0;
-    if (inMatch && pose.views.length > 0) {
-      const cam = renderer.camera;
-      const hudH = 900;
-      const hudW = Math.max(2, Math.round(hudH * Math.max(1, cam.aspect)));
-      // The rendered eye views (head compose + ship-up chase) averaged into
-      // the cyclops HUD view. This must use the *composed* positions: the raw
-      // room poses are not where the chase camera renders the head.
-      const cyclops = cyclopsView(
-        pose.views.map((v) => v.transform.matrix), baselineYawAbs, chase,
-      );
-      const hudView = cyclops.view;
-      const hx = cyclops.center[0], hy = cyclops.center[1], hz = cyclops.center[2];
-      const hudRight = vec3.fromValues(hudView[0], hudView[4], hudView[8]);
-      const hudUp = vec3.fromValues(hudView[1], hudView[5], hudView[9]);
-      const hudFwd = vec3.fromValues(-hudView[2], -hudView[6], -hudView[10]);
-
-      // Project the snapshot through that head view with a widened
-      // perspective: the plane fills the same angles as the painted texture.
-      // Fit the resulting quad to the eye as well, and paint the HUD with the
-      // fitted FOV so its markers still line up with the world.
-      const hudFov = 2 * Math.atan(Math.tan(cam.fov / 2) * HUD_FOV_SCALE);
-      const hudBaseHalfH = Math.tan(hudFov / 2) * HUD_DISTANCE;
-      const hudBaseHalfW = hudBaseHalfH * (hudW / hudH);
-      const hudScale = planeFitScale(
-        projections, hudBaseHalfW * 2, hudBaseHalfH * 2, HUD_DISTANCE, PANEL_FIT,
-      );
-      const hudFittedFov = 2 * Math.atan(Math.tan(hudFov / 2) * hudScale);
+    const cam = renderer.camera;
+    const ui = renderer.uiOverlay;
+    // Never let a stale menu overlay steal controls while a match is live; it
+    // only counts as a menu outside a match or while paused.
+    const menuUi = ui && (!store.interactive || store.paused) ? ui : null;
+    // The rendered eye cameras are not at the chase camera's position (the
+    // head pose offsets them), so capture the rendered head centre; it becomes
+    // the VR reset origin the one UI plane is anchored to.
+    const cyclops = pose.views.length > 0
+      ? cyclopsView(pose.views.map((v) => v.transform.matrix), baselineYawAbs, chase)
+      : null;
+    // Menus keep the reset orientation so the gaze ray can sweep a still
+    // plane; the live HUD rotates the same plane with the head (set below) so
+    // it stays in front of the user. Both share the same centre, distance,
+    // size and focus feather.
+    if (inMatch) {
+      wasInMatch = true;
+    } else if (menuUi && wasInMatch) {
+      // Just returned from a match: re-anchor the menu plane at the current
+      // head position so the player is looking straight at the menu.
+      resetCenter = cyclops ? vec3.clone(cyclops.center) : null;
+      wasInMatch = false;
+    }
+    const ndcCenter = projectionCenter(projections);
+    // Remember the reset/initialised origin and orientation; the single plane
+    // is anchored there. Both scenes then use the exact same plane, distance
+    // and size, with only the rotation decided per scene.
+    if (cyclops && !resetCenter) {
+      resetCenter = vec3.clone(cyclops.center);
+    }
+    const defaultCenter = resetCenter ?? cyclops?.center ?? cam.position;
+    // Menus keep the base/chase orientation (upright, not head-rotated).
+    const menuBasis = viewPanelBasis(
+      chase, defaultCenter, midDistance, ndcCenter.x, ndcCenter.y,
+    );
+    // The game UI rotates the plane with the head around the reset origin; the
+    // menus keep the reset orientation so the gaze ray can sweep a still plane.
+    // Game UI: fixed in front of the camera; same position and rotation as the
+    // head/camera view, so it always faces the user.
+    const gameBasis = cyclops
+      ? viewPanelBasis(cyclops.view, cyclops.center, midDistance, ndcCenter.x, ndcCenter.y)
+      : menuBasis;
+    let planeBasis: PanelBasis | null = menuUi || inMatch
+      ? (menuUi ? menuBasis : gameBasis)
+      : null;
+    /** The renderer's own HUD texture is used only if UiScene failed to build. */
+    let hudFallback = false;
+    // Only menus draw the focus frame; the live HUD is borderless.
+    renderer.focusBorderEnabled = true;
+    if (menuUi) {
+      if (uiScene) {
+        uiScene.setActions(true);
+        uiScene.setMenu(menuUi);
+      }
+      if (menuUi !== gazeUi) {
+        gazeUi = menuUi;
+        gaze = new GazePointer(menuUi, PANEL_W, PANEL_H, store.options.dwellTime * 1000);
+      }
+    } else if (inMatch && cyclops) {
+      renderer.focusBorderEnabled = false;
+      // Game UI on the same plane, but with the plane rotated by the current
+      // head pose around the reset origin, so it is always visible. Paint the
+      // 16:9 texture with a camera looking along the rotated plane normal from
+      // that origin; the texture centre then lands on the plane centre.
+      const hudCenter = cyclops.center;
+      const forward = vec3.negate(vec3.create(), gameBasis.normal);
+      const target = vec3.add(vec3.create(), hudCenter, forward);
+      const hudFittedFov = 2 * Math.atan((planeH * 0.5) / midDistance);
       const basePos = vec3.clone(cam.position);
       const baseLook = vec3.clone(cam.lookAt);
       const baseUp = vec3.clone(cam.up);
-      vec3.set(cam.position, hx, hy, hz);
-      vec3.copy(cam.up, hudUp);
-      vec3.copy(cam.direction, hudFwd);
-      vec3.copy(cam.side, hudRight);
-      mat4.copy(cam.view, hudView);
-      mat4.perspective(cam.proj, hudFittedFov, hudW / hudH, cam.near, cam.far);
+      vec3.copy(cam.position, hudCenter);
+      vec3.copy(cam.up, gameBasis.up);
+      vec3.copy(cam.direction, forward);
+      vec3.copy(cam.side, gameBasis.right);
+      mat4.lookAt(cam.view, hudCenter, target, gameBasis.up);
+      mat4.perspective(
+        cam.proj, hudFittedFov, PANEL_W / PANEL_H, UI_NEAR,
+        Math.max(far, midDistance * 2),
+      );
+      // Paint the HUD with the same principal point as the plane placement:
+      // the texture centre must land on the NDC centre, not the raw view axis.
+      cam.proj[8] = ndcCenter.x * cam.proj[0];
+      cam.proj[9] = ndcCenter.y * cam.proj[5];
       mat4.multiply(cam.viewProj, cam.proj, cam.view);
       extractFrustum(cam.viewProj, renderer.frustum);
-      instance.canvasW = hudW;
-      instance.canvasH = hudH;
+      instance.canvasW = PANEL_W;
+      instance.canvasH = PANEL_H;
       syncHud(instance);
-      renderer.prepareHud(store.hud);
-      hudHalfH = Math.tan(hudFittedFov / 2) * HUD_DISTANCE;
-      hudHalfW = hudHalfH * (hudW / hudH);
-      hudBoard = {
-        center: vec3.scaleAndAdd(vec3.create(), vec3.fromValues(hx, hy, hz), hudFwd, HUD_DISTANCE),
-        right: hudRight,
-        up: hudUp,
-      };
-      // Restore the chase camera for the scene and the menu panel.
+      if (uiScene) {
+        uiScene.setActions(false);
+        uiScene.setHud(store.hud);
+      } else {
+        hudFallback = true;
+        renderer.prepareHud(store.hud);
+      }
+      // Restore the chase camera for the per-eye scene pass (the loop replaces
+      // the eye view/projection itself).
       vec3.copy(cam.position, basePos);
       vec3.copy(cam.lookAt, baseLook);
       vec3.copy(cam.up, baseUp);
       cam.updateMatrices();
+    } else if (uiScene) {
+      uiScene.setHud(null);
+      renderer.focusBorderEnabled = true;
     }
-    // The new UI overlay (MenuUi/LobbyUi/RoomUi) becomes a texture + panel.
-    const ui = renderer.uiOverlay;
-    if (ui && panel) {
-      panel.update(ui);
-      if (ui !== gazeUi) {
-        gazeUi = ui;
-        gaze = new GazePointer(ui, panel.width, panel.height, store.options.dwellTime * 1000);
-      }
-    } else if (gaze) {
-      // A match has no ScreenUi (the HUD is drawn separately): drop the hover.
+    if (!ui && gaze) {
+      // The HUD mode has no ScreenUi: drop the hover/dwell state.
       gaze.reset();
       gaze = null;
       gazeUi = null;
     }
-    // The panel follows the base view (not the head): the headset's gaze ray
-    // then sweeps across a stable panel, which is what a crosshair needs.
-    const basis = panelBasis(renderer.camera.position, renderer.camera.direction, PANEL_DISTANCE);
-    const cam = renderer.camera;
     // Each eye goes through the whole normal pipeline (scene target, scene
     // draw, composite) but the composite blits into the WebXR base layer with
     // that eye's viewport instead of the canvas. Drawing only the scene left
@@ -417,26 +518,33 @@ export async function enterXr(
       mat4.multiply(cam.viewProj, cam.proj, cam.view);
       renderer.viewport = { x: vp.x, y: vp.y, w: vp.width, h: vp.height };
       renderer.presentFbo = layer.framebuffer;
-      const eyeView = cam.view as unknown as Float32Array;
-      const eyeProj = cam.proj as unknown as Float32Array;
-      // World-space UI panels are the sharp island: project the menu panel (or
-      // the head-locked HUD board) into this eye and blur/tint the scene
-      // outside it. The panel is drawn after the composite, so its pixels are
-      // never touched by the veil.
-      const panelFocus = ui && panel
-        ? projectedPlaneRect(
-          eyeView, eyeProj, basis.center, basis.right, basis.up,
-          panelW * 0.5, panelH * 0.5,
+      // Snapshot the eye matrices: the scene passes below may touch the
+      // camera, and the UI/cursor must use exactly this eye's view.
+      const eyeView = mat4.clone(cam.view) as unknown as Float32Array;
+      const eyeProj = mat4.clone(cam.proj) as unknown as Float32Array;
+      // The UI is closer than the runtime near plane; keep the eye's x/y
+      // projection but use a nearer depth clip for every UI pass.
+      const uiProj = uiProjection(mat4.create(), eyeProj, Math.max(cam.far, midDistance * 2));
+      // The one UI plane is the sharp island: project it into this eye and
+      // blur/tint the scene outside it. Menus are viewed obliquely when the
+      // head turns, so stroke their real projected quad (the HUD is
+      // fronto-parallel, which is the same path with a rectangle-like quad).
+      // Both modes use the same feather.
+      const planeQuad = planeBasis
+        ? projectedPlaneQuad(
+          eyeView, uiProj, planeBasis.center, planeBasis.right, planeBasis.up,
+          planeW * 0.5, planeH * 0.5,
         )
         : null;
-      const hudFocus = hudBoard
+      const planeFocus = planeBasis
         ? projectedPlaneRect(
-          eyeView, eyeProj, hudBoard.center, hudBoard.right, hudBoard.up, hudHalfW, hudHalfH,
+          eyeView, uiProj, planeBasis.center, planeBasis.right, planeBasis.up,
+          planeW * 0.5, planeH * 0.5,
         )
         : null;
-      const focus = panelFocus ?? hudFocus ?? null;
-      renderer.focusRect = focus;
-      renderer.focusFeather = focus ? XR_FOCUS_FEATHER : previousFocusFeather;
+      renderer.focusRect = planeFocus;
+      renderer.focusQuad = planeQuad;
+      renderer.focusFeather = planeFocus ? UI_FOCUS_FEATHER : previousFocusFeather;
       // The per-eye UI rect is applied where the pixels land (see below), so
       // the composite itself carries no UI.
       renderer.beginFrame();   // scene target + frustum for this eye
@@ -447,35 +555,32 @@ export async function enterXr(
       if (renderer.renderOptions.zoom > 0) {
         instance.drawShipsSharp(layer.framebuffer, { x: vp.x, y: vp.y, w: vp.width, h: vp.height });
       }
-      // HUD panel over the scene, in this eye, head-locked at HUD_DISTANCE.
-      if (hudBoard) {
-        const board = hudBoard;
-        withClipRect(gl, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, () => {
-          renderer.drawHudPlane(
-            layer.framebuffer, eyeView, eyeProj,
-            board.center, board.right, board.up, hudHalfW, hudHalfH,
-          );
-        });
-      }
-      if (ui && gaze && panel && cursor) {
-        // The panel is drawn last, over the HUD, in this eye's rectangle.
-        // withClipRect always clears the scissor afterwards: it must not
-        // leak into the other eye's scene pass (that blacked out the right
-        // eye while the menu itself still showed in both).
+      // The one plane carries the menu (and its gaze cursor) or the HUD. It is
+      // drawn after the composite in this eye's rectangle.
+      const scene = uiScene;
+      if (ui && planeBasis && scene && scene.ready) {
         // The loop mutates these; capture the non-null values for the closure.
         const aim = gaze;
-        const board = panel;
         const pointer = cursor;
+        const look = planeBasis;
         gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
         withClipRect(gl, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, () => {
           // Gaze ray from this eye's view matrix: origin = inverse
-          // translation, direction = -Z of the camera basis.
+          // translation, direction = the view-space ray that lands on the NDC
+          // centre. Using -Z alone would aim the crosshair at the projection's
+          // principal point, which is off-centre on asymmetric XR eyes.
           const inv = mat4.create();
-          mat4.invert(inv, cam.view);
+          mat4.invert(inv, eyeView as unknown as mat4);
           const origin = vec3.fromValues(inv[12], inv[13], inv[14]);
-          const ray = vec3.normalize(vec3.create(), vec3.fromValues(-eyeView[2], -eyeView[6], -eyeView[10]));
-          const hit = hitPanel(origin, ray, basis, panelW, panelH, board.width, board.height);
-          if (vi === 0) {
+          // Raw camera direction for this eye; its projection per eye is the
+          // crosshair position (this is what makes the stereo pair match).
+          const ray = vec3.normalize(
+            vec3.create(), vec3.fromValues(-eyeView[2], -eyeView[6], -eyeView[10]),
+          );
+          const hit = aim && pointer
+            ? hitPanel(origin, ray, look, planeW, planeH, scene.width, scene.height)
+            : null;
+          if (vi === 0 && aim && pointer) {
             // One pointer/dwell state for the UI; the left eye aims it.
             // Options can change while the panel is open, so refresh live.
             aim.setDwellMs(store.options.dwellTime * 1000);
@@ -485,22 +590,50 @@ export async function enterXr(
               selectQueued = false;
             }
             // A hover change bumps the UI version: repaint before drawing.
-            board.update(ui);
+            scene.setMenu(ui);
           }
-          board.draw(layer.framebuffer, eyeView, eyeProj, basis, panelW, panelH);
-          // Reticle at this eye's own hit (parallax-correct); a fixed distance
-          // along the gaze when the panel does not fill that direction.
-          const point = hit
-            ? hit.point
-            : vec3.scaleAndAdd(vec3.create(), origin, ray, PANEL_DISTANCE);
-          const radius = Math.max(0.06, (hit ? hit.distance : PANEL_DISTANCE) * 0.032);
-          const right = vec3.fromValues(eyeView[0], eyeView[4], eyeView[8]);
-          const up = vec3.fromValues(eyeView[1], eyeView[5], eyeView[9]);
-          pointer.draw(layer.framebuffer, eyeView, eyeProj, point, right, up, radius, aim.progress);
+          scene.draw(layer.framebuffer, eyeView, uiProj, look, planeW, planeH);
+          if (pointer) {
+            // Project the camera direction (through the world hit, or the
+            // plane midpoint when it misses) with this eye's own view/proj:
+            // the crosshair sits where that eye's camera direction points.
+            const point = hit
+              ? hit.point
+              : vec3.scaleAndAdd(vec3.create(), origin, ray, midDistance);
+            const mv = mat4.multiply(
+              mat4.create(), uiProj as unknown as mat4, eyeView as unknown as mat4,
+            );
+            const cx = mv[0] * point[0] + mv[4] * point[1] + mv[8] * point[2] + mv[12];
+            const cy = mv[1] * point[0] + mv[5] * point[1] + mv[9] * point[2] + mv[13];
+            const cw = mv[3] * point[0] + mv[7] * point[1] + mv[11] * point[2] + mv[15];
+            const sizePx = Math.min(vp.width, vp.height) * 0.02;
+            pointer.drawScreen(
+              layer.framebuffer, vp.width, vp.height,
+              cw !== 0 ? cx / cw : 0, cw !== 0 ? cy / cw : 0,
+              sizePx,
+              aim && aim.hasTarget ? aim.progress : 0,
+              renderer.focusTint,
+            );
+          }
         });
+      } else if (inMatch && planeBasis) {
+        if (scene && scene.ready) {
+          const look = planeBasis;
+          withClipRect(gl, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, () => {
+            scene.draw(layer.framebuffer, eyeView, uiProj, look, planeW, planeH);
+          });
+        } else if (hudFallback) {
+          const look = planeBasis;
+          withClipRect(gl, { x: vp.x, y: vp.y, w: vp.width, h: vp.height }, () => {
+            renderer.drawHudPlane(
+              layer.framebuffer, eyeView, uiProj,
+              look.center, look.right, look.up, planeW * 0.5, planeH * 0.5,
+            );
+          });
+        }
       }
-      // The world-space panel/HUD is drawn after the composite, so its own
-      // pass must carry the player-colour focus frame as well.
+      // The world-space plane is drawn after the composite, so its own pass
+      // must carry the player-colour focus frame as well.
       renderer.drawFocusBorder(layer.framebuffer, {
         x: vp.x, y: vp.y, w: vp.width, h: vp.height,
       });
@@ -511,6 +644,8 @@ export async function enterXr(
     if (calibrateQueued) {
       baselineYawAbs = latestHeadYawAbs;
       calibrateQueued = false;
+      // Re-anchor the single plane where the user just reset the view.
+      if (cyclops) resetCenter = vec3.clone(cyclops.center);
     }
     if (!ui) selectQueued = false;
     renderer.viewport = null;
@@ -518,6 +653,7 @@ export async function enterXr(
     // The per-eye focus rect belongs to the frame just drawn; do not let it
     // leak into the page's non-XR fallback renderer.
     renderer.focusRect = null;
+    renderer.focusQuad = null;
     instance.canvasW = fullW;
     instance.canvasH = fullH;
   };
@@ -555,23 +691,27 @@ export async function enterXr(
     }
     clearPress();
     // Every short trigger/tap recalibrates the view, in menus and in a match
-    // alike. The recalibration is applied after the UI click in the next
-    // frame, so the crosshair still activates what it was pointing at.
+    // alike. Recalibration applies after the UI click in the next frame.
     calibrateQueued = true;
     if (renderer.uiOverlay) selectQueued = true;
   });
   s.addEventListener('end', () => {
     clearPress();
     suppressRelease = false;
-    panel?.dispose();
+    uiScene?.dispose();
     cursor?.dispose();
     session = null;
     renderer.xrActive = false;
     renderer.presentBounds = null;
+    renderer.focusRect = null;
+    renderer.focusQuad = null;
     renderer.focusFeather = previousFocusFeather;
+    renderer.focusBorderEnabled = true;
+    renderer.suppressUiFocusFallback = false;
     baselineYawAbs = 0;
     latestHeadYawAbs = 0;
     initialized = false;
+    resetCenter = null;
     if (!keepVrOnEnd) store.vr = false;
     keepVrOnEnd = false;
     onEnd();

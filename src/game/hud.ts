@@ -57,6 +57,7 @@ export function syncHud(g: GameInstance): void {
   hud.speed = sel ? Math.hypot(sel.vel[0], sel.vel[1], sel.vel[2]) : 0;
   hud.missileWarn = g.missileLocked();
   hud.lockOn = g.lockCandidate();
+  hud.aimbot = !!(sel && (sel as { aimbotActive?: boolean }).aimbotActive);
   hud.countdown = g.startCountdownMs > 0 ? Math.ceil(g.startCountdownMs / 1000) : 0;
   hud.deathCause = g.deathCause;
   hud.homings = g.control.homings;

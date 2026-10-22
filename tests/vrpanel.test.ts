@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mat4, vec3 } from 'gl-matrix';
 import {
   DWELL_MS, GazePointer, PANEL_H, PANEL_W, cyclopsView, hitPanel, panelBasis,
-  planeFitScale, withClipRect,
+  planeFitScale, viewCenterRay, viewPanelBasis, withClipRect,
 } from '../src/engine/vrpanel';
 import type { ScreenUi } from '../src/engine/overlay';
 
@@ -57,6 +57,42 @@ describe('panelBasis', () => {
     close(b.up, [0, 0, 1]);
     expect(Number.isFinite(b.up[0]) && Number.isFinite(b.up[1]) && Number.isFinite(b.up[2])).toBe(true);
   });
+
+  it('centres the panel on an asymmetric projection principal point', () => {
+    const view = mat4.lookAt(
+      mat4.create(), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, -1), vec3.fromValues(0, 1, 0),
+    );
+    const proj = mat4.frustum(mat4.create(), -0.08, 0.12, -0.1, 0.1, 0.1, 100);
+    const ndcX = (proj[8] ?? 0) / Math.abs(proj[0]);
+    const ndcY = (proj[9] ?? 0) / Math.abs(proj[5]);
+    const b = viewPanelBasis(view, vec3.fromValues(0, 0, 0), 3, ndcX, ndcY);
+    const m = mat4.multiply(mat4.create(), proj, view);
+    const p = b.center;
+    const x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12];
+    const y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13];
+    const w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+    expect(w).toBeGreaterThan(0);
+    expect(x / w).toBeCloseTo(0, 5);
+    expect(y / w).toBeCloseTo(0, 5);
+  });
+
+  it('aims a view-centre ray at the NDC centre for asymmetric eyes', () => {
+    const view = mat4.lookAt(
+      mat4.create(), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, -1), vec3.fromValues(0, 1, 0),
+    );
+    const proj = mat4.frustum(mat4.create(), -0.08, 0.12, -0.1, 0.1, 0.1, 100);
+    const ndcX = (proj[8] ?? 0) / Math.abs(proj[0]);
+    const ndcY = (proj[9] ?? 0) / Math.abs(proj[5]);
+    const ray = viewCenterRay(view, ndcX, ndcY);
+    const p = vec3.scale(vec3.create(), ray, 3);
+    const m = mat4.multiply(mat4.create(), proj, view);
+    const x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12];
+    const y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13];
+    const w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+    expect(w).toBeGreaterThan(0);
+    expect(x / w).toBeCloseTo(0, 5);
+    expect(y / w).toBeCloseTo(0, 5);
+  });
 });
 
 describe('planeFitScale', () => {
@@ -106,14 +142,20 @@ describe('planeFitScale', () => {
     expect(planeFitScale([proj(90)], 8, 4.5, 0)).toBe(1);
   });
 
-  it('keeps the apparent rectangle when distance and world size halve together', () => {
-    // The VR menu now sits at half the distance with half the world size. The
-    // fitted scale must be identical, so the screen-space focus rect and blur
-    // feather remain calibrated.
-    expect(planeFitScale([proj(90)], 4, 2.25, 1.5, 0.86))
-      .toBeCloseTo(planeFitScale([proj(90)], 8, 4.5, 3, 0.86), 10);
-    expect(planeFitScale([proj(120)], 4, 2.25, 1.5, 0.86))
-      .toBeCloseTo(planeFitScale([proj(120)], 8, 4.5, 3, 0.86), 10);
+  it('fills more of a wide eye at half distance with the same rectangle', () => {
+    // Menu: halve 1.5 m to 0.75 m but keep the 4-unit width. On a 120-degree
+    // eye the old plane already fit (77% half-view); the closer panel is
+    // clamped to the new 94% fit, so it still gets visibly larger.
+    const halfView = (distance: number, margin: number): number => {
+      const scale = planeFitScale([proj(120)], 4, 2.25, distance, margin);
+      const m0 = 1 / Math.tan(Math.PI / 3);
+      return (4 * scale / 2 / distance) * m0;
+    };
+    expect(halfView(1.5, 0.86)).toBeCloseTo(
+      (2 / 1.5) * (1 / Math.tan(Math.PI / 3)), 5,
+    );
+    expect(halfView(0.75, 0.94)).toBeCloseTo(0.94, 5);
+    expect(halfView(0.75, 0.94)).toBeGreaterThan(halfView(1.5, 0.86));
   });
 });
 

@@ -23,6 +23,7 @@ export function trailLabel(name: string, param?: string): string {
   switch (name) {
     case 'boot': case 'engine': case 'start': return 'ENGINE';
     case 'menu': return 'MAIN MENU';
+    case 'social': return 'SOCIAL';
     case 'single': return 'SINGLE PLAYER';
     case 'ctf': return 'CAPTURE THE FLAG';
     case 'tt': return 'TIME TRIAL';
@@ -32,10 +33,11 @@ export function trailLabel(name: string, param?: string): string {
     case 'briefing': return 'BRIEFING';
     case 'game': return 'MATCH';
     case 'hangar': return 'HANGAR';
-    case 'options': case 'settings': return 'OPTIONS';
+    case 'options': case 'settings': return 'SETTINGS';
     case 'about': return 'ABOUT';
     case 'victory': return 'VICTORY';
     case 'defeat': return 'DEFEAT';
+    case 'draw': return 'DRAW';
     default: return name.toUpperCase();
   }
 }

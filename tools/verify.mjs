@@ -138,7 +138,7 @@ const sceneFor = async (hash) => {
   return evaluate('window.__ieStore ? window.__ieStore.sceneKey : null');
 };
 const sMenu = await sceneFor('/menu');
-const sOptions = await sceneFor('/options');
+const sOptions = await sceneFor('/settings');
 const sEngine = await sceneFor('/engine');
 const sGame = await sceneFor('/game/tt-easy-01');
 check('menu/settings share the background scene', sMenu === 'background' && sOptions === 'background',

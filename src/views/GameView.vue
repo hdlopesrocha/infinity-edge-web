@@ -6,6 +6,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { GameInstance } from '../game/instance';
 import { store } from '../game/store';
+import { mp } from '../game/mp/manager';
 import { audio } from '../game/audio';
 import { markerBorderStyle, markerIconStyle, markerStyle } from '../game/hudmarker';
 import { onMarkerBorderReady } from '../game/iconborder';
@@ -94,6 +95,13 @@ function onKey(e: KeyboardEvent): void {
   if (e.code === 'Escape' && !store.paused) goBriefing();
 }
 
+/** Host: give up on a disconnected guest and let the frozen match resume. */
+function dropMissingGuests(): void {
+  audio.unlock();
+  void audio.sfx('button');
+  mp.dropMissingGuests();
+}
+
 /** In-game pause: the back button (or Escape) opens the WebGL pause menu
  *  instead of leaving the match. */
 function goBriefing(): void {
@@ -116,8 +124,18 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="hud" @contextmenu.prevent>
+    <div v-if="store.netPaused" class="net-pause">
+      <div class="net-pause-title">
+        {{ store.netPausedBy ? 'Waiting for ' + store.netPausedBy : 'Reconnecting…' }}
+      </div>
+      <div class="net-pause-sub">The match is paused until the link is back.</div>
+      <button v-if="store.netPausedHost && store.netPausedBy" class="net-pause-btn" @click="dropMissingGuests">
+        Drop player &amp; resume
+      </button>
+    </div>
     <div v-if="!store.glUi && !paused" class="hud-dom">
     <div v-if="!store.glUi" class="hud-score">{{ hud.score }}</div>
+    <div v-if="!store.glUi && hud.aimbot" class="hud-aimbot">AIMBOT</div>
     <div v-if="!store.glUi && hud.matchLeft !== null" class="hud-match" :class="{ low: matchLow }">{{ matchClock }}</div>
     <div v-if="!store.glUi && hud.notify" class="hud-notify">{{ hud.notify }}</div>
     <div v-if="!store.glUi && timer" class="hud-timer" :class="{ warn: !!hud.outside }">

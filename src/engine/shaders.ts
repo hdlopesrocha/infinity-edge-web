@@ -450,6 +450,8 @@ uniform sampler2D uBillboards; uniform sampler2D uUI;
 uniform vec4 uUIRect;  // normalized UI sub-rect sampled for this view (one eye)
 uniform sampler2D uSceneBlur; // world-only low-res copy for the focus veil
 uniform vec4 uFocusRect;      // UI rectangle in this view's UV (bottom-left)
+uniform float uFocusQuadOn;   // 1 = use the projected panel silhouette below
+uniform vec2 uFocusQuad0, uFocusQuad1, uFocusQuad2, uFocusQuad3;
 uniform vec3 uFocusTint;      // player/team colour
 uniform float uFocusAspect;   // view aspect, so the feather is round
 uniform float uFocusFeather;  // UV height where the veil reaches full strength
@@ -504,18 +506,41 @@ void main() {
     // The flare now reads the blurred layer, so keep its weight subtle.
     col += flare * uFlare * 0.35;
   }
-  // Focus veil: outside the UI rectangle the world is blurred and washed with
-  // the player's colour. The signed distance starts at zero on the rectangle
+  // Focus veil: outside the UI island the world is blurred and washed with
+  // the player's colour. The signed distance starts at zero on the island
   // edge, so the menu/HUD itself sits in a sharp island and the effect ramps in
-  // over uFocusFeather; inside the rectangle the scene is untouched.
+  // over uFocusFeather; inside the island the scene is untouched.
   float uiBorder = 0.0;
   if (uFocusStrength > 0.0) {
-    vec2 halfSize = max(uFocusRect.zw * 0.5, vec2(1e-4));
-    vec2 p = vUV - (uFocusRect.xy + uFocusRect.zw * 0.5);
-    p.x *= uFocusAspect;
-    halfSize.x *= uFocusAspect;
-    vec2 outside = max(abs(p) - halfSize, vec2(0.0));
-    float mask = smoothstep(0.0, max(1e-4, uFocusFeather), length(outside)) * uFocusStrength;
+    float mask = 0.0;
+    if (uFocusQuadOn > 0.5) {
+      // The menu panel is viewed obliquely whenever the head turns; use the
+      // actual four corners so the sharp island is the projected trapezoid,
+      // not a wider axis-aligned box. Aspect-corrected coordinates keep the
+      // feather round.
+      vec2 p = vec2(vUV.x * uFocusAspect, vUV.y);
+      vec2 q0 = vec2(uFocusQuad0.x * uFocusAspect, uFocusQuad0.y);
+      vec2 q1 = vec2(uFocusQuad1.x * uFocusAspect, uFocusQuad1.y);
+      vec2 q2 = vec2(uFocusQuad2.x * uFocusAspect, uFocusQuad2.y);
+      vec2 q3 = vec2(uFocusQuad3.x * uFocusAspect, uFocusQuad3.y);
+      vec2 e0 = q1 - q0, e1 = q2 - q1, e2 = q3 - q2, e3 = q0 - q3;
+      // Outward normals; flip with the winding so either projection order works.
+      float dir = ((q1.x - q0.x) * (q2.y - q0.y) -
+                   (q1.y - q0.y) * (q2.x - q0.x)) >= 0.0 ? 1.0 : -1.0;
+      float d0 = dot(p - q0, normalize(vec2(e0.y, -e0.x) * dir));
+      float d1 = dot(p - q1, normalize(vec2(e1.y, -e1.x) * dir));
+      float d2 = dot(p - q2, normalize(vec2(e2.y, -e2.x) * dir));
+      float d3 = dot(p - q3, normalize(vec2(e3.y, -e3.x) * dir));
+      float outsideD = max(max(d0, d1), max(d2, d3));
+      mask = smoothstep(0.0, max(1e-4, uFocusFeather), max(0.0, outsideD)) * uFocusStrength;
+    } else {
+      vec2 halfSize = max(uFocusRect.zw * 0.5, vec2(1e-4));
+      vec2 p = vUV - (uFocusRect.xy + uFocusRect.zw * 0.5);
+      p.x *= uFocusAspect;
+      halfSize.x *= uFocusAspect;
+      vec2 outside = max(abs(p) - halfSize, vec2(0.0));
+      mask = smoothstep(0.0, max(1e-4, uFocusFeather), length(outside)) * uFocusStrength;
+    }
     if (mask > 0.0) {
       vec3 soft = texture(uSceneBlur, vUV).rgb;
       float lum = dot(soft, vec3(0.2126, 0.7152, 0.0722));
@@ -525,14 +550,17 @@ void main() {
       col = mix(col, tinted, mask);
     }
     // The veil is zero on the rectangle edge and ramps outward. Mark that
-    // exact boundary with a player-colour stroke just inside it, so every UI
-    // plane/menu/HUD island has a visible 2 CSS px frame. Pixel distances keep
-    // the stroke even on the X and Y axes.
-    vec2 rectMax = uFocusRect.xy + uFocusRect.zw;
-    vec2 pxFromEdge = min(vUV - uFocusRect.xy, rectMax - vUV) * uFocusView;
-    float inside = step(uFocusRect.x, vUV.x) * step(vUV.x, rectMax.x) *
-                   step(uFocusRect.y, vUV.y) * step(vUV.y, rectMax.y);
-    uiBorder = inside * step(min(pxFromEdge.x, pxFromEdge.y), uFocusBorderPx);
+    // exact boundary with a player-colour stroke just inside it, so every flat
+    // UI island has a visible 2 CSS px frame. Pixel distances keep the stroke
+    // even on the X and Y axes. In XR the menu quad is stroked after the panel
+    // is drawn (renderer.focusQuad), so skip the AABB stroke here.
+    if (uFocusBorderPx > 0.0 && uFocusQuadOn < 0.5) {
+      vec2 rectMax = uFocusRect.xy + uFocusRect.zw;
+      vec2 pxFromEdge = min(vUV - uFocusRect.xy, rectMax - vUV) * uFocusView;
+      float inside = step(uFocusRect.x, vUV.x) * step(vUV.x, rectMax.x) *
+                     step(uFocusRect.y, vUV.y) * step(vUV.y, rectMax.y);
+      uiBorder = inside * step(min(pxFromEdge.x, pxFromEdge.y), uFocusBorderPx);
+    }
   }
   // 5: the UI on top, unblurred - sampled from this view's own sub-rect so
   // each eye gets its undistorted copy at the same relative position.

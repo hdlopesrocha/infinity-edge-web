@@ -7,6 +7,7 @@
 // box, so the three UIs cannot drift apart.
 
 import { FS_REGION, paintFullscreenButton } from './fullscreen';
+import { VR_REGION, paintVrButton } from './vrchrome';
 import type { Rgb } from '../colors';
 import { cssColor, currentPlayerAccent, readableAccent } from './theme';
 
@@ -23,6 +24,14 @@ export const CONTENT_X = 0;
 export const CONTENT_W = MENU_W - ACTIONS_W;   // 1120
 /** Centre of the content area (path, headings and status lines use it). */
 export const CONTENT_CX = CONTENT_X + CONTENT_W / 2;   // 560
+
+/**
+ * Width of the content area for a screen. Menus reserve the action column;
+ * the in-game HUD is a game scene with no actions, so it uses the full width.
+ */
+export function contentWidth(showActions: boolean): number {
+  return showActions ? CONTENT_W : MENU_W;
+}
 
 /** The path sits in this compact navbar inside the content rectangle. */
 export const NAVBAR_H = 48;
@@ -102,8 +111,9 @@ export function paintPanelBox(
 export function paintContentShell(
   ctx: CanvasRenderingContext2D, s: number,
   X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  width = CONTENT_W,
 ): void {
-  paintPanelBox(ctx, X(0), Y(0), U(CONTENT_W), U(MENU_H), s);
+  paintPanelBox(ctx, X(0), Y(0), U(width), U(MENU_H), s);
 }
 
 export interface NavbarCrumb {
@@ -120,12 +130,34 @@ export function paintNavbar(
   ctx: CanvasRenderingContext2D, s: number,
   X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
   crumbs: readonly NavbarCrumb[], hover: string | null, accent: Rgb,
+  width = CONTENT_W,
+  /** Right-aligned readout (e.g. the player's sat balance) in the navbar. */
+  rightText: string | null = null,
 ): UiRegion[] {
   const regions: UiRegion[] = [];
-  if (crumbs.length === 0) return regions;
   const accentText = readableAccent(accent);
+  // Right-aligned readout first: the crumbs shrink so they never overlap it.
+  let rightW = 0;
+  if (rightText) {
+    ctx.save();
+    ctx.font = `700 ${U(13)}px ${UI_FONT}`;
+    rightW = ctx.measureText(rightText).width;
+    ctx.restore();
+  }
+  if (crumbs.length === 0) {
+    if (rightText) {
+      ctx.save();
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'right';
+      ctx.font = `700 ${U(13)}px ${UI_FONT}`;
+      ctx.fillStyle = cssColor(accentText);
+      ctx.fillText(rightText, X(width - 24), Y(NAVBAR_H / 2));
+      ctx.restore();
+    }
+    return regions;
+  }
   const sep = '  ›  ';
-  const maxW = U(CONTENT_W - 48);
+  const maxW = Math.max(U(40), U(width - 48) - (rightText ? rightW + U(20) : 0));
   ctx.save();
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
@@ -143,9 +175,9 @@ export function paintNavbar(
   }
   // Navbar band inside the content rectangle (left-aligned, like a navbar).
   ctx.fillStyle = 'rgba(4, 8, 14, 0.42)';
-  ctx.fillRect(X(0), Y(0), U(CONTENT_W), U(NAVBAR_H));
+  ctx.fillRect(X(0), Y(0), U(width), U(NAVBAR_H));
   ctx.fillStyle = 'rgba(255,255,255,0.10)';
-  ctx.fillRect(X(0), Y(NAVBAR_H), U(CONTENT_W), Math.max(1, s));
+  ctx.fillRect(X(0), Y(NAVBAR_H), U(width), Math.max(1, s));
   let x = X(24);
   const y = Y(NAVBAR_H / 2);
   for (let i = 0; i < crumbs.length; i++) {
@@ -170,6 +202,13 @@ export function paintNavbar(
       ctx.fillText(sep, x, y);
       x += sepW;
     }
+  }
+  if (rightText) {
+    ctx.textAlign = 'right';
+    ctx.font = `700 ${U(13)}px ${UI_FONT}`;
+    ctx.fillStyle = cssColor(accentText);
+    ctx.fillText(rightText, X(width - 24), y);
+    ctx.textAlign = 'left';
   }
   ctx.restore();
   return regions;
@@ -221,18 +260,21 @@ export function paintActionColumn(
     ctx.fillRect(X(x0), Y(0), U(ACTIONS_W), U(MENU_H));
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
     ctx.fillRect(X(x0), Y(0), Math.max(1, s), U(MENU_H));
-    // Compact header: label on the left, fullscreen toggle on the right.
+    // Compact header: label on its own line above the two toggles.
     ctx.font = `700 ${U(11)}px ${UI_FONT}`;
     ctx.fillStyle = cssColor(accentText, 0.55);
-    ctx.fillText('ACTIONS', X(x0 + 12), Y(30));
+    ctx.fillText('ACTIONS', X(x0 + 12), Y(14));
   }
 
-  // Fullscreen toggle, top right of the column (present on every screen).
+  // Fullscreen + VR toggles, top right of the column (present on every screen).
   const fsSize = U(44);
+  const btnY = Y(22);
   const fsX = X(x0 + ACTIONS_W - 60);
-  const fsY = Y(6);
-  paintFullscreenButton(ctx, fsX, fsY, fsSize, s, spec.hover === FS_REGION, accent);
-  regions.push({ id: FS_REGION, x: fsX, y: fsY, w: fsSize, h: fsSize });
+  paintFullscreenButton(ctx, fsX, btnY, fsSize, s, spec.hover === FS_REGION, accent);
+  regions.push({ id: FS_REGION, x: fsX, y: btnY, w: fsSize, h: fsSize });
+  const vrX = X(x0 + ACTIONS_W - 60 - 44 - 8);
+  paintVrButton(ctx, vrX, btnY, fsSize, s, spec.hover === VR_REGION, accent);
+  regions.push({ id: VR_REGION, x: vrX, y: btnY, w: fsSize, h: fsSize });
 
   if (spec.chrome !== false) {
     // Square tiles: each action is exactly the column's width and height
@@ -240,7 +282,7 @@ export function paintActionColumn(
     const bx = X(x0);
     const bw = U(ACTIONS_W);
     const bh = ACTIONS_W;
-    let y = 56;
+    let y = 74;
 
     const tile = (a: ActionSpec, primary: boolean): void => {
       const disabled = a.disabled === true;

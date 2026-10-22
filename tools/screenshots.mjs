@@ -38,7 +38,7 @@ const SHOTS = [
   ['/briefing/tt-easy-01', 1500, 'briefing'],
   ['/game/tt-easy-01', 3500, 'game-tt'],
   ['/game/ctf-easy', 6000, 'game-ctf'],
-  ['/options', 1200, 'options'],
+  ['/settings', 1200, 'settings'],
   ['/about', 1200, 'about'],
   ['/victory/tt-easy-01', 1500, 'victory'],
   ['/defeat/ctf-easy', 1500, 'defeat'],

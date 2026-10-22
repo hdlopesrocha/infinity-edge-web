@@ -105,8 +105,8 @@ try {
   step('briefing reached through real clicks', { hit: p.hit, ...briefing });
 
   // ---------------------------------------------------------------- options
-  await page.evaluate(`location.hash = '#/options'`);
-  await page.evaluate(`(async () => { ${HELPERS} await until(() => R().uiOverlay.regions.some((r) => r.id === 'row:billboards') && location.hash.includes('options'), 30000); return true; })()`);
+  await page.evaluate(`location.hash = '#/settings'`);
+  await page.evaluate(`(async () => { ${HELPERS} await until(() => R().uiOverlay.regions.some((r) => r.id === 'row:billboards') && location.hash.includes('settings'), 30000); return true; })()`);
   const before = await page.evaluate('window.__ieStore.options.billboards');
   p = await clickRegion(page, 'row:billboards', 'options checkbox');
   const afterCheck = await page.evaluate('window.__ieStore.options.billboards');
@@ -169,7 +169,7 @@ try {
   step('options save click', { hit: p.hit, ...saved });
   // Back is LIFO: the save returns to wherever the options screen was opened
   // from (here the briefing), never staying on the options screen.
-  if (saved.hash.includes('options')) throw new Error('save did not leave the options screen');
+  if (saved.hash.includes('settings')) throw new Error('save did not leave the options screen');
   if (!saved.stored) throw new Error('save did not persist the options');
   if (!saved.dwell) throw new Error('save did not persist the VR dwell setting');
   if (saved.playerColor !== '#ff8000') throw new Error('save did not persist the player colour');
@@ -217,7 +217,7 @@ try {
   await page.evaluate(`(async () => {
     ${HELPERS}
     await until(() => window.__ieStore.paused
-      && R().uiOverlay && R().uiOverlay.regions.some((r) => r.id === 'pause:resume'), 10000);
+      && R().uiOverlay && R().uiOverlay.regions.some((r) => r.id === 'primary'), 10000);
     pump(2);
     return true;
   })()`);
@@ -235,10 +235,10 @@ try {
   if (pauseState.touchLayer || pauseState.cornerButtons || pauseState.fullscreenButton) {
     throw new Error('game HUD/chrome is still rendered while paused');
   }
-  if (!pauseState.regions.includes('pause:resume')) throw new Error('the pause menu has no resume icon');
+  if (!pauseState.regions.includes('primary')) throw new Error('the pause menu has no resume action');
 
   // The pause options screen is the same WebGL Options UI, not a DOM form.
-  p = await clickRegion(page, 'pause:options', 'pause options');
+  p = await clickRegion(page, 'pause:settings', 'pause settings');
   await page.evaluate(`(async () => {
     ${HELPERS}
     await until(() => R().uiOverlay.regions.some((r) => r.id === 'row:username'), 10000);
@@ -252,13 +252,13 @@ try {
   })`);
   step('pause options screen', { hit: p.hit, ...pauseOptions });
   if (!pauseOptions.paused || !pauseOptions.hash.includes('/game/') || !pauseOptions.region) {
-    throw new Error('pause OPTIONS did not open the WebGL settings in-place');
+    throw new Error('pause SETTINGS did not open the WebGL settings in-place');
   }
   p = await clickRegion(page, 'back', 'pause options back');
-  await page.evaluate(`(async () => { ${HELPERS} await until(() => R().uiOverlay.regions.some((r) => r.id === 'pause:resume'), 10000); pump(2); return true; })()`);
+  await page.evaluate(`(async () => { ${HELPERS} await until(() => R().uiOverlay.regions.some((r) => r.id === 'primary'), 10000); pump(2); return true; })()`);
   step('pause options back', { hit: p.hit, paused: await page.evaluate('window.__ieStore.paused') });
 
-  p = await clickRegion(page, 'pause:resume', 'pause resume');
+  p = await clickRegion(page, 'primary', 'pause resume');
   await page.evaluate(`(async () => { ${HELPERS} await until(() => !window.__ieStore.paused, 10000); pump(2); return true; })()`);
   const resumed = await page.evaluate(`({
     paused: window.__ieStore.paused,

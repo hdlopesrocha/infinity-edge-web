@@ -51,6 +51,11 @@ export interface ScreenUi {
    * so a static menu is not repainted every frame.
    */
   syncAccent?(now: number): void;
+  /**
+   * Optional action-column switch for the generic UI plane. Menus leave it on;
+   * the game/HUD scene turns it off and the content expands into the column.
+   */
+  setActions?(on: boolean): void;
 }
 
 const VERT = `#version 300 es

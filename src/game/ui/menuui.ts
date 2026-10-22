@@ -11,17 +11,25 @@
 import { nextUiVersion } from '../../engine/overlay';
 import { COLOR_PALETTE, DEFAULT_PLAYER_COLOR, normalizeHexColor } from '../colors';
 import type { Rgb } from '../colors';
+import { satsLabel } from '../wallet';
+import { store } from '../store';
+import { optionLabel, optionListHeight, paintChip, paintOptionList } from './rosterui';
 import { FS_REGION } from './fullscreen';
+import { VR_REGION } from './vrchrome';
 import { cssColor, accentMoved, currentPlayerAccent, readableAccent } from './theme';
 import { wordmarkFont } from '../fonts';
 import {
-  UI_FONT as FONT, CONTENT_CX, MENU_H, MENU_W, PANEL_W, PANEL_Y, PANEL_H, SINGLE_W,
-  leftPanelX, singlePanelX, paintActionColumn, paintContentShell, paintNavbar, contentFocusRect,
+  UI_FONT as FONT, CONTENT_CX, CONTENT_MARGIN, CONTENT_W, CONTENT_X, MENU_W,
+  PANEL_GAP, PANEL_Y, PANEL_H, contentWidth, paintActionColumn, paintContentShell,
+  paintNavbar, contentFocusRect,
 } from './layout';
+import type { ActionSpec } from './layout';
 import type { ScreenUi } from '../../engine/overlay';
 
 const DW = 1280;
 const DH = 720;
+/** Height reserved for the settings-style tab bar above the panels (design px). */
+const TAB_H = 44;
 const TEX_BASE = (import.meta.env.BASE_URL + 'assets/textures/').replace(/([^:])\/\//g, '$1/');
 
 export interface MenuIconItem {
@@ -57,7 +65,29 @@ export type MenuRow =
   | { kind: 'check'; id: string; label: string; value: boolean }
   | { kind: 'text'; id: string; label: string; value: string; maxLength: number }
   | { kind: 'color'; id: string; label: string; value: string }
-  | { kind: 'button'; id: string; label: string; value?: string }
+  | {
+      /** A labelled dropdown: `label` on the left, a value chip on the right. */
+      kind: 'select';
+      id: string;
+      label: string;
+      value: string;
+      options: readonly { value: string; label: string }[];
+    }
+  | { kind: 'button'; id: string; label: string; value?: string; disabled?: boolean }
+  | {
+      /**
+       * One compact agent row: the bot's name plus inline AI and TEAM
+       * dropdowns and a remove control. Regions: `agent:<id>:ai|team|remove`.
+       */
+      kind: 'agent';
+      id: string;
+      name: string;
+      ai: string;
+      aiOptions: readonly { value: string; label: string }[];
+      team: string;
+      teamOptions: readonly { value: string; label: string }[];
+      removable: boolean;
+    }
   | { kind: 'info'; text: string; small?: boolean };
 
 export interface MenuPanel {
@@ -71,9 +101,18 @@ export interface MenuPanel {
   footer?: string;
 }
 
+/** One tab in the tab bar painted above the content panels. */
+export interface MenuTab {
+  id: string;
+  label: string;
+  active: boolean;
+}
+
 export interface MenuScreen {
   /** Path crumb used when the host does not supply a trail (unknown route / boot chrome). */
   title: string;
+  /** Optional tab bar above the panels (Options: Settings / Controls). */
+  tabs?: MenuTab[];
   left?: MenuPanel;
   right?: MenuPanel;
   /** Boot/start wordmark text, painted in the original Airstrike face. */
@@ -82,12 +121,19 @@ export interface MenuScreen {
   loading?: { done: number; total: number } | null;
   /** Primary corner button (save/start/menu); null = none. */
   primary?: { id: string; label: string };
+  /** Secondary actions in the right column (pause options, refresh, …). */
+  actions?: ActionSpec[];
   /** Corner back label (exit at the root, else back). */
   backLabel?: string;
   /** No panels at all (unknown route: only the chrome). */
   empty?: boolean;
   /** Splash screens (boot/engine/start) draw no corner buttons at all. */
   hideChrome?: boolean;
+  /**
+   * Whether the generic UI plane reserves the right action column. Menus keep
+   * it on; the in-game HUD switches it off programmatically.
+   */
+  showActions?: boolean;
 }
 
 export interface MenuCallbacks {
@@ -133,6 +179,13 @@ export class MenuUi implements ScreenUi {
   private dragging: string | null = null;
   private focus: string | null = null;
   private colorPicker: { id: string; label: string; value: string } | null = null;
+  /** Open dropdown for an agent AI/TEAM chip (generic list select). */
+  private dropdown: {
+    id: string;
+    options: readonly { value: string; label: string }[];
+    value: string;
+    anchor: Region;
+  } | null = null;
   private caretOn = true;
   private scroll = 0;
   private contentBottom = 0;
@@ -143,11 +196,14 @@ export class MenuUi implements ScreenUi {
   private accentText: Rgb = readableAccent(this.accent);
   private paintedAccent: Rgb | null = null;
   private lastAccentCheck = 0;
+  /** Generic UI plane switch: menus on, the game HUD off. */
+  private showActions = true;
 
   constructor(screen: MenuScreen, cb: MenuCallbacks, onImageLoad: () => void) {
     this.screen = screen;
     this.cb = cb;
     this.onImageLoad = onImageLoad;
+    this.showActions = screen.showActions !== false;
   }
 
   setScreen(screen: MenuScreen): void {
@@ -158,13 +214,26 @@ export class MenuUi implements ScreenUi {
     const dragging = this.dragging;
     const picker = this.colorPicker;
     this.screen = screen;
+    this.showActions = screen.showActions !== false;
     this.scroll = 0;
     this.hover = null;
     this.pressed = null;
     this.dragging = dragging && this.rowById(dragging) ? dragging : null;
     this.focus = focus && this.rowById(focus) ? focus : null;
     if (picker && !this.rowById(picker.id)) this.colorPicker = null;
+    if (this.dropdown) {
+      const botId = this.dropdown.id.replace(/^agent:/, '').split(':')[0];
+      if (!this.rowById(botId)) this.dropdown = null;
+    }
     this.bump();
+  }
+
+  /** Toggle the shared action column without rebuilding the screen. */
+  setActions(on: boolean): void {
+    if (this.showActions !== on) {
+      this.showActions = on;
+      this.bump();
+    }
   }
 
   setCrumbs(crumbs: { label: string; current: boolean }[]): void {
@@ -247,6 +316,7 @@ export class MenuUi implements ScreenUi {
     const X = (x: number): number => ox + x * s;
     const Y = (y: number): number => oy + y * s;
     const U = (u: number): number => u * s;
+    const contentW = contentWidth(this.showActions);
     this.regions = [];
     this.contentBottom = 0;
     ctx.clearRect(0, 0, w, h);
@@ -262,34 +332,51 @@ export class MenuUi implements ScreenUi {
       // column, from the top edge to the bottom. The path navbar lives inside
       // it at the top; screens never draw nested panel boxes, so the chrome is
       // identical to the lobby and room.
-      paintContentShell(ctx, s, X, Y, U);
-      this.paintPath(ctx, s, X, Y, U);
+      paintContentShell(ctx, s, X, Y, U, contentW);
+      this.paintPath(ctx, s, X, Y, U, contentW);
     }
 
     if (!this.screen.empty && !this.screen.wordmark) {
+      // The generic plane can hide the action column (game/HUD mode). The
+      // content then expands into the freed eighth instead of leaving a hole.
+      const hasTabs = !!(this.screen.tabs && this.screen.tabs.length > 0);
+      if (hasTabs) this.paintTabs(ctx, s, X, Y, U);
+      const panelY = PANEL_Y + (hasTabs ? TAB_H : 0);
+      const panelH = PANEL_H - (hasTabs ? TAB_H : 0);
+      const panelW = (contentW - CONTENT_MARGIN * 2 - PANEL_GAP) / 2;
+      const singleW = contentW - CONTENT_MARGIN * 2;
+      const leftX = (index: 0 | 1): number =>
+        CONTENT_X + CONTENT_MARGIN + index * (panelW + PANEL_GAP);
+      const singleX = (width: number): number =>
+        CONTENT_X + Math.round((contentW - width) / 2);
       const both = !!(this.screen.left && this.screen.right);
       const columns: Column[] = [];
       if (both) {
-        columns.push({ panel: this.screen.left!, x: leftPanelX(0), y: PANEL_Y, w: PANEL_W, h: PANEL_H });
-        columns.push({ panel: this.screen.right!, x: leftPanelX(1), y: PANEL_Y, w: PANEL_W, h: PANEL_H });
+        columns.push({ panel: this.screen.left!, x: leftX(0), y: panelY, w: panelW, h: panelH });
+        columns.push({ panel: this.screen.right!, x: leftX(1), y: panelY, w: panelW, h: panelH });
       } else {
         const only = this.screen.left ?? this.screen.right;
-        if (only) columns.push({ panel: only, x: singlePanelX(SINGLE_W), y: PANEL_Y, w: SINGLE_W, h: PANEL_H });
+        if (only) columns.push({ panel: only, x: singleX(singleW), y: panelY, w: singleW, h: panelH });
       }
       for (const col of columns) this.paintPanel(ctx, col, s, X, Y, U);
     }
 
-    // Right action column (1/8 of the width): primary + back, plus the
-    // fullscreen toggle. Boot/splash screens keep only the toggle.
-    this.regions.push(...paintActionColumn(ctx, s, X, Y, U, {
-      primary: !this.screen.hideChrome && this.screen.primary
-        ? { id: 'primary', label: this.screen.primary.label } : undefined,
-      back: this.screen.hideChrome ? undefined : { id: 'back', label: this.screen.backLabel ?? 'back' },
-      hover: this.hover,
-      chrome: !this.screen.hideChrome,
-      accent: this.accent,
-    }));
+    // Right action column (1/8 of the width): primary + context actions +
+    // back, plus the fullscreen toggle. Boot/splash screens keep only the
+    // toggle; the game/HUD mode toggles the whole column off.
+    if (this.showActions) {
+      this.regions.push(...paintActionColumn(ctx, s, X, Y, U, {
+        primary: !this.screen.hideChrome && this.screen.primary
+          ? { id: 'primary', label: this.screen.primary.label } : undefined,
+        actions: this.screen.hideChrome ? undefined : this.screen.actions,
+        back: this.screen.hideChrome ? undefined : { id: 'back', label: this.screen.backLabel ?? 'back' },
+        hover: this.hover,
+        chrome: !this.screen.hideChrome,
+        accent: this.accent,
+      }));
+    }
     if (this.colorPicker) this.paintColorPicker(ctx, s, X, Y, U);
+    if (this.dropdown) this.paintDropdown(ctx, s, X, Y, U);
   }
 
   /**
@@ -299,11 +386,14 @@ export class MenuUi implements ScreenUi {
   private paintPath(
     ctx: CanvasRenderingContext2D, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+    width = CONTENT_W,
   ): void {
     const crumbs = this.crumbs.length
       ? this.crumbs
       : this.screen.title ? [{ label: this.screen.title, current: true }] : [];
-    this.regions.push(...paintNavbar(ctx, s, X, Y, U, crumbs, this.hover, this.accent));
+    this.regions.push(...paintNavbar(
+      ctx, s, X, Y, U, crumbs, this.hover, this.accent, width, satsLabel(store.sats),
+    ));
   }
 
   /** Palette modal for a `color` row. The swatch regions are published after
@@ -385,6 +475,36 @@ export class MenuUi implements ScreenUi {
     ctx.textAlign = 'left';
   }
 
+  /** Generic list dropdown for an agent AI/TEAM chip. */
+  private paintDropdown(
+    ctx: CanvasRenderingContext2D, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  ): void {
+    const dd = this.dropdown;
+    if (!dd) return;
+    // Backdrop: a click outside the list closes it and blocks the rows below.
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, 0, this.logical.w, this.logical.h);
+    this.regions.push({ id: 'dropdown:backdrop', x: 0, y: 0, w: this.logical.w, h: this.logical.h });
+    const rowH = U(26);
+    const pad = U(4);
+    const h = optionListHeight(dd.options.length, rowH, pad);
+    const w = Math.max(dd.anchor.w, U(150));
+    let x = dd.anchor.x;
+    if (x + w > this.logical.w) x = Math.max(0, this.logical.w - w);
+    let top = dd.anchor.y + dd.anchor.h + U(4);
+    if (top + h > this.logical.h) top = Math.max(0, dd.anchor.y - h - U(4));
+    const rects = paintOptionList({
+      ctx, x, y: top, w, h, options: dd.options, value: dd.value,
+      hoverPrefix: 'dropdown:', hover: this.hover,
+      rowH, padding: pad, fontPx: U(13), font: FONT,
+      accent: this.accent, accentText: this.accentText, lineWidth: s,
+    });
+    rects.forEach((r, i) => {
+      this.regions.push({ id: 'dropdown:' + i, x: r.x, y: r.y, w: r.w, h: r.h });
+    });
+  }
+
   private paintWordmark(
     ctx: CanvasRenderingContext2D, s: number,
     X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
@@ -459,6 +579,42 @@ export class MenuUi implements ScreenUi {
       ctx.fillText(total > 0 ? `${done} / ${total}` : `${done} / …`, X(CONTENT_CX), by + U(28));
       ctx.textAlign = 'left';
     }
+  }
+
+  /** Tab bar above the content panels (Options: Settings / Controls). */
+  private paintTabs(
+    ctx: CanvasRenderingContext2D, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  ): void {
+    const tabs = this.screen.tabs ?? [];
+    if (tabs.length === 0) return;
+    const y = PANEL_Y;
+    const h = TAB_H - 12;
+    let x = CONTENT_X + CONTENT_MARGIN;
+    ctx.textAlign = 'center';
+    for (const tab of tabs) {
+      ctx.font = `700 ${U(15)}px ${FONT}`;
+      const tw = Math.max(150, ctx.measureText(tab.label).width / s + 52);
+      const bx = X(x), by = Y(y), bw = U(tw), bh = U(h);
+      const hot = this.hover === tab.id;
+      if (tab.active) {
+        ctx.fillStyle = cssColor(this.accent, hot ? 0.34 : 0.24);
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = cssColor(this.accent, 0.9);
+      } else {
+        ctx.fillStyle = hot ? 'rgba(14,20,30,0.8)' : 'rgba(10,14,22,0.55)';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      }
+      ctx.lineWidth = Math.max(1, s);
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.font = `700 ${U(15)}px ${FONT}`;
+      ctx.fillStyle = tab.active ? cssColor(this.accentText) : 'rgba(255,255,255,0.65)';
+      ctx.fillText(tab.label, X(x + tw / 2), Y(y + h / 2 + 1));
+      this.regions.push({ id: tab.id, x: bx, y: by, w: bw, h: bh });
+      x += tw + 8;
+    }
+    ctx.textAlign = 'left';
   }
 
   private paintPanel(
@@ -757,19 +913,86 @@ export class MenuUi implements ScreenUi {
         const bh = U(Math.max(32, Math.min(44, rowH - 10)));
         const bw = U(col.w - 48);
         const bx = X(col.x + 24);
-        const hovered = this.hover === 'row:' + row.id;
-        ctx.fillStyle = hovered ? cssColor(this.accent, 0.18) : 'rgba(10,14,22,0.72)';
+        const disabled = row.disabled === true;
+        const hovered = !disabled && this.hover === 'row:' + row.id;
+        ctx.fillStyle = disabled
+          ? 'rgba(10,14,22,0.4)'
+          : hovered ? cssColor(this.accent, 0.18) : 'rgba(10,14,22,0.72)';
         ctx.fillRect(bx, Y(y) - bh / 2, bw, bh);
-        ctx.strokeStyle = cssColor(this.accent, hovered ? 0.55 : 0.28);
+        ctx.strokeStyle = disabled
+          ? 'rgba(255,255,255,0.1)'
+          : cssColor(this.accent, hovered ? 0.55 : 0.28);
         ctx.strokeRect(bx, Y(y) - bh / 2, bw, bh);
         ctx.font = `700 ${U(Math.max(13, fs - 1))}px ${FONT}`;
         ctx.textAlign = 'center';
-        ctx.fillStyle = cssColor(this.accentText);
+        ctx.fillStyle = disabled ? 'rgba(255,255,255,0.35)' : cssColor(this.accentText);
         const text = row.value ? `${row.label}  ·  ${row.value}` : row.label;
         ctx.fillText(text, bx + bw / 2, Y(y) + 1);
         ctx.textAlign = 'left';
-        this.regions.push({ id: 'row:' + row.id, x: bx, y: Y(y) - bh / 2, w: bw, h: bh });
+        if (!disabled) {
+          this.regions.push({ id: 'row:' + row.id, x: bx, y: Y(y) - bh / 2, w: bw, h: bh });
+        }
         return y + rowH + 6;
+      }
+      case 'select': {
+        ctx.font = `${U(fs)}px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,255,255,0.72)';
+        ctx.fillText(row.label, labelX, Y(y));
+        const bh = U(Math.max(24, Math.min(30, rowH - 8)));
+        const bw = U(160);
+        const bx = valueRight - bw;
+        paintChip({
+          ctx, x: bx, y: Y(y) - bh / 2, w: bw, h: bh,
+          text: optionLabel(row.options, row.value),
+          hovered: this.hover === 'row:' + row.id,
+          accent: this.accent, accentText: this.accentText, lineWidth: s,
+          fontPx: U(Math.max(12, Math.min(14, rowH * 0.32))), font: FONT,
+        });
+        this.regions.push({ id: 'row:' + row.id, x: bx, y: Y(y) - bh / 2, w: bw, h: bh });
+        return y + rowH;
+      }
+      case 'agent': {
+        const bh = U(Math.max(24, Math.min(30, rowH - 8)));
+        const chipFont = Math.max(12, Math.min(14, rowH * 0.32));
+        ctx.font = `700 ${U(fs)}px ${FONT}`;
+        ctx.fillStyle = cssColor(this.accentText);
+        ctx.fillText(row.name, labelX, Y(y));
+        const removeW = U(24);
+        const chipW = U(122);
+        const gap = U(8);
+        const removeX = valueRight - removeW;
+        const teamX = removeX - gap - chipW;
+        const aiX = teamX - gap - chipW;
+        const chip = (x: number, w: number, text: string, cid: string): void => {
+          paintChip({
+            ctx, x, y: Y(y) - bh / 2, w, h: bh, text,
+            hovered: this.hover === cid,
+            accent: this.accent, accentText: this.accentText, lineWidth: s,
+            fontPx: U(chipFont), font: FONT,
+          });
+          this.regions.push({ id: cid, x, y: Y(y) - bh / 2, w, h: bh });
+        };
+        const aiLabel = row.aiOptions.find((o) => o.value === row.ai)?.label ?? row.ai;
+        const teamLabel = row.teamOptions.find((o) => o.value === row.team)?.label ?? row.team;
+        chip(aiX, chipW, `AI: ${aiLabel}`, `agent:${row.id}:ai`);
+        chip(teamX, chipW, `TEAM: ${teamLabel}`, `agent:${row.id}:team`);
+        if (row.removable) {
+          const hovered = this.hover === `agent:${row.id}:remove`;
+          ctx.fillStyle = hovered ? 'rgba(130,36,28,0.6)' : 'rgba(70,18,18,0.42)';
+          ctx.fillRect(removeX, Y(y) - bh / 2, removeW, bh);
+          ctx.strokeStyle = 'rgba(255,122,82,0.5)';
+          ctx.lineWidth = Math.max(1, s);
+          ctx.strokeRect(removeX, Y(y) - bh / 2, removeW, bh);
+          ctx.font = `700 ${U(15)}px ${FONT}`;
+          ctx.fillStyle = '#ffb0a0';
+          ctx.textAlign = 'center';
+          ctx.fillText('×', removeX + removeW / 2, Y(y) + 1);
+          ctx.textAlign = 'left';
+          this.regions.push({
+            id: `agent:${row.id}:remove`, x: removeX, y: Y(y) - bh / 2, w: removeW, h: bh,
+          });
+        }
+        return y + rowH;
       }
       case 'info': {
         ctx.font = `${U(row.small ? 13 : 14)}px ${FONT}`;
@@ -853,6 +1076,14 @@ export class MenuUi implements ScreenUi {
 
   /** Keyboard: returns true when the menu consumed the key. */
   key(e: KeyboardEvent): boolean {
+    if (this.dropdown) {
+      if (e.key === 'Escape') {
+        this.dropdown = null;
+        this.bump();
+      }
+      // Modal: never let the keys reach the screen behind the list.
+      return true;
+    }
     if (this.colorPicker) {
       if (e.key === 'Escape') this.closeColorPicker();
       // Modal: never let the keys reach the screen behind the palette.
@@ -930,6 +1161,49 @@ export class MenuUi implements ScreenUi {
   }
 
   private activate(id: string): void {
+    if (id === 'dropdown:backdrop') {
+      this.dropdown = null;
+      this.hover = null;
+      this.bump();
+      return;
+    }
+    if (id.startsWith('dropdown:')) {
+      const i = Number(id.slice('dropdown:'.length));
+      const dd = this.dropdown;
+      if (dd && dd.options[i]) {
+        const value = dd.options[i].value;
+        this.dropdown = null;
+        this.hover = null;
+        this.bump();
+        this.cb.onChange(dd.id, value);
+      }
+      return;
+    }
+    // Agent row: the AI/TEAM chips open a dropdown, the × removes the bot.
+    const agentHit = /^agent:([^:]+):(ai|team|remove)$/.exec(id);
+    if (agentHit) {
+      const botId = agentHit[1];
+      const field = agentHit[2];
+      if (field === 'remove') {
+        this.cb.onSelect(id);
+        return;
+      }
+      const row = this.rowById(botId);
+      if (row?.kind === 'agent') {
+        const anchor = this.regions.find((r) => r.id === id);
+        if (anchor) {
+          this.dropdown = {
+            id,
+            options: field === 'ai' ? row.aiOptions : row.teamOptions,
+            value: field === 'ai' ? row.ai : row.team,
+            anchor,
+          };
+          this.hover = null;
+          this.bump();
+        }
+      }
+      return;
+    }
     if (id === 'color:backdrop' || id === 'color:close') {
       this.closeColorPicker();
       return;
@@ -944,6 +1218,10 @@ export class MenuUi implements ScreenUi {
     }
     if (id === FS_REGION) {
       this.cb.onSelect('fs');
+      return;
+    }
+    if (id === VR_REGION) {
+      this.cb.onSelect('vr-toggle');
       return;
     }
     if (id === 'back') {
@@ -963,7 +1241,14 @@ export class MenuUi implements ScreenUi {
       const row = this.rowById(rowId);
       if (row?.kind === 'check') this.cb.onChange(rowId, !row.value);
       else if (row?.kind === 'button') this.cb.onSelect(rowId);
-      else if (row?.kind === 'color') {
+      else if (row?.kind === 'select') {
+        const anchor = this.regions.find((r) => r.id === id);
+        if (anchor) {
+          this.dropdown = { id: rowId, options: row.options, value: row.value, anchor };
+          this.hover = null;
+          this.bump();
+        }
+      } else if (row?.kind === 'color') {
         this.colorPicker = { id: row.id, label: row.label, value: row.value };
         this.hover = null;
         this.bump();

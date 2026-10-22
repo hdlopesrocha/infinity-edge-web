@@ -16,6 +16,8 @@ import type { NoiseTexture } from './noise';
 import { Post } from './post';
 import { HudOverlay } from './hud3d';
 import { focusBorderStrips } from './focusborder';
+import { PanelBorder } from './vrpanel';
+import type { PlaneQuad } from './vrpanel';
 import { ScreenOverlay } from './overlay';
 import type { ScreenUi } from './overlay';
 import type { store } from '../game/store';
@@ -67,15 +69,27 @@ export class Renderer {
    * the active ScreenUi supplies its painted content rectangle instead.
    */
   focusRect: { x: number; y: number; w: number; h: number } | null = null;
-  /** Player/team colour used by the focus veil. Matches the human team until
+  /**
+   * Optional projected silhouette of a world-space panel, in the current
+   * view's UV. The XR driver supplies this for the oblique menu panel so the
+   * focus stroke follows its trapezoid instead of the axis-aligned bounding
+   * box used for the blur region. Null keeps the flat/strips path.
+   */
+  focusQuad: PlaneQuad | null = null;
+  /** Player/team colour used by the focus veil. Matches team1 until
    *  a live ship supplies its own colour. */
   focusTint: [number, number, number] = [64 / 255, 224 / 255, 208 / 255];
   /** UV height over which the veil ramps from the UI edge to full strength. */
   focusFeather = 0.16;
-  /** 0..1 overall veil strength (menus/game use the default). */
-  focusStrength = 0.9;
+  /** 0..1 overall veil strength. 0: no blur/tint outside the 2D plane. */
+  focusStrength = 0;
   /** Player-colour boundary stroke just inside the sharp UI island, CSS px. */
   focusBorderCssPx = 2;
+  /** Draw the player-colour focus frame (flat UI/HUD or immersive menu). */
+  focusBorderEnabled = true;
+  /** XR: never fall back to the flat design rectangle when the projected
+   *  plane has no focus island (looking away), or the frame jumps off it. */
+  suppressUiFocusFallback = false;
   /** Composite framebuffer: null = the canvas; WebXR sets its base layer here. */
   presentFbo: WebGLFramebuffer | null = null;
   /** Pixel size of the presentation target. null = the canvas; WebXR sets its
@@ -89,6 +103,7 @@ export class Renderer {
   /** Stage-5 overlay, drawn into the UI target ahead of the final pass. */
   private hudOverlay: HudOverlay | null = null;
   private screenOverlay: ScreenOverlay | null = null;
+  private panelBorder: PanelBorder | null = null;
   /**
    * Full-screen UI layer, composited over the HUD in the UI target. The
    * multiplayer lobby sets this (no DOM UI on that route); null everywhere
@@ -300,11 +315,14 @@ export class Renderer {
       zoom: this.renderOptions.zoom,
       zoomCenterX: this.renderOptions.zoomCenterX,
       zoomCenterY: this.renderOptions.zoomCenterY,
-      focus: this.focusRect ?? this.uiFocusRect(),
+      focus: this.focusRect ?? (this.suppressUiFocusFallback ? null : this.uiFocusRect()),
+      focusQuad: this.focusQuad,
       focusTint: this.focusTint,
       focusFeather: this.focusFeather,
       focusStrength: this.focusStrength,
-      focusBorderPx: this.focusBorderPx(),
+      // A projected quad is stroked after the panel is drawn; the composite
+      // pass only needs the blur island, not a second axis-aligned border.
+      focusBorderPx: this.focusBorderEnabled && !this.focusQuad ? this.focusBorderPx() : 0,
     });
   }
 
@@ -328,14 +346,22 @@ export class Renderer {
     fbo: WebGLFramebuffer | null = this.presentFbo,
     view: { x: number; y: number; w: number; h: number } | null = this.viewport,
   ): void {
-    const rect = this.focusRect ?? this.uiFocusRect();
-    if (!rect || this.focusStrength <= 0) return;
+    if (!this.focusBorderEnabled) return;
     const bounds = this.presentBounds ?? {
       w: this.gl.drawingBufferWidth,
       h: this.gl.drawingBufferHeight,
     };
     const vp = view ?? { x: 0, y: 0, w: bounds.w, h: bounds.h };
     if (vp.w <= 0 || vp.h <= 0) return;
+    // Oblique world-space panel: stroke its four projected edges exactly.
+    if (this.focusQuad) {
+      if (!this.panelBorder) this.panelBorder = new PanelBorder(this.gl);
+      this.panelBorder.draw(fbo, vp, this.focusQuad, this.focusTint, this.focusBorderPx());
+      return;
+    }
+    const rect = this.focusRect
+      ?? (this.suppressUiFocusFallback ? null : this.uiFocusRect());
+    if (!rect) return;
     // Keep the stroke wholly inside the focus rectangle. Values stay
     // unclamped here: an edge that is off-viewport must not turn into a line
     // along the viewport border.
@@ -403,7 +429,15 @@ export class Renderer {
       if (dt > 0) {
         this.frameDtMs = dt;
         if (!this.xrActive) this.sampleFrame(dt);
-        this.onFrame?.(dt);
+        try {
+          this.onFrame?.(dt);
+        } catch (e) {
+          // A single bad frame must never kill the loop: without this, the
+          // exception would skip the requestAnimationFrame below and the
+          // renderer would freeze until the page was reloaded (a finished
+          // match would then never hand over to its result screen).
+          console.error('[render] frame failed:', e);
+        }
         this.frames++;
         this.fpsT += dt / 1000;
         if (this.fpsT >= 0.5) {
@@ -427,5 +461,7 @@ export class Renderer {
     this.stop();
     this.unwatch?.();
     this.resizeObs?.disconnect();
+    this.panelBorder?.dispose();
+    this.panelBorder = null;
   }
 }

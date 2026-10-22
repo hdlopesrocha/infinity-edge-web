@@ -4,9 +4,18 @@ import App from './App.vue';
 import { router } from './router';
 import { audio } from './game/audio';
 import { initChannel } from './game/netclient';
+import { store } from './game/store';
+import { armBackGuard, installBackGuard } from './game/backguard';
+import { startGamepadWatch } from './game/gamepadwatch';
 import './style.css';
 
 createApp(App).use(router).mount('#app');
+// Android maps a controller B to system Back; keep it from closing the app.
+// Wait for the router's first navigation, then arm the bottom sentinel so a
+// Back press always has a same-document entry to consume.
+installBackGuard();
+void router.isReady().then(() => armBackGuard());
+startGamepadWatch();
 
 // Music starts at launch (Game1.LoadContent -> MediaPlayer.Play). Browsers
 // block audio until the first user gesture, so retry once on the first
@@ -20,6 +29,30 @@ const unlockOnce = (): void => {
 };
 window.addEventListener('pointerdown', unlockOnce);
 window.addEventListener('keydown', unlockOnce);
+// A user gesture is the most reliable moment to make sure Android Back has
+// an entry to consume.
+window.addEventListener('pointerdown', armBackGuard, { capture: true });
+document.addEventListener('visibilitychange', armBackGuard);
+
+// Gamepad/system Back can arrive as a keyboard event on some platforms. While
+// a match is live, cancel the browser's own Back/exit handling; our game
+// handlers still run (this only prevents the default navigation/close).
+// Silence browser default key bindings app-wide (Back/exit, fullscreen,
+// zoom, find, tab shortcuts, controller keys the OS turns into key events).
+// Text fields keep their keys so typing a username still works.
+const silenceBrowserKey = (e: KeyboardEvent): void => {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  e.preventDefault();
+};
+window.addEventListener('keydown', silenceBrowserKey, { capture: true });
+window.addEventListener('keyup', silenceBrowserKey, { capture: true });
+
+// Last line of defence: never let the page close or unload silently.
+window.addEventListener('beforeunload', (e) => {
+  e.preventDefault();
+  e.returnValue = '';
+});
 const retry = (): void => {
   if (!audio.playing()) audio.unlock();
 };

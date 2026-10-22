@@ -167,6 +167,32 @@ export function setVr(on: boolean): void {
 }
 
 /**
+ * Toggle VR from the chrome button shown on every menu. Turning it off leaves
+ * an immersive session first; turning it on prefers WebXR when a renderer is
+ * available, otherwise the gyroscope/drag fallback.
+ */
+export async function toggleVrMode(): Promise<void> {
+  if (store.vr) {
+    try {
+      const { leaveXr } = await import('./xr');
+      leaveXr();
+    } catch { /* no immersive session to leave */ }
+    setVr(false);
+    return;
+  }
+  const w = typeof window !== 'undefined'
+    ? (window as unknown as {
+        __ieRenderer?: import('../engine/renderer').Renderer;
+        __ieGame?: import('./instance').GameInstance | null;
+      })
+    : null;
+  const renderer = w?.__ieRenderer;
+  await enableVr(renderer
+    ? { renderer, getInstance: () => w?.__ieGame ?? null, onEnd: () => { store.vr = false; } }
+    : undefined);
+}
+
+/**
  * Sensor fallback: dragging across the scene looks around. Works on any
  * touch device, so VR is usable even where motion access is blocked.
  */
