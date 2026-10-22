@@ -108,7 +108,7 @@ try {
   })()`);
   step('host waiting in the room menu', hostRoom);
   check('room menu instead of the match', hostRoom.hash === '#/room' && hostRoom.route === 'room' && hostRoom.scene === 'background', hostRoom);
-  check('ctf teams offered', hostRoom.teams.join(',') === 'human,alien', hostRoom.teams);
+  check('ctf teams offered', hostRoom.teams.join(',') === 'team1,team2', hostRoom.teams);
   check('host is player 0', hostRoom.isHost && hostRoom.meIndex === 0 && hostRoom.players.length === 1);
   const roomId = await host.evaluate('window.__ieMP.hosting.id');
   const roomFs = await host.evaluate(`(async () => {
@@ -171,12 +171,12 @@ try {
 
   // ------------------------------------------------------------------ teams
   await clickRegion(host, 'team:0');
-  await clickRegion(host, 'opt:team:0:alien');
-  const guestSees = await poll(guest, `snap() && snap().players[0].team === 'alien'`, 30000);
+  await clickRegion(host, 'opt:team:0:team2');
+  const guestSees = await poll(guest, `snap() && snap().players[0].team === 'team2'`, 30000);
   check('host team pick reaches the guest', guestSees === true);
   await clickRegion(host, 'team:1');
-  await clickRegion(host, 'opt:team:1:human');
-  const guestHuman = await poll(guest, `snap() && snap().players[1].team === 'human'`, 30000);
+  await clickRegion(host, 'opt:team:1:team1');
+  const guestHuman = await poll(guest, `snap() && snap().players[1].team === 'team1'`, 30000);
   check('host assigned the guest team human', guestHuman === true);
   // A guest may change its own team but cannot edit the host's row (the row's
   // picker is not even registered as a clickable region).
@@ -185,12 +185,12 @@ try {
   check('guest cannot open the host team picker', guestHostRow === false);
   await clickRegion(guest, 'team:1');
   await clickRegion(guest, 'opt:team:1:alien');
-  const ownTeam = await poll(host, `snap() && snap().players[1].team === 'alien'`, 30000);
+  const ownTeam = await poll(host, `snap() && snap().players[1].team === 'team2'`, 30000);
   check('guest changed its own team (host sees it)', ownTeam === true);
   // Put the guest back on human for the match check below.
   await clickRegion(host, 'team:1');
-  await clickRegion(host, 'opt:team:1:human');
-  await poll(guest, `snap() && snap().players[1].team === 'human'`, 30000);
+  await clickRegion(host, 'opt:team:1:team1');
+  await poll(guest, `snap() && snap().players[1].team === 'team1'`, 30000);
   const guestState = await guest.evaluate(`(async () => { ${PAGE} const s = snap();
     return { teams: s.players.map((p) => [p.name, p.team]), me: s.meIndex }; })()`);
   step('teams in the room', guestState);
@@ -249,7 +249,7 @@ try {
     };
   })()`);
   step('host match started by PLAY', hostInfo);
-  check('host is in the match', hostMatch && hostInfo.hostTeam === 'alien', hostInfo);
+  check('host is in the match', hostMatch && hostInfo.hostTeam === 'team2', hostInfo);
   check('host session streams to one guest', hostInfo.guests.length === 1 && hostInfo.guests[0].joined, hostInfo.guests);
 
   const guestMatch = await poll(guest, `window.__ieGame && typeof window.__ieGame.rtt === 'number' && window.__ieGame.selectedObject`, 120000).then(() => true).catch(() => false);
@@ -266,7 +266,7 @@ try {
   })()`);
   step('guest in the match', guestInfo);
   check('guest runs the render-only NetGame', guestMatch && guestInfo.isNet, guestInfo);
-  check('guest flies the team picked in the room', guestInfo.team === 'human', guestInfo.team);
+  check('guest flies the team picked in the room', guestInfo.team === 'team1', guestInfo.team);
   await host.screenshot(join(SHOTS, 'room-match-host.png'));
   await guest.screenshot(join(SHOTS, 'room-match-guest.png'));
 

@@ -205,11 +205,7 @@ int main() {
     };
     check(tag("d") == "0123456789abcdef01234567", "room d tag");
     check(tag("expiration") == std::to_string(now + 1800), "room expiration");
-    bool hasRoomTag = false;
-    for (const auto& t : room.tags) {
-      if (t.size() >= 2 && t[0] == "t" && t[1] == ie::nostr::kRoomTag) hasRoomTag = true;
-    }
-    check(hasRoomTag, "room t tag");
+    check(tag("p") == ie::nostr::kRoomBoardPubkey, "room p tag (board profile)");
     try {
       const ie::Json parsed = ie::Json::parse(room.content);
       check(parsed["v"].asInt() == 1, "room content v");

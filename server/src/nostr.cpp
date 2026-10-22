@@ -145,7 +145,7 @@ Event makeRoomEvent(const std::string& roomId, const RoomContent& content, int t
   if (content.srv) c.set("srv", Json(true));
   std::vector<std::vector<std::string>> tags = {
       {"d", roomId},
-      {"t", kRoomTag},
+      {"p", kRoomBoardPubkey},
       {"t", content.type},
       {"expiration", std::to_string((content.created > 0 ? content.created : now) + ttlSec)},
   };
@@ -158,7 +158,7 @@ Event makeDeletionEvent(const std::string& roomId, const Key32& sk, int64_t now)
   std::vector<std::vector<std::string>> tags = {
       {"a", std::to_string(kKindRoom) + ":" + probe.pubkey + ":" + roomId},
       {"k", std::to_string(kKindRoom)},
-      {"t", kRoomTag},
+      {"p", kRoomBoardPubkey},
   };
   return signEvent(kKindDelete, std::move(tags), "room closed", sk, now);
 }
@@ -187,7 +187,6 @@ Event makeSignalEvent(const std::string& roomId, const std::string& toPubkey, co
   std::vector<std::vector<std::string>> tags = {
       {"d", roomId},
       {"p", toPubkey},
-      {"t", kRoomTag},
   };
   return signEvent(kKindSignal, std::move(tags), c.dump(), sk, now);
 }
@@ -224,6 +223,20 @@ bool parseSignal(const Event& evt, const std::string& me, const std::string& roo
       if (!cand.candidate.empty()) out->candidates.push_back(std::move(cand));
     }
   }
+  return true;
+}
+
+// --------------------------------------------------------------- DMs (NIP-04)
+Event makeDmEvent(const std::string& toPubkeyHex, const std::string& content, const Key32& sk,
+                  int64_t now) {
+  return signEvent(kKindDm, {{"p", toPubkeyHex}}, content, sk, now);
+}
+
+bool parseDm(const Event& evt, const std::string& me, std::string* author, std::string* content) {
+  if (evt.kind != kKindDm) return false;
+  if (tagValue(evt, "p") != me) return false;
+  if (author) *author = evt.pubkey;
+  if (content) *content = evt.content;
   return true;
 }
 

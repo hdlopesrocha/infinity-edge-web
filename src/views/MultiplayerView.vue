@@ -29,7 +29,7 @@ function onLobbyChange(): void {
 }
 
 /** Publish the room, then wait in the room menu until the host presses PLAY. */
-function startHost(level: string, type: string, title: string, maxPlayers: number): void {
+function startHost(level: string, type: string, title: string, maxPlayers: number, password: string): void {
   audio.unlock();
   void audio.sfx('button');
   if (!lobby) return;
@@ -37,7 +37,7 @@ function startHost(level: string, type: string, title: string, maxPlayers: numbe
   lobby.bump();
   void (async () => {
     try {
-      await mp.createRoom({ game: level, type, title, maxPlayers });
+      await mp.createRoom({ game: level, type, title, maxPlayers, password });
       store.levelText = '';
       await router.push('/room');
     } catch {
@@ -52,8 +52,9 @@ function startHost(level: string, type: string, title: string, maxPlayers: numbe
 }
 
 /** Connect to a listed room's host: dedicated servers start at once, browser
- *  hosts wait in the room menu until they press PLAY. */
-function join(room: RoomInfo): void {
+ *  hosts wait in the room menu until they press PLAY. A protected room needs
+ *  the password the lobby collected. */
+function join(room: RoomInfo, password?: string): void {
   audio.unlock();
   void audio.sfx('button');
   if (!lobby) return;
@@ -62,7 +63,7 @@ function join(room: RoomInfo): void {
   mpTraceMark('view.join', room.id);
   void (async () => {
     try {
-      const joined = await mp.joinRoom(room);
+      const joined = await mp.joinRoom(room, password);
       mpTraceMark('view.joined', room.id);
       store.levelText = '';
       await router.push(joined.srv ? '/game/' + joined.game : '/room');
@@ -82,6 +83,15 @@ function deleteRoom(room: RoomInfo): void {
   audio.unlock();
   void audio.sfx('button');
   void mp.deleteRoom(room).then(() => lobby?.bump());
+}
+
+/** Re-open the room this browser already hosts (it survived leaving the menu). */
+function reenter(): void {
+  audio.unlock();
+  void audio.sfx('button');
+  if (!mp.rejoinRoom()) return;
+  store.levelText = '';
+  void router.push('/room');
 }
 
 function back(): void {
@@ -115,17 +125,26 @@ function onWheel(e: WheelEvent): void {
 }
 
 function onKey(e: KeyboardEvent): void {
+  // The password fields capture keys first; Escape leaves the screen only
+  // when no field is focused.
+  if (lobby?.key(e)) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   if (e.code === 'Escape') back();
 }
 
 const onMove = onPointer('move');
 const onDown = onPointer('down');
 const onUp = onPointer('up');
+let caretTimer = 0;
+let caret = true;
 
 onMounted(() => {
   const r = renderer();
   canvas = r?.canvas ?? null;
-  lobby = new LobbyUi({ startHost, join, deleteRoom, back }, mp);
+  lobby = new LobbyUi({ startHost, join, deleteRoom, reenter, back }, mp);
   if (r) r.uiOverlay = lobby;
   mp.onChange = onLobbyChange;
   mp.onGuests = onLobbyChange;
@@ -136,9 +155,15 @@ onMounted(() => {
   canvas?.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('keydown', onKey);
   document.addEventListener('fullscreenchange', onLobbyChange);
+  // Caret blink for the focused password field.
+  caretTimer = window.setInterval(() => {
+    caret = !caret;
+    lobby?.setCaret(caret && document.hasFocus());
+  }, 180);
 });
 
 onBeforeUnmount(() => {
+  window.clearInterval(caretTimer);
   if (renderer()) renderer()!.uiOverlay = null;
   mp.onChange = null;
   mp.onGuests = null;

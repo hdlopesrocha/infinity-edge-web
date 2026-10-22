@@ -2,7 +2,7 @@
 //
 // The wire formats are the ones the browser multiplayer mode uses
 // (src/game/nostr/event.ts, docs/multiplayer.md):
-//   kind 30333  addressable room event   (d = room id, t = ie3d-mp-room)
+//   kind 30333  addressable room event   (d = room id, p = room-board profile)
 //   kind 25050  ephemeral signalling     (d = room id, p = recipient)
 //   kind 5      NIP-09 room deletion
 //
@@ -27,7 +27,13 @@ namespace nostr {
 inline constexpr int kKindRoom = 30333;
 inline constexpr int kKindSignal = 25050;
 inline constexpr int kKindDelete = 5;
-inline constexpr const char* kRoomTag = "ie3d-mp-room";
+inline constexpr int kKindDm = 4;
+/**
+ * The profile every room tags (`p`). The lobby is the list of events that tag
+ * it; there is no global room tag any more.
+ */
+inline constexpr const char* kRoomBoardPubkey =
+    "447eeb09c213efaad6016c25452cf2f48ec75d1a514b9a7af7c99977b12698b3";
 
 struct Event {
   std::string id;
@@ -106,6 +112,17 @@ Event makeSignalEvent(const std::string& roomId, const std::string& toPubkey, co
 
 /** Parses a signalling event addressed to `me`; false when not ours/malformed. */
 bool parseSignal(const Event& evt, const std::string& me, const std::string& roomId, Signal* out);
+
+// --------------------------------------------------------------- DMs (NIP-04)
+/** NIP-04 direct message: kind 4 with a single `p` tag for `toPubkeyHex`. */
+Event makeDmEvent(const std::string& toPubkeyHex, const std::string& content, const Key32& sk,
+                  int64_t now);
+
+/**
+ * Recognises a kind-4 DM addressed to `me` (its `p` tag points at our pubkey);
+ * fills the author pubkey and the (still encrypted) content.
+ */
+bool parseDm(const Event& evt, const std::string& me, std::string* author, std::string* content);
 
 // -------------------------------------------------------------- relay pool
 struct RelayEvent {

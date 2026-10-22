@@ -60,8 +60,11 @@ export default defineComponent({
       leaving = true;
       audio.unlock();
       void audio.sfx('button');
-      if (mp.hosting) mp.closeRoom();
-      else mp.leaveGuestRoom();
+      // Going back does NOT delete the hosted room: the host keeps it (and its
+      // roster/chat) alive and can re-open it from the lobby. Closing is the
+      // lobby's room-row DELETE (or leaving the hosted match). Guests just
+      // leave the room.
+      if (!mp.hosting) mp.leaveGuestRoom();
       void router.push('/multiplayer');
     }
 
@@ -69,10 +72,18 @@ export default defineComponent({
       if (!mp.hosting) return;
       audio.unlock();
       void audio.sfx('button');
-      const level = mp.startMatch();
-      if (!level) return;
-      started = true;
-      void router.push('/game/' + level);
+      // The bet is not escrowed: it is settled after the match (each losing
+      // client pays the winners in sats over Lightning). Every pilot must
+      // accept the stake before the host may start.
+      void (async () => {
+        const level = await mp.startMatch();
+        if (!level) {
+          refresh();
+          return;
+        }
+        started = true;
+        void router.push('/game/' + level);
+      })();
     }
 
     // ------------------------------------------------------------ input
@@ -117,6 +128,14 @@ export default defineComponent({
           mp.setPlayerTeam(index, team);
           refresh();
         },
+        cycleBet: () => {
+          mp.cycleBet();
+          refresh();
+        },
+        toggleBetAccept: () => {
+          mp.toggleBetAccept();
+          refresh();
+        },
         sendChat: (text) => mp.sendChat(text),
         toggleMic,
         micOn: () => voice.enabled,
@@ -153,12 +172,10 @@ export default defineComponent({
       canvas?.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKey, true);
       document.removeEventListener('fullscreenchange', onFullscreenChange);
-      // Leaving the room screen without starting the match abandons the room
-      // (the host closes it, the guest says bye); the PLAY path keeps it alive.
-      if (!started && mp.inRoom) {
-        if (mp.hosting) mp.closeRoom();
-        else mp.leaveGuestRoom();
-      }
+      // Leaving the room screen must NOT tear down a hosted room: the host
+      // keeps hostingRoom, its roster, chat and peers, and re-opens it later
+      // (the lobby's room-row DELETE is the explicit teardown). Guests leave once.
+      if (!leaving && !started && mp.inRoom && !mp.hosting) mp.leaveGuestRoom();
       voice.dispose();
       mp.onVoice = null;
       mp.onRoom = null;

@@ -36,6 +36,24 @@ std::vector<uint8_t> hexDecode(const std::string& hex);
 std::string signHex(const Key32& sk, const uint8_t* msg, size_t len);
 bool verifyHex(const Key32& pubkey, const uint8_t* msg, size_t len, const std::string& sigHex);
 
+// ------------------------------------------------------------------- NIP-04
+/**
+ * NIP-04 ECDH: the x coordinate of `sk * P`, where P is the even-y lift of the
+ * peer's x-only public key. Throws std::runtime_error on an invalid key/point.
+ */
+Key32 ecdhSharedX(const Key32& sk, const Key32& peerXOnly);
+
+/**
+ * NIP-04 payload for `plaintext`: AES-256-CBC (PKCS7) with
+ * key = sha256(sharedX) and a random 16-byte IV, formatted as
+ * `base64(ciphertext)?iv=base64(iv)`.
+ */
+std::string nip04Encrypt(const Key32& sk, const Key32& peerXOnly, const std::string& plaintext);
+
+/** Decrypts a NIP-04 payload; false (and *out untouched) on any failure. */
+bool nip04Decrypt(const Key32& sk, const Key32& peerXOnly, const std::string& payload,
+                  std::string* out);
+
 /**
  * Ephemeral P-256 key for the room certificate (WebCrypto-compatible):
  * SPKI public key, raw r||s ECDSA signatures, base64 encoded.

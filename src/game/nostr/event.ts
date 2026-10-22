@@ -3,6 +3,7 @@
 // (ephemeral). Signing/verification is local (see crypto.ts) - no library.
 
 import { bytesToHex, hexToBytes, concatBytes, randomBytes, schnorrPubkey, schnorrSign, schnorrVerify, sha256, validSecretKey, equalBytes } from './crypto';
+import { decodeKeyEntity } from './bech32';
 
 export interface NostrEvent {
   id: string;
@@ -27,8 +28,23 @@ export const KIND_DELETE = 5;
 /** NIP-40 expiration. */
 export const KIND_EXPIRATION = 'expiration';
 
-/** `t` tag identifying our room events; keeps the list query narrow. */
-export const TAG_ROOM = 'ie3d-mp-room';
+/**
+ * The profile every room tags. There is no global room key any more: the lobby
+ * is simply the list of events that carry this `p` tag, so the board is a
+ * public profile anyone can read, and deleting your own room is deleting your
+ * own post (NIP-09).
+ */
+export const ROOM_BOARD_NPUB = 'npub1g3lwkzwzz0h644spdsj52t8j7j8vwhg6299e57hhexvh0vfxnzesyvxla7';
+/** x-only hex of {@link ROOM_BOARD_NPUB}: the `#p` filter value. */
+export const ROOM_BOARD_PUBKEY = (() => {
+  const decoded = decodeKeyEntity(ROOM_BOARD_NPUB);
+  return decoded ? bytesToHex(decoded.bytes) : '';
+})();
+/**
+ * Extra `t` tag on host-published offers. Offers are unaddressed (no `p`
+ * tag), so a joining guest filters on this tag to discover them.
+ */
+export const TAG_OFFER = 'ie3d-mp-offer';
 /** Protocol version of the payloads below (content `v`). */
 export const MP_PROTOCOL = 1;
 
@@ -112,6 +128,12 @@ export interface RoomInfo {
   cert: HostCert | null;
   /** True when the room is hosted by a dedicated server (starts immediately). */
   srv: boolean;
+  /** True when the room is password protected (signalling is encrypted). */
+  protected: boolean;
+  /** PBKDF2 salt (hex) of a protected room; '' otherwise. */
+  salt: string;
+  /** Signalling session id; a new one means the host re-entered its room. */
+  sid: string;
   /** Event id of the current revision (deletion reference). */
   eventId: string;
   /** The signed event this record came from (kept for verification). */
@@ -142,6 +164,15 @@ export interface RoomContent {
   cert?: HostCert;
   /** Dedicated server room: joins go straight into the match (no waiting room). */
   srv?: boolean;
+  /**
+   * Password protected: the password itself is never published. Guests derive
+   * the signalling key from their password + `salt` (see mp/crypto.ts).
+   */
+  pw?: boolean;
+  /** PBKDF2 salt (hex) for the password-derived signalling key. */
+  salt?: string;
+  /** Random signalling session id, rotated when the host (re)enters its room. */
+  sid?: string;
 }
 
 /** Random room id (96 bits, lowercase hex). */
@@ -158,7 +189,7 @@ export function roomTemplate(room: {
     created_at: created,
     tags: [
       ['d', room.id],
-      ['t', TAG_ROOM],
+      ['p', ROOM_BOARD_PUBKEY],
       ['t', room.content.type],
       [KIND_EXPIRATION, String(created + room.ttlSec)],
     ],
@@ -172,17 +203,34 @@ export function deletionTemplate(room: { id: string; hostPubkey: string }): Even
     tags: [
       ['a', `${KIND_ROOM}:${room.hostPubkey}:${room.id}`],
       ['k', String(KIND_ROOM)],
-      ['t', TAG_ROOM],
+      ['p', ROOM_BOARD_PUBKEY],
     ],
     content: 'room closed',
+  };
+}
+
+/**
+ * NIP-09 deletion for signalling events by id (reconnect cleanup). Relays only
+ * store `e`-tagged deletions, but ephemeral signals are not stored anyway; the
+ * publish is best-effort and the authoritative guard is the session id /
+ * created_at check in mp/manager.ts.
+ */
+export function signalDeletionTemplate(roomId: string, eventIds: string[]): EventTemplate {
+  return {
+    kind: KIND_DELETE,
+    tags: [
+      ['d', roomId],
+      ['k', String(KIND_SIGNAL)],
+      ...eventIds.map((id) => ['e', id]),
+    ],
+    content: 'stale signalling',
   };
 }
 
 /** Parse a room event; returns null for foreign/deleted/malformed events. */
 export function roomFromEvent(evt: NostrEvent): RoomInfo | null {
   if (evt.kind !== KIND_ROOM) return null;
-  const tTags = tagValues(evt, 't');
-  if (!tTags.includes(TAG_ROOM)) return null;
+  if (!tagValues(evt, 'p').includes(ROOM_BOARD_PUBKEY)) return null;
   const id = tagValue(evt, 'd');
   if (!id) return null;
   let content: RoomContent;
@@ -217,6 +265,9 @@ export function roomFromEvent(evt: NostrEvent): RoomInfo | null {
         }
       : null,
     srv: content.srv === true,
+    protected: content.pw === true && typeof content.salt === 'string' && content.salt.length > 0,
+    salt: typeof content.salt === 'string' ? content.salt : '',
+    sid: typeof content.sid === 'string' ? content.sid : '',
     eventId: evt.id,
     raw: evt,
   };
@@ -233,32 +284,47 @@ export interface SignalCandidate {
 export interface SignalMessage {
   v: number;
   room: string;
-  /** Recipient public key (hex). */
+  /** Recipient public key (hex); '' on a broadcast offer. */
   to: string;
-  kind: 'offer' | 'answer' | 'ice' | 'bye';
+  kind: 'offer' | 'answer' | 'ice' | 'bye' | 'join';
   sdp?: string;
   candidates?: SignalCandidate[];
-  /** Guest nickname, on offers (the host shows it in its guest list). */
+  /** Guest nickname, on offers/answers (the host shows it in its guest list). */
   name?: string;
-  /** Host certificate signature, on answers (mp/cert.ts). */
+  /** Host certificate signature over the host's SDP (mp/cert.ts). */
   sig?: string;
+  /** Host-published offer id, echoed by the answer and the ICE candidates. */
+  offerId?: string;
+  /** Signalling session id; signals from another session are stale. */
+  sid?: string;
+  /**
+   * AES-GCM `iv || ciphertext` (base64) of `{sdp, candidates, name, sig}` for
+   * a password-protected room (mp/crypto.ts). Absent on plaintext signalling.
+   */
+  enc?: string;
 }
 
 export function signalTemplate(roomId: string, toPubkey: string, msg: Omit<SignalMessage, 'v' | 'room' | 'to'>): EventTemplate {
   const content: SignalMessage = { v: MP_PROTOCOL, room: roomId, to: toPubkey, ...msg };
+  const tags: string[][] = [['d', roomId]];
+  // An empty recipient is a broadcast (host offers): no `p` tag, and the
+  // extra offer tag lets joining guests discover it.
+  if (toPubkey) tags.push(['p', toPubkey]);
+  if (msg.kind === 'offer') tags.push(['t', TAG_OFFER]);
   return {
     kind: KIND_SIGNAL,
-    tags: [
-      ['d', roomId],
-      ['p', toPubkey],
-      ['t', TAG_ROOM],
-    ],
+    tags,
     content: JSON.stringify(content),
   };
 }
 
-/** Parse a signalling event addressed to `me`; null when not ours/malformed. */
-export function signalFromEvent(evt: NostrEvent, me: string, roomId?: string): SignalMessage | null {
+/**
+ * Parse a signalling event addressed to `me`; null when not ours/malformed.
+ * With `broadcast` set, unaddressed offers (`to: ''`) are also accepted.
+ */
+export function signalFromEvent(
+  evt: NostrEvent, me: string, roomId?: string, opts: { broadcast?: boolean } = {},
+): SignalMessage | null {
   if (evt.kind !== KIND_SIGNAL) return null;
   let msg: SignalMessage;
   try {
@@ -267,9 +333,10 @@ export function signalFromEvent(evt: NostrEvent, me: string, roomId?: string): S
     return null;
   }
   if (!msg || msg.v !== MP_PROTOCOL) return null;
-  if (msg.to !== me) return null;
+  if (msg.to !== me && !(opts.broadcast === true && msg.to === '')) return null;
   if (roomId !== undefined && msg.room !== roomId) return null;
-  if (msg.kind !== 'offer' && msg.kind !== 'answer' && msg.kind !== 'ice' && msg.kind !== 'bye') return null;
+  if (msg.kind !== 'offer' && msg.kind !== 'answer' && msg.kind !== 'ice'
+      && msg.kind !== 'bye' && msg.kind !== 'join') return null;
   const room = tagValue(evt, 'd');
   if (!room || room !== msg.room) return null;
   return msg;

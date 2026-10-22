@@ -19,21 +19,27 @@ through `renderer.uiOverlay`): the multiplayer route renders no HTML at all.
    selected filter (default **6 hours**; the `age · younger than …` dropdown
    offers 1, 3, 6, 12 and 24 hours and is remembered).
 3. **CREATE A ROOM**: pick the game type (Capture the Flag / Time Trial /
-   King of the System / Survival), the level and the room size, then
-   **CREATE ROOM**. The room is signed with your key and published, and you
-   land in its **room menu** — the match does not start yet.
-4. Other players see the room and press **JOIN**. They land in the *same room
-   menu*: the roster, the team picker, the chat and the **MIC** toggle are
-   shared. The host can also open the room menu alone and wait.
+   King of the System / Survival), the level, the room size and an optional
+   **password** (leave it empty for an open room), then **CREATE ROOM**. The
+   room is signed with your key and published, and you land in its **room
+   menu** — the match does not start yet.
+4. Other players see the room and press **JOIN**; a locked room asks for its
+   password first. They land in the *same room menu*: the roster, the team
+   picker, the chat and the **MIC** toggle are shared. The host can also open
+   the room menu alone and wait.
 5. When everyone is in, the host presses **PLAY**; the match starts for all
    pilots at once. Guests fly the team chosen for them in the room menu: on
    team levels they take over an AI ship of that team (the AI resumes when they
    leave) or a wingman is spawned on it; the host may move itself to another
    team too. Up to `room size` players can be connected at once.
-6. A room can be closed by its creator only (the **DELETE** button on your own
-   rooms, or **close room** in the room menu). Rooms also expire on the relays
-   30 minutes after the last heartbeat, so a crashed host does not leave a room
-   listed forever.
+6. **Leaving the room menu does not close the room.** Going back from the room
+   menu (or the lobby) keeps the hosted room alive — the host keeps its roster,
+   chat and peer connections, and the lobby shows **RETURN TO ROOM** to re-open
+   it. A guest that leaves can join the room again from the lobby. A room is
+   closed only by its explicit **CLOSE ROOM** action (or the **DELETE** button
+   on your own room), by creating a fresh room, or by expiry. Rooms expire on
+   the relays 30 minutes after the last heartbeat, so a crashed host does not
+   leave a room listed forever.
 
 Dedicated-server rooms skip the room menu (there is nobody to press PLAY):
 they carry `srv: true` in the room content and a JOIN goes straight into the
@@ -48,9 +54,15 @@ Two custom event kinds (all payloads are JSON in `content`):
 
 | Kind | NIP class | Purpose |
 |---|---|---|
-| `30333` | addressable (30000–39999) | A room: `d` = room id, `t` = `ie3d-mp-room` + game type, `expiration` = NIP-40 TTL. Content: `{v, game, type, title, host, players, max, ice, created, cert, srv?}` (`srv: true` = dedicated server, join starts immediately). Replaced by the host on heartbeats/player changes; only the author's key can replace or delete it. |
-| `25050` | ephemeral (20000–29999) | Signalling: `d` = room id, `p` = recipient pubkey. Content: `{v, room, to, kind: offer\|answer\|ice\|bye, sdp?, candidates?[], name?}`. Relays forward these without storing them. |
-| `5` | NIP-09 | Room deletion: an `a` tag `30333:<hostPubkey>:<roomId>`. Only an event signed by the room's author deletes it. |
+| `30333` | addressable (30000–39999) | A room (a "post"): `d` = room id, `p` = the room-board profile (below), `t` = game type, `expiration` = NIP-40 TTL. Content: `{v, game, type, title, host, players, max, ice, created, cert, sid, pw?, salt?, srv?}` (`srv: true` = dedicated server, join starts immediately; `pw: true` + `salt` = password protected, the password itself is never published; `sid` = the current signalling session id). Replaced by the host on heartbeats/player changes; only the author's key can replace or delete it. |
+| `25050` | ephemeral (20000–29999) | Signalling: `d` = room id, `p` = recipient pubkey (absent on broadcast offers, which carry `t = ie3d-mp-offer` instead). Content: `{v, room, to, kind: offer\|answer\|ice\|bye\|join, sdp?, candidates?[], name?, sig?, offerId?, sid?, enc?}`. Relays forward these without storing them. |
+| `5` | NIP-09 | Room deletion: an `a` tag `30333:<hostPubkey>:<roomId>`, `p` = the room-board profile. Only an event signed by the room's author deletes it. On a host reconnect the previous session's offer events are deleted the same way (`e` tags). |
+
+**The lobby is a profile.** There is no global room tag/key: a room is just a
+post that tags the board profile
+`npub1g3lwkzwzz0h644spdsj52t8j7j8vwhg6299e57hhexvh0vfxnzesyvxla7`
+(`src/game/nostr/event.ts`, `ROOM_BOARD_PUBKEY`), so the lobby subscribes to
+`{kinds:[30333,5], '#p':[<board>]}`. Closing a room is deleting your own post.
 
 The client verifies every signalling event's NIP-01 id and BIP-340 signature
 before acting on it (`src/game/nostr/event.ts`, hand-rolled crypto in
@@ -59,28 +71,74 @@ validation and re-verifies a room event when joining it.
 
 ### Connection setup
 
-The guest initiates; all messages travel through the room's `d` tag and the
-recipient's `p` tag:
+The **host is the offerer** for browser-hosted rooms (dedicated-server rooms
+keep the guest-offer flow the C++ server implements). Relayed signalling is
+ephemeral, so offers are not stored: a joining guest first sends a `join`
+signal, the host then publishes a fresh, unaddressed offer (tagged
+`ie3d-mp-offer`) and the guest answers it. `offerId` ties the answer and the
+ICE candidates back to the right guest slot.
 
 ```
 guest                                   host (room creator)
-  │ create RTCPeerConnection + data channel "game"
-  │ publish {kind:"offer", sdp, name}  ──────────────────────────▶
-  │                                        setRemoteDescription
-  │                                        createAnswer
-  │ ◀────────────────────── publish {kind:"answer", sdp}
-  │ ◀────────────────────── publish {kind:"ice", candidates} (batched, 250 ms)
-  │ publish {kind:"ice", candidates} ──────────────────────────▶
+  │ subscribe to the room's signals
+  │ publish {kind:"join", name} ───────────────────────────────▶
+  │                                        create RTCPeerConnection + channel "game"
+  │                                        createOffer, sign the SDP (room certificate)
+  │ ◀────────────── publish {kind:"offer", offerId, sdp, sig} (broadcast)
+  │ setRemoteDescription, verify the certificate signature
+  │ createAnswer
+  │ publish {kind:"answer", offerId, sdp, name} ───────────────▶
+  │                                        setRemoteDescription (completes that peer)
+  │                                        publish a fresh offer for the next client
+  │ ◀──────────────────── publish {kind:"ice", offerId, candidates}
+  │ publish {kind:"ice", offerId, candidates} ─────────────────▶
   │ ◀═══════════ RTCDataChannel "game" open (binary) ═══════════▶
+  │ publish {kind:"auth-request", nonce} (channel challenge) ──▶
+  │ ◀────────────────────── {kind:"auth-ok", sig}
 ```
 
-Every guest gets its own `RTCPeerConnection` and its own data channel, so one
-host serves several players concurrently. ICE servers default to
+The host keeps one offer per free guest slot (`hostOffers`) and republishes
+them on a 15-second timer so a guest that joins later still finds one; the
+`join` signal triggers an immediate refresh. Every guest gets its own
+`RTCPeerConnection` and data channel (the host creates the channel because it
+is the offerer), so one host serves several players concurrently. ICE servers
+default to
 `stun:stun.l.google.com:19302` and are carried in the room event, so guests use
 whatever the host configured. Host candidates + STUN connect on ordinary home
 networks; a restrictive (symmetric) NAT needs a TURN server — pass one with
 `?mpIce=turn:host:3478…` (username/credential TURN URLs are not supported by
 the `?mpIce=` shorthand; use `window.__IE_MP_ICE` objects if you need them).
+
+### Password-protected rooms
+
+A room created with a password publishes **only a flag and a random salt**
+(`pw: true`, `salt`) — never the password. Both ends derive the same AES-GCM
+key from `password + salt` with **PBKDF2-SHA256** (150 000 rounds) and use it
+to seal the sensitive part of every signalling message: the SDP (which carries
+the DTLS fingerprint), the ICE candidates, the nickname and the certificate
+signature. The routing fields (`kind`, `room`, `to`, `offerId`, `sid`) stay
+readable; the sealed payload travels as `enc` (base64 `iv || ciphertext`).
+
+- The implementation is dependency-free WebCrypto (`src/game/mp/crypto.ts`):
+  `deriveKey`, `encryptJson`/`decryptJson`, and the `sealSignal`/`openSignal`
+  wrappers the manager uses.
+- A wrong password shows up as an offer the guest cannot decrypt; the join
+  fails with "wrong room password" and never negotiates.
+- Unprotected rooms keep plaintext signalling byte-for-byte as before.
+- The salt is public and per room; the password is entered in the lobby's
+  CREATE ROOM field or in the JOIN prompt for a locked room.
+
+### Reconnect cleanup
+
+Each host session has a random session id (`sid`): it is published in the room
+event and stamped on every offer/answer/ICE message. When the host re-enters a
+room after its signalling subscription was lost, it **rotates the session id**,
+deletes the previous session's offers (NIP-09 by event id) and republishes the
+room and fresh offers. Receivers ignore any signal whose `sid` does not match
+the current session (and, on the host, anything older than the session start),
+so stale offers/answers/ICE are never reused. Room heartbeat/replace semantics
+are unchanged: the addressable room event is rewritten on each heartbeat and
+only the author's key can replace or delete it.
 
 ## Match channel
 
@@ -124,15 +182,16 @@ is rendered there either. The host owns the room state; the guests mirror it.
   `src/game/mp/voice.ts` owns capture, resampling and the bounded playback
   queue (latency stays bounded by dropping audio older than 250 ms); the wire
   format is frozen and covered by `tests/voice.test.ts`.
-- **Teams**: the picker offers the level's combatant teams (`human`, `alien`,
+- **Teams**: the picker offers the level's combatant teams (`team1`, `team2`,
   …) or `auto` (the level default); the host may change any pilot's team, a
   guest may change its own. On PLAY the picks are applied in the match: the
   host's ship moves to its chosen team (team bookkeeping and base), and each
   guest's Join adopts an AI ship of its team or spawns a wingman on it.
 - **PLAY** is host-only (guests see "waiting for the host"). Leaving the room
-  menu closes the room for the host or says `bye` for a guest. Chat and voice
-  frames keep flowing on the same data channels during the match (the client
-  has no in-match chat UI yet).
+  menu keeps a hosted room alive — the host re-opens it from the lobby with
+  **RETURN TO ROOM** (its roster and chat survive) and a guest says `bye` and
+  can join again from the lobby. Chat and voice frames keep flowing on the
+  same data channels during the match (the client has no in-match chat UI yet).
 
 The room menu renders no DOM: roster, team dropdowns, chat log/input, the mic
 meter, PLAY and the corner buttons are all part of the WebGL overlay.
@@ -212,14 +271,15 @@ it. On top of that the client enforces two bindings before it even sends a
    **P-256** key pair and publishes a certificate with the room: the SPKI
    public key, `created`/`expires`, and a **BIP-340 signature by the room's
    Nostr key** over `ie3d-mp-cert-v1|room|host|created|expires|key`. The host
-   signs every **answer SDP** (which carries the DTLS fingerprint) with the
-   certificate key:
-   `ie3d-mp-answer-v1|room|from|to|sha256(sdp)`. A guest refuses to negotiate
-   with an answer whose certificate signature does not verify — another client
-   or a relay cannot substitute its own WebRTC endpoint. This is implemented
-   identically in the browser host (`src/game/mp/cert.ts`) and in the C++
-   server (`server/src/nostr_crypto.*`, `server/src/dedicated.cpp`), so the
-   same guest checks work against both.
+   signs every **SDP it produces** (which carries the DTLS fingerprint) with
+   the certificate key: `ie3d-mp-answer-v1|room|from|to|sha256(sdp)` — the
+   host's **offer** for a browser-hosted room (with an empty `to`, since it is
+   unaddressed), or the **answer** the C++ server sends to a guest's offer. A
+   guest refuses to negotiate with an SDP whose certificate signature does not
+   verify — another client or a relay cannot substitute its own WebRTC
+   endpoint. This is implemented identically in the browser host
+   (`src/game/mp/cert.ts`) and in the C++ server (`server/src/nostr_crypto.*`,
+   `server/src/dedicated.cpp`), so the same guest checks work against both.
 2. **Channel challenge.** Immediately after the data channel opens, the guest
    sends a random 16-byte nonce (`GameMsg.Auth`). Only a peer holding the
    room's Nostr secret key can answer with a valid signature over
@@ -278,8 +338,11 @@ pick. It also checks that chat keeps relaying during the match.
 
 The Nostr layer has its own tests: `tests/nostr.test.ts` runs the official
 BIP-340 vectors plus nostr-tools cross-check fixtures; `tests/mp-rooms.test.ts`
-runs the room lifecycle against the local relay; `tests/mp-host.test.ts`
-decodes the host's frames with the client codec. A live relay test is opt-in:
+runs the room lifecycle against the local relay (persistence/re-join, password
+rooms, host-published offers, session rotation); `tests/mp-crypto.test.ts`
+covers the PBKDF2 + AES-GCM round trip and the seal/open wrappers;
+`tests/mp-host.test.ts` decodes the host's frames with the client codec. A
+live relay test is opt-in:
 
 ```sh
 IE_NOSTR_TEST=1 npx vitest run tests/relay.integration.test.ts

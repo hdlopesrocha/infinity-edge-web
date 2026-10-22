@@ -3,7 +3,9 @@
 // The lobby owns its own state (open dropdown, scroll, hover) and draws
 // through renderer.uiOverlay; the same computed regions are hit-tested from
 // the view's pointer events. Rooms come from mp/manager.ts (Nostr), matches
-// run in the browser that created the room (mp/host.ts).
+// run in the browser that created the room (mp/host.ts). A hosted room
+// survives leaving this menu, so the lobby also offers RETURN TO ROOM
+// (mp.rejoinRoom) and an optional create/join password field.
 
 import { CTF_LEVELS, KOTS_LEVELS, SURV_LEVELS, TT_GROUPS } from '../levels';
 import { MAX_AGE_CHOICES, mp } from './manager';
@@ -11,21 +13,26 @@ import type { Multiplayer } from './manager';
 import type { RoomInfo } from '../nostr/event';
 import { nextUiVersion } from '../../engine/overlay';
 import { FS_REGION, toggleFullscreen } from '../ui/fullscreen';
+import { VR_REGION, clickVrToggle } from '../ui/vrchrome';
 import type { Rgb } from '../colors';
+import { satsLabel } from '../wallet';
+import { store } from '../store';
 import { cssColor, accentMoved, currentPlayerAccent, readableAccent } from '../ui/theme';
 import {
-  UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
+  UI_FONT as FONT, CONTENT_CX, CONTENT_W, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
   paintActionColumn, paintContentShell, paintNavbar, contentFocusRect,
 } from '../ui/layout';
 import type { ScreenUi } from '../../engine/overlay';
 
 export interface LobbyHooks {
-  /** The player picked CREATE ROOM: publish the room and start the match. */
-  startHost(level: string, type: string, title: string, maxPlayers: number): void;
-  /** The player picked JOIN on a listed room. */
-  join(room: RoomInfo): void;
+  /** The player picked CREATE ROOM: publish the room and wait in its menu. */
+  startHost(level: string, type: string, title: string, maxPlayers: number, password: string): void;
+  /** The player picked JOIN on a listed room (password for a locked room). */
+  join(room: RoomInfo, password?: string): void;
   /** The player deleted one of their own rooms. */
   deleteRoom(room: RoomInfo): void;
+  /** Re-open the room this client is already hosting (kept alive on back). */
+  reenter(): void;
   /** Leave the multiplayer screen (LIFO back). */
   back(): void;
 }
@@ -98,6 +105,14 @@ export class LobbyUi implements ScreenUi {
   private typeIdx = 0;
   private levelIdx = 0;
   private maxIdx = 1;
+  /** Create-room password ('' = unprotected). */
+  private createPassword = '';
+  /** Protected room waiting for a password (null = no prompt). */
+  private joinTarget: RoomInfo | null = null;
+  private joinPassword = '';
+  /** Focused text field ('create-password' | 'join-password' | null). */
+  private focusField: string | null = null;
+  private caretOn = true;
   private accent: Rgb = currentPlayerAccent();
   private accentText: Rgb = readableAccent(this.accent);
   private paintedAccent: Rgb | null = null;
@@ -111,6 +126,14 @@ export class LobbyUi implements ScreenUi {
   /** Called on any external state change (manager notify, hover, …). */
   bump(): void {
     this.version = nextUiVersion();
+  }
+
+  /** Caret blink for the focused password field (driven by the view). */
+  setCaret(on: boolean): void {
+    if (this.caretOn !== on) {
+      this.caretOn = on;
+      this.bump();
+    }
   }
 
   /** Follow a live party-mode accent without repainting a static lobby. */
@@ -156,7 +179,7 @@ export class LobbyUi implements ScreenUi {
     this.regions.push(...paintNavbar(ctx, s, X, Y, U, [
       { label: 'MAIN MENU', current: false },
       { label: 'MULTIPLAYER', current: true },
-    ], this.hover, this.accent));
+    ], this.hover, this.accent, CONTENT_W, satsLabel(store.sats)));
 
     this.paintRooms(ctx, s, X, Y, U);
     this.paintCreate(ctx, s, X, Y, U);
@@ -177,7 +200,8 @@ export class LobbyUi implements ScreenUi {
       primary: { id: 'create', label: 'CREATE ROOM' },
       actions: [
         { id: 'refresh', label: 'REFRESH' },
-        ...(this.mp.hosting ? [{ id: 'cancel-host', label: 'CLOSE ROOM', danger: true }] : []),
+        // The hosted room survives leaving the room menu: re-open it here.
+        ...(this.mp.hosting ? [{ id: 'return-room', label: 'RETURN TO ROOM' }] : []),
       ],
       back: { id: 'back', label: 'back' },
       hover: this.hover,
@@ -186,6 +210,23 @@ export class LobbyUi implements ScreenUi {
 
     // Open dropdown options last: they float above everything.
     if (this.openDropdown) this.paintDropdown(ctx, s, X, Y, U);
+    // The password prompt floats above even the dropdowns.
+    if (this.joinTarget) this.paintJoinPrompt(ctx, s, X, Y, U);
+  }
+
+  /** Draw `text` at the largest font size (down to `minPx`) that fits `maxW`. */
+  private drawFitted(
+    ctx: CanvasRenderingContext2D, text: string, x: number, y: number,
+    maxW: number, U: (u: number) => number, startPx: number, minPx: number,
+  ): void {
+    let px = startPx;
+    ctx.font = `${U(px)}px ${FONT}`;
+    while (px > minPx && ctx.measureText(text).width > maxW) {
+      px -= 0.5;
+      ctx.font = `${U(px)}px ${FONT}`;
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, x, y);
   }
 
   private paintRooms(
@@ -237,7 +278,10 @@ export class LobbyUi implements ScreenUi {
       this.regions.push({ id: rowId, x: X(x0 + 16), y: Y(ry), w: U(w - 48) + U(16), h: U(rowH - 6) });
       ctx.font = `700 ${U(12)}px ${FONT}`;
       ctx.fillStyle = own ? cssColor(this.accentText) : 'rgba(255,200,120,0.95)';
-      ctx.fillText(`${room.type || 'GAME'}${room.srv ? ' · SERVER' : ''}${own ? ' · YOURS' : ''}${dead ? ' · OFFLINE?' : ''}`, X(x0 + 28), Y(ry + 15));
+      ctx.fillText(
+        `${room.type || 'GAME'}${room.srv ? ' · SERVER' : ''}${own ? ' · YOURS' : ''}`
+        + `${room.protected ? ' · LOCKED' : ''}${dead ? ' · OFFLINE?' : ''}`,
+        X(x0 + 28), Y(ry + 15));
       ctx.font = `700 ${U(16)}px ${FONT}`;
       ctx.fillStyle = dead ? 'rgba(255,255,255,0.45)' : '#ffffff';
       ctx.fillText(clip(ctx, room.title, U(w - 260)), X(x0 + 28), Y(ry + 34));
@@ -247,15 +291,19 @@ export class LobbyUi implements ScreenUi {
         `${room.host} · ${room.players}/${room.maxPlayers} pilots · ${age(room.created)}`,
         X(x0 + 28), Y(ry + 51),
       );
-      // Row buttons: DELETE for own rooms, JOIN for everyone else's.
+      // Row buttons: DELETE + a JOINED badge for your own room (you are already
+      // in it — clicking the row re-opens it), JOIN for everyone else's.
       // Their ids carry the room key (hostPubkey:roomId) directly.
       const bw = 92, bh = 30;
       const bx = x0 + w - bw - 22;
       const key = room.hostPubkey + ':' + room.id;
       if (own) {
         this.button(ctx, X(bx - bw - 8), Y(ry + 12), U(bw), U(bh), 'DELETE', this.hover === 'del:' + key, s, 13, 'del:' + key);
+        // A static badge: the host is already in this room (the row re-opens it).
+        this.button(ctx, X(bx), Y(ry + 12), U(bw), U(bh), 'JOINED', false, s, 13, undefined, false, true);
+      } else {
+        this.button(ctx, X(bx), Y(ry + 12), U(bw), U(bh), dead ? 'RETRY' : 'JOIN', this.hover === 'join:' + key, s, 14, 'join:' + key);
       }
-      this.button(ctx, X(bx), Y(ry + 12), U(bw), U(bh), dead ? 'RETRY' : 'JOIN', this.hover === 'join:' + key, s, 14, 'join:' + key);
     });
     ctx.restore();
     // Scrollbar.
@@ -292,12 +340,18 @@ export class LobbyUi implements ScreenUi {
     row(0, 'Game type', mode.label, 'dd:type');
     row(1, 'Level', level.label, 'dd:level');
     row(2, 'Room size', `${MAX_PLAYERS[this.maxIdx]} pilots`, 'dd:max');
+    // Password field: empty publishes an open room; a value publishes only a
+    // flag + salt and encrypts the signalling (see mp/crypto.ts).
+    this.textField(ctx, s, X, Y, U, 3, 'Password (optional)', 'create-password',
+      this.createPassword, 'leave empty for an open room', x0, w);
 
-    // The CREATE ROOM / CLOSE ROOM actions live in the right column now.
-    const cy = y0 + 68 + 3 * 62 + 2;
+    // The CREATE ROOM action lives in the right column now.
+    const cy = y0 + 68 + 4 * 62 + 2;
     ctx.font = `${U(14)}px ${FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    wrap(ctx, 'press CREATE ROOM in the actions column to publish this room on Nostr and wait for guests.',
+    wrap(ctx, this.createPassword
+      ? 'a protected room: guests are asked for this password and all signalling is encrypted.'
+      : 'press CREATE ROOM in the actions column to publish this room on Nostr and wait for guests.',
       X(x0 + 22), Y(cy), U(w - 44), U(20), ctx.fillStyle as string);
 
     if (this.mp.hosting) {
@@ -364,6 +418,89 @@ export class LobbyUi implements ScreenUi {
 
   // --------------------------------------------------------------- drawing
 
+  /** A labelled text input row (password). Registers its clickable region. */
+  private textField(
+    ctx: CanvasRenderingContext2D, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+    rowIndex: number, label: string, id: string, value: string, placeholder: string,
+    x0: number, w: number,
+  ): void {
+    const ry = PANEL_Y + 68 + rowIndex * 62;
+    ctx.font = `${U(14)}px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText(label, X(x0 + 22), Y(ry + 1));
+    const bw = w - 44;
+    const bx = X(x0 + 22);
+    const by = Y(ry + 14);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(bx, by, U(bw), U(34));
+    const focused = this.focusField === id;
+    ctx.strokeStyle = focused ? cssColor(this.accent, 0.85) : 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = Math.max(1, s);
+    ctx.strokeRect(bx, by, U(bw), U(34));
+    ctx.font = `${U(15)}px ${FONT}`;
+    ctx.fillStyle = value ? cssColor(this.accentText) : 'rgba(255,255,255,0.4)';
+    // The password is masked, like any password field.
+    const shown = value ? '•'.repeat(Math.min(value.length, 32)) : placeholder;
+    ctx.fillText(shown, bx + U(10), by + U(17));
+    if (focused && this.caretOn) {
+      const tw = ctx.measureText(value ? shown : '').width;
+      ctx.fillStyle = cssColor(this.accentText);
+      ctx.fillRect(bx + U(10) + tw + U(2), by + U(9), Math.max(1, s), U(16));
+    }
+    this.regions.push({ id, x: bx, y: by, w: U(bw), h: U(34) });
+  }
+
+  /** Modal asking for a protected room's password before joining. */
+  private paintJoinPrompt(
+    ctx: CanvasRenderingContext2D, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  ): void {
+    const room = this.joinTarget;
+    if (!room) return;
+    ctx.fillStyle = 'rgba(2, 4, 8, 0.72)';
+    ctx.fillRect(0, 0, this.logical.w, this.logical.h);
+    // Swallow clicks on the backdrop (so the room list below is unreachable).
+    this.regions.push({ id: 'join-prompt-bg', x: 0, y: 0, w: this.logical.w, h: this.logical.h });
+    const pw = U(420), ph = U(210);
+    const px = X(CONTENT_CX) - pw / 2;
+    const py = Y(DH / 2) - ph / 2;
+    ctx.fillStyle = 'rgba(6,10,16,0.97)';
+    ctx.strokeStyle = cssColor(this.accent, 0.6);
+    ctx.lineWidth = Math.max(1, U(1));
+    ctx.fillRect(px, py, pw, ph);
+    ctx.strokeRect(px, py, pw, ph);
+    ctx.textAlign = 'center';
+    ctx.font = `700 ${U(17)}px ${FONT}`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('ROOM IS LOCKED', px + pw / 2, py + U(30));
+    ctx.font = `${U(13)}px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText(clip(ctx, room.title || room.host, pw - U(40)), px + pw / 2, py + U(54));
+    ctx.textAlign = 'left';
+    // Password field.
+    const fw = pw - U(48), fx = px + U(24), fy = py + U(78);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(fx, fy, fw, U(34));
+    ctx.strokeStyle = this.focusField === 'join-password' ? cssColor(this.accent, 0.85) : 'rgba(255,255,255,0.3)';
+    ctx.strokeRect(fx, fy, fw, U(34));
+    ctx.font = `${U(15)}px ${FONT}`;
+    ctx.fillStyle = this.joinPassword ? cssColor(this.accentText) : 'rgba(255,255,255,0.4)';
+    const shown = this.joinPassword ? '•'.repeat(Math.min(this.joinPassword.length, 32)) : 'password';
+    ctx.fillText(shown, fx + U(10), fy + U(17));
+    if (this.focusField === 'join-password' && this.caretOn) {
+      const tw = this.joinPassword ? ctx.measureText(shown).width : 0;
+      ctx.fillStyle = cssColor(this.accentText);
+      ctx.fillRect(fx + U(10) + tw + U(2), fy + U(9), Math.max(1, s), U(16));
+    }
+    this.regions.push({ id: 'join-password', x: fx, y: fy, w: fw, h: U(34) });
+    // JOIN / CANCEL.
+    this.button(ctx, px + U(24), py + U(132), (fw - U(12)) / 2, U(38), 'JOIN',
+      this.hover === 'join-confirm', s, 15, 'join-confirm', false, true);
+    this.button(ctx, px + U(24) + (fw - U(12)) / 2 + U(12), py + U(132), (fw - U(12)) / 2, U(38), 'CANCEL',
+      this.hover === 'join-cancel', s, 15, 'join-cancel');
+  }
+
   private button(
     ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
     label: string, hovered: boolean, s: number, size: number, id?: string, open = false, emphasis = false,
@@ -409,6 +546,8 @@ export class LobbyUi implements ScreenUi {
     }
     if (kind === 'down') {
       this.pressed = id;
+      // Clicking outside a text field blurs it (the caret stops blinking).
+      if (this.focusField && id !== this.focusField) this.focusField = null;
       if (id) this.bump();
       return !!id;
     }
@@ -458,6 +597,10 @@ export class LobbyUi implements ScreenUi {
       void toggleFullscreen().then(() => this.bump());
       return;
     }
+    if (id === VR_REGION) {
+      void clickVrToggle().then(() => this.bump());
+      return;
+    }
     if (id.startsWith('dd:')) {
       this.openDropdown = this.openDropdown === id ? null : id;
       this.bump();
@@ -482,24 +625,59 @@ export class LobbyUi implements ScreenUi {
       this.bump();
       return;
     }
+    if (id === 'create-password' || id === 'join-password') {
+      this.focusField = id;
+      this.bump();
+      return;
+    }
+    if (id === 'join-confirm') {
+      const room = this.joinTarget;
+      const password = this.joinPassword;
+      this.joinTarget = null;
+      this.joinPassword = '';
+      this.focusField = null;
+      if (room) this.hooks.join(room, password);
+      this.bump();
+      return;
+    }
+    if (id === 'join-cancel') {
+      this.joinTarget = null;
+      this.joinPassword = '';
+      this.focusField = null;
+      this.bump();
+      return;
+    }
     if (id.startsWith('room:') || id.startsWith('join:') || id.startsWith('del:')) {
       const key = id.slice(id.indexOf(':') + 1).replace(/^room:/, '');
       const room = this.mp.rooms.find((r) => r.hostPubkey + ':' + r.id === key);
       if (!room) return;
+      // Your own room: re-open it instead of connecting to yourself.
+      if (room.hostPubkey === this.mp.pubkey && !id.startsWith('del:')) {
+        this.hooks.reenter();
+        return;
+      }
       if (id.startsWith('del:')) this.hooks.deleteRoom(room);
-      else this.hooks.join(room);
+      else if (room.protected) {
+        // Locked room: ask for the password before connecting.
+        this.joinTarget = room;
+        this.joinPassword = '';
+        this.focusField = 'join-password';
+        this.bump();
+      } else {
+        this.hooks.join(room);
+      }
       return;
     }
     if (id === 'create') {
       const mode = MODES[this.typeIdx];
       const level = mode.levels[Math.min(this.levelIdx, mode.levels.length - 1)];
-      this.hooks.startHost(level.key, mode.id, level.label, MAX_PLAYERS[this.maxIdx]);
+      this.hooks.startHost(
+        level.key, mode.id, level.label, MAX_PLAYERS[this.maxIdx], this.createPassword.trim());
       this.bump();
       return;
     }
-    if (id === 'cancel-host') {
-      this.mp.endSession();
-      this.bump();
+    if (id === 'return-room') {
+      this.hooks.reenter();
       return;
     }
     if (id === 'refresh') {
@@ -512,6 +690,57 @@ export class LobbyUi implements ScreenUi {
       this.hooks.back();
       return;
     }
+  }
+
+  /** Keyboard input for the focused password field. Returns true if consumed. */
+  key(e: KeyboardEvent): boolean {
+    // Escape closes an open join prompt even before its field is focused.
+    if (!this.focusField && this.joinTarget && e.key === 'Escape') {
+      this.joinTarget = null;
+      this.joinPassword = '';
+      this.bump();
+      return true;
+    }
+    const field = this.focusField;
+    if (!field) return false;
+    const value = field === 'join-password' ? this.joinPassword : this.createPassword;
+    if (e.key === 'Escape') {
+      if (field === 'join-password') {
+        this.joinTarget = null;
+        this.joinPassword = '';
+      }
+      this.focusField = null;
+      this.bump();
+      return true;
+    }
+    if (e.key === 'Enter') {
+      if (field === 'join-password') {
+        const room = this.joinTarget;
+        const password = this.joinPassword;
+        this.joinTarget = null;
+        this.joinPassword = '';
+        this.focusField = null;
+        if (room) this.hooks.join(room, password);
+      } else {
+        this.focusField = null;
+      }
+      this.bump();
+      return true;
+    }
+    if (e.key === 'Backspace') {
+      const next = value.slice(0, -1);
+      if (field === 'join-password') this.joinPassword = next;
+      else this.createPassword = next;
+      this.bump();
+      return true;
+    }
+    if (e.key.length === 1 && value.length < 64 && !e.ctrlKey && !e.metaKey) {
+      if (field === 'join-password') this.joinPassword += e.key;
+      else this.createPassword += e.key;
+      this.bump();
+      return true;
+    }
+    return false;
   }
 }
 

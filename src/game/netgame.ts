@@ -326,7 +326,12 @@ export class NetGame extends GameInstance {
         break;
       case GameMsg.Result: {
         const res = decodeResult(r);
-        this.result = { won: res.won, reward: res.reward as RewardType, message: res.message || null };
+        this.result = {
+          won: res.won,
+          draw: res.reward === 'Draw',
+          reward: res.reward as RewardType,
+          message: res.message || null,
+        };
         break;
       }
       case GameMsg.Pong: {

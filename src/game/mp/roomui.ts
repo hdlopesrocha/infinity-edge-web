@@ -7,11 +7,19 @@
 import { nextUiVersion } from '../../engine/overlay';
 import type { ScreenUi } from '../../engine/overlay';
 import type { RoomSnapshot } from './manager';
+import { teamDisplayName } from '../team';
 import { FS_REGION, toggleFullscreen } from '../ui/fullscreen';
+import { VR_REGION, clickVrToggle } from '../ui/vrchrome';
 import type { Rgb } from '../colors';
+import { teamColor } from '../colors';
+import { DEFAULT_TEAM } from './host';
+import { satsLabel } from '../wallet';
+import { store } from '../store';
 import { cssColor, accentMoved, currentPlayerAccent, readableAccent } from '../ui/theme';
+import { optionListHeight, paintChip, paintOptionList, teamOptions } from '../ui/rosterui';
+import type { RosterOption } from '../ui/rosterui';
 import {
-  UI_FONT as FONT, CONTENT_CX, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
+  UI_FONT as FONT, CONTENT_CX, CONTENT_W, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
   paintActionColumn, paintContentShell, paintNavbar, contentFocusRect,
 } from '../ui/layout';
 
@@ -33,6 +41,10 @@ export interface RoomHooks {
   back(): void;
   /** Pick a team for a player (host: anyone; guest: itself). */
   setTeam(index: number, team: string): void;
+  /** Host: cycle the escrowed bet (0 / 50 / 100 / 200). */
+  cycleBet(): void;
+  /** Guest: accept / withdraw from the host's bet. */
+  toggleBetAccept(): void;
   sendChat(text: string): void;
   toggleMic(): void;
   micOn(): boolean;
@@ -49,6 +61,8 @@ export class RoomUi implements ScreenUi {
   private hover: string | null = null;
   private pressed: string | null = null;
   private openTeam: number | null = null;
+  /** Team filter for the players list (null = show everyone). */
+  private teamFilter: string | null = null;
   private focusChat = false;
   private chatText = '';
   private chatScroll = 0;
@@ -120,13 +134,16 @@ export class RoomUi implements ScreenUi {
     paintContentShell(ctx, s, X, Y, U);
     this.regions.push(...paintNavbar(ctx, s, X, Y, U, [
       { label: 'MULTIPLAYER', current: false },
-      { label: snap.title || snap.level, current: true },
-    ], this.hover, this.accent));
+      { label: (snap.title || snap.level) + (snap.protected ? ' · LOCKED' : ''), current: true },
+    ], this.hover, this.accent, CONTENT_W, satsLabel(store.sats)));
 
     this.paintPlayers(ctx, snap, s, X, Y, U);
+    this.paintBet(ctx, snap, s, X, Y, U);
     this.paintChat(ctx, snap, s, X, Y, U);
 
     // Status line, bottom centre.
+    const needsAccept = snap.betAmount > 0
+      && snap.players.some((p) => !p.host && !p.betAccepted);
     ctx.textAlign = 'center';
     ctx.font = `${U(14)}px ${FONT}`;
     ctx.fillStyle = snap.phase === 'playing' ? '#ffd479' : 'rgba(255,255,255,0.8)';
@@ -134,9 +151,11 @@ export class RoomUi implements ScreenUi {
     ctx.shadowBlur = U(5);
     const status = snap.phase === 'playing'
       ? 'match starting…'
-      : snap.isHost
-        ? 'waiting for players — PLAY starts the match for everyone'
-        : 'waiting for the host to start the match…';
+      : needsAccept
+        ? 'waiting for every pilot to accept the bet…'
+        : snap.isHost
+          ? 'waiting for players — PLAY starts the match for everyone'
+          : 'waiting for the host to start the match…';
     const statusW = ctx.measureText(status).width;
     ctx.fillStyle = 'rgba(3, 7, 12, 0.55)';
     ctx.fillRect(X(CONTENT_CX) - statusW / 2 - U(10), Y(DH - 38), statusW + U(20), U(20));
@@ -148,9 +167,15 @@ export class RoomUi implements ScreenUi {
     // Right action column (1/8 of the width): host PLAY + leave/close.
     this.regions.push(...paintActionColumn(ctx, s, X, Y, U, {
       primary: snap.isHost
-        ? { id: 'play', label: snap.phase === 'playing' ? 'STARTING…' : 'PLAY', disabled: snap.phase === 'playing' }
+        ? {
+            id: 'play',
+            label: snap.phase === 'playing' ? 'STARTING…' : 'PLAY',
+            disabled: snap.phase === 'playing' || needsAccept,
+          }
         : undefined,
-      back: { id: 'back', label: snap.isHost ? 'CLOSE ROOM' : 'LEAVE ROOM', danger: true },
+      // Back keeps a hosted room alive (the lobby's DELETE closes it); only a
+      // guest's leave is destructive.
+      back: { id: 'back', label: snap.isHost ? 'BACK TO LOBBY' : 'LEAVE ROOM', danger: !snap.isHost },
       hover: this.hover,
       accent: this.accent,
     }));
@@ -166,17 +191,57 @@ export class RoomUi implements ScreenUi {
     ctx.fillStyle = '#ffffff';
     ctx.font = `700 ${U(19)}px ${FONT}`;
     ctx.fillText('PLAYERS', X(x0 + 20), Y(y0 + 26));
+
+    // Team filter: ALL plus every team the pilots are on. Only the picked
+    // team's rows stay visible; each chip carries its team colour.
+    const teamsPresent: string[] = [];
+    for (const p of snap.players) {
+      const t = p.team || DEFAULT_TEAM;
+      if (!teamsPresent.includes(t)) teamsPresent.push(t);
+    }
+    teamsPresent.sort();
+    if (this.teamFilter !== null && !teamsPresent.includes(this.teamFilter)) this.teamFilter = null;
+    const chipH = 20;
+    const fy = y0 + 42;
+    let fx = x0 + 20;
+    const filterChip = (id: string, label: string, color: Rgb, active: boolean): void => {
+      ctx.font = `700 ${U(11)}px ${FONT}`;
+      const cw = ctx.measureText(label).width / s + 18;
+      ctx.fillStyle = active ? cssColor(color, 0.3) : 'rgba(10,14,22,0.72)';
+      ctx.fillRect(X(fx), Y(fy), U(cw), U(chipH));
+      ctx.strokeStyle = cssColor(color, active ? 0.9 : 0.35);
+      ctx.lineWidth = Math.max(1, s);
+      ctx.strokeRect(X(fx), Y(fy), U(cw), U(chipH));
+      ctx.fillStyle = active ? cssColor(color) : 'rgba(255,255,255,0.7)';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, X(fx + cw / 2), Y(fy + chipH / 2 + 1));
+      ctx.textAlign = 'left';
+      this.regions.push({ id, x: X(fx), y: Y(fy), w: U(cw), h: U(chipH) });
+      fx += cw + 6;
+    };
+    filterChip('filter:all', 'ALL', this.accent, this.teamFilter === null);
+    for (const t of teamsPresent) {
+      filterChip('filter:' + t, teamDisplayName(t), teamColor(t, store.options), this.teamFilter === t);
+    }
+
     const rowH = 44;
-    let y = y0 + 52;
+    let y = y0 + 76;
     snap.players.forEach((player, i) => {
+      const team = player.team || DEFAULT_TEAM;
+      if (this.teamFilter !== null && team !== this.teamFilter) return;
       const me = i === snap.meIndex;
       const canPick = snap.isHost || me;
+      const rgb = teamColor(team, store.options);
+      const rgbText = readableAccent(rgb);
       if (me) {
         ctx.fillStyle = cssColor(this.accent, 0.1);
         ctx.fillRect(X(x0 + 12), Y(y - 4), U(w - 24), U(rowH - 6));
       }
+      // A team-coloured stripe down the row's left edge.
+      ctx.fillStyle = cssColor(rgb, 0.9);
+      ctx.fillRect(X(x0 + 12), Y(y - 4), U(3), U(rowH - 6));
       ctx.font = `700 ${U(15)}px ${FONT}`;
-      ctx.fillStyle = me ? cssColor(this.accentText) : '#ffffff';
+      ctx.fillStyle = cssColor(rgbText);
       ctx.fillText(player.name, X(x0 + 22), Y(y + 6));
       // Badges: HOST, MIC.
       let badgeX = x0 + 22 + ctx.measureText(player.name).width / s + 14;
@@ -189,28 +254,69 @@ export class RoomUi implements ScreenUi {
         ctx.fillText(text, X(badgeX + 6), Y(y + 6));
         badgeX += bw + 6;
       };
-      if (player.host) badge('HOST', cssColor(this.accentText, 0.9));
+      if (player.host) badge('HOST', cssColor(rgbText, 0.9));
       if (player.mic) badge('MIC', 'rgba(255,212,121,0.95)');
-      // Team picker on the right.
+      // Team picker on the right: the same select chip the briefing roster uses,
+      // tinted with the team's colour.
       const tw = 150;
-      const bx = x0 + w - tw - 22;
-      const label = player.team || 'auto';
-      this.button(ctx, X(bx), Y(y - 6), U(tw), U(28), label, 'team:' + i,
-        this.hover === 'team:' + i, U(13), false, !canPick, this.openTeam === i);
+      const bx = X(x0 + w - tw - 22);
+      const by = Y(y - 6);
+      const bw2 = U(tw);
+      const bh2 = U(28);
+      paintChip({
+        ctx, x: bx, y: by, w: bw2, h: bh2,
+        text: player.team ? teamDisplayName(player.team) : 'auto',
+        hovered: this.hover === 'team:' + i,
+        accent: rgb, accentText: rgbText, lineWidth: s,
+        fontPx: U(13), font: FONT,
+      });
+      if (canPick) this.regions.push({ id: 'team:' + i, x: bx, y: by, w: bw2, h: bh2 });
       y += rowH;
     });
-    // Fill the empty slots so the room size is visible.
-    for (let i = snap.players.length; i < snap.maxPlayers && i < snap.players.length + 6; i++) {
-      ctx.font = `${U(13)}px ${FONT}`;
-      ctx.fillStyle = 'rgba(255,255,255,0.22)';
-      ctx.fillText('waiting for a pilot…', X(x0 + 22), Y(y + 6));
-      y += rowH;
+    // Fill the empty slots so the room size is visible (only when unfiltered).
+    if (this.teamFilter === null) {
+      for (let i = snap.players.length; i < snap.maxPlayers && i < snap.players.length + 6; i++) {
+        ctx.font = `${U(13)}px ${FONT}`;
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
+        ctx.fillText('waiting for a pilot…', X(x0 + 22), Y(y + 6));
+        y += rowH;
+      }
     }
     ctx.font = `${U(12)}px ${FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
     ctx.fillText(snap.isHost
       ? 'pick a team for every pilot (auto = level default)'
       : 'your team can be changed on your own row', X(x0 + 20), Y(y0 + h - 20));
+  }
+
+  /** Escrowed-bet control (host sets it; guests accept it). */
+  private paintBet(
+    ctx: CanvasRenderingContext2D, snap: RoomSnapshot, s: number,
+    X: (x: number) => number, Y: (y: number) => number, U: (u: number) => number,
+  ): void {
+    const x0 = leftPanelX(0), y0 = PANEL_Y, w = PANEL_W, h = PANEL_H;
+    const by = y0 + h - 80;
+    if (snap.isHost) {
+      const label = snap.betAmount > 0 ? `BET · ${snap.betAmount}` : 'BET · OFF';
+      this.button(ctx, X(x0 + 20), Y(by), U(w - 40), U(30), label, 'bet',
+        this.hover === 'bet', U(14), snap.betAmount > 0);
+    } else {
+      const armed = snap.betAmount > 0;
+      const label = !armed ? 'NO BET' : snap.betAccepted ? 'BET ACCEPTED' : 'ACCEPT BET';
+      this.button(ctx, X(x0 + 20), Y(by), U(w - 40), U(30), label, 'bet-accept',
+        this.hover === 'bet-accept', U(14), snap.betAccepted, !armed);
+    }
+    ctx.font = `${U(12)}px ${FONT}`;
+    if (snap.betError) {
+      ctx.fillStyle = '#ff8a76';
+      ctx.fillText(snap.betError, X(x0 + 20), Y(by - 16));
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.42)';
+      const hint = snap.isHost
+        ? 'escrowed bet: cycles 0 / 50 / 100 / 200'
+        : snap.betAmount > 0 ? 'accept to join the stakes' : 'the host may set a bet';
+      ctx.fillText(hint, X(x0 + 20), Y(by - 14));
+    }
   }
 
   private paintChat(
@@ -329,28 +435,24 @@ export class RoomUi implements ScreenUi {
       this.openTeam = null;
       return;
     }
-    const options = ['auto', ...snap.teams];
+    const options: RosterOption[] = [
+      { value: 'auto', label: 'auto' },
+      ...teamOptions(snap.teams),
+    ];
     const rowH = Math.max(U(26), anchor.h);
-    const height = options.length * rowH + U(8);
+    const pad = U(4);
+    const height = optionListHeight(options.length, rowH, pad);
     let y = anchor.y + anchor.h + U(4);
     if (y + height > this.logical.h) y = Math.max(0, anchor.y - height - U(4));
-    ctx.fillStyle = 'rgba(6,10,16,0.94)';
-    ctx.strokeStyle = cssColor(this.accent, 0.5);
-    ctx.lineWidth = Math.max(1, U(1));
-    ctx.fillRect(anchor.x, y, anchor.w, height);
-    ctx.strokeRect(anchor.x, y, anchor.w, height);
-    options.forEach((option, i) => {
-      const oy = y + U(4) + i * rowH;
-      const rid = `opt:team:${index}:${option}`;
-      if (this.hover === rid) {
-        ctx.fillStyle = cssColor(this.accent, 0.16);
-        ctx.fillRect(anchor.x + U(2), oy, anchor.w - U(4), rowH - U(2));
-      }
-      const current = (snap.players[index]?.team || 'auto') === option;
-      ctx.font = `700 ${U(13)}px ${FONT}`;
-      ctx.fillStyle = current ? cssColor(this.accentText) : '#ffffff';
-      ctx.fillText(option, anchor.x + U(10), oy + rowH / 2);
-      this.regions.push({ id: rid, x: anchor.x, y: oy, w: anchor.w, h: rowH });
+    const rects = paintOptionList({
+      ctx, x: anchor.x, y, w: anchor.w, h: height, options,
+      value: snap.players[index]?.team || 'auto',
+      hoverPrefix: `opt:team:${index}:`, hover: this.hover,
+      rowH, padding: pad, fontPx: U(13), font: FONT,
+      accent: this.accent, accentText: this.accentText, lineWidth: U(1),
+    });
+    rects.forEach((r) => {
+      this.regions.push({ id: `opt:team:${index}:${r.value}`, x: r.x, y: r.y, w: r.w, h: r.h });
     });
   }
 
@@ -415,6 +517,10 @@ export class RoomUi implements ScreenUi {
       void toggleFullscreen().then(() => this.bump());
       return true;
     }
+    if (id === VR_REGION) {
+      void clickVrToggle().then(() => this.bump());
+      return true;
+    }
     if (id === 'back' || id === 'crumb:0') {
       this.hooks.back();
       return true;
@@ -436,8 +542,22 @@ export class RoomUi implements ScreenUi {
       this.hooks.toggleMic();
       return true;
     }
+    if (id === 'bet') {
+      this.hooks.cycleBet();
+      return true;
+    }
+    if (id === 'bet-accept') {
+      this.hooks.toggleBetAccept();
+      return true;
+    }
     if (id === 'chat') {
       this.focusChat = true;
+      this.bump();
+      return true;
+    }
+    if (id.startsWith('filter:')) {
+      const team = id.slice('filter:'.length);
+      this.teamFilter = team === 'all' ? null : team;
       this.bump();
       return true;
     }

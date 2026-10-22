@@ -421,4 +421,49 @@ describe('multiplayer host session', () => {
     const flagSpawn = last.spawns.find((s) => s.kind === WireKind.Flag);
     expect(flagSpawn?.state).toBe(WireFlag.Carried);
   });
+
+  it('freezes the match when a guest disconnects, and resumes when it rejoins', async () => {
+    const { host, id } = await joinedHost();
+    const pauses: { paused: boolean; names: string }[] = [];
+    host.onPauseChanged = (paused, names) => pauses.push({ paused, names });
+
+    host.suspendGuest(id);
+    expect(host.netPaused).toBe(true);
+    expect(host.netPausedBy).toBe('Pilot');
+    expect(host.suspendedGuests().map((g) => g.id)).toEqual([id]);
+    expect(pauses.at(-1)).toEqual({ paused: true, names: 'Pilot' });
+
+    // Rejoin re-binds the same slot (by pubkey) and clears the pause.
+    const rejoined = new FakeTransport();
+    const newId = host.reattachGuest('ab'.repeat(32), rejoined);
+    expect(newId).toBe(id);
+    expect(host.netPaused).toBe(false);
+    expect(pauses.at(-1)).toEqual({ paused: false, names: '' });
+
+    // The rejoining client sends a fresh Join: a full Scene + baseline again.
+    await host.handleFrame(id, JOIN);
+    const frames = await rejoined.frames();
+    expect(frames.map((f) => f.type)).toEqual([GameMsg.Scene, GameMsg.Snapshot, GameMsg.Hud]);
+  });
+
+  it('the host can drop a waiting guest to let the match resume', async () => {
+    const { host, id, guest } = await joinedHost();
+    host.suspendGuest(id);
+    expect(host.netPaused).toBe(true);
+    host.dropGuest(id);
+    expect(host.netPaused).toBe(false);
+    expect(host.suspendedGuests()).toEqual([]);
+    expect(host.guestCount).toBe(0);
+    expect(guest.closed).toBe(true);
+  });
+
+  it('a guest that never joined is removed instead of pausing', async () => {
+    const world = fakeWorld();
+    const host = new HostSession(world.gi as never);
+    const guest = new FakeTransport();
+    const id = host.addGuest({ pubkey: 'cd'.repeat(32), name: 'Pilot', transport: guest });
+    host.suspendGuest(id);
+    expect(host.netPaused).toBe(false);
+    expect(host.guestCount).toBe(0);
+  });
 });

@@ -201,6 +201,100 @@ bool verifyHex(const Key32& pubkey, const uint8_t* msg, size_t len, const std::s
   return schnorrVerify(msg, len, pubkey, sig);
 }
 
+// ------------------------------------------------------------------- NIP-04
+namespace {
+
+/** AES-256-CBC/PKCS7 encrypt; `iv` is the 16-byte IV. */
+std::string aesCbcEncrypt(const Key32& key, const uint8_t* iv, const uint8_t* data, size_t len) {
+  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+  if (!ctx) return "";
+  std::vector<uint8_t> out(len + 32);
+  int total = 0;
+  int chunk = 0;
+  bool ok = EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, key.data(), iv) == 1 &&
+            EVP_EncryptUpdate(ctx, out.data(), &chunk, data, static_cast<int>(len)) == 1;
+  total = chunk;
+  if (ok) ok = EVP_EncryptFinal_ex(ctx, out.data() + total, &chunk) == 1;
+  EVP_CIPHER_CTX_free(ctx);
+  if (!ok) return "";
+  total += chunk;
+  out.resize(static_cast<size_t>(total));
+  return std::string(out.begin(), out.end());
+}
+
+/** AES-256-CBC/PKCS7 decrypt; false on bad padding (wrong key / tampering). */
+bool aesCbcDecrypt(const Key32& key, const uint8_t* iv, const uint8_t* data, size_t len,
+                   std::string* out) {
+  if (len == 0 || len % 16 != 0) return false;
+  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+  if (!ctx) return false;
+  std::vector<uint8_t> plain(len + 16);
+  int total = 0;
+  int chunk = 0;
+  bool ok = EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, key.data(), iv) == 1 &&
+            EVP_DecryptUpdate(ctx, plain.data(), &chunk, data, static_cast<int>(len)) == 1;
+  total = chunk;
+  if (ok) ok = EVP_DecryptFinal_ex(ctx, plain.data() + total, &chunk) == 1;
+  EVP_CIPHER_CTX_free(ctx);
+  if (!ok) return false;
+  total += chunk;
+  plain.resize(static_cast<size_t>(total));
+  *out = std::string(plain.begin(), plain.end());
+  return true;
+}
+
+}  // namespace
+
+Key32 ecdhSharedX(const Key32& sk, const Key32& peerXOnly) {
+  std::lock_guard<std::recursive_mutex> lock(cryptoMutex());
+  if (!validSecretKey(sk)) throw std::runtime_error("ecdh: invalid secret key");
+  EC_POINT* P = liftX(peerXOnly);
+  if (!P) throw std::runtime_error("ecdh: invalid public key");
+  BIGNUM* d = bnFromBytes(sk.data(), 32);
+  EC_POINT* shared = EC_POINT_new(curve());
+  EC_POINT_mul(curve(), shared, nullptr, P, d, bnctx());
+  Key32 out{};
+  const bool ok = !EC_POINT_is_at_infinity(curve(), shared) && pointX(shared, &out);
+  EC_POINT_free(shared);
+  EC_POINT_free(P);
+  BN_free(d);
+  if (!ok) throw std::runtime_error("ecdh: point at infinity");
+  return out;
+}
+
+std::string nip04Encrypt(const Key32& sk, const Key32& peerXOnly, const std::string& plaintext) {
+  const Key32 shared = ecdhSharedX(sk, peerXOnly);
+  const Key32 aesKey = sha256(shared.data(), shared.size());
+  uint8_t iv[16];
+  randomBytes(iv, sizeof(iv));
+  const std::string cipher =
+      aesCbcEncrypt(aesKey, iv, reinterpret_cast<const uint8_t*>(plaintext.data()), plaintext.size());
+  return base64Encode(reinterpret_cast<const uint8_t*>(cipher.data()), cipher.size()) + "?iv=" +
+         base64Encode(iv, sizeof(iv));
+}
+
+bool nip04Decrypt(const Key32& sk, const Key32& peerXOnly, const std::string& payload,
+                  std::string* out) {
+  if (!out) return false;
+  const size_t sep = payload.find("?iv=");
+  if (sep == std::string::npos || sep == 0) return false;
+  const std::string cipherText = payload.substr(0, sep);
+  const std::string ivText = payload.substr(sep + 4);
+  if (cipherText.empty() || ivText.empty()) return false;
+  const std::vector<uint8_t> iv = base64Decode(ivText);
+  if (iv.size() != 16) return false;
+  const std::vector<uint8_t> cipher = base64Decode(cipherText);
+  if (cipher.empty() || cipher.size() % 16 != 0) return false;
+  Key32 shared{};
+  try {
+    shared = ecdhSharedX(sk, peerXOnly);
+  } catch (...) {
+    return false;
+  }
+  const Key32 aesKey = sha256(shared.data(), shared.size());
+  return aesCbcDecrypt(aesKey, iv.data(), cipher.data(), cipher.size(), out);
+}
+
 P256::~P256() {
   if (key_) EVP_PKEY_free(static_cast<EVP_PKEY*>(key_));
 }

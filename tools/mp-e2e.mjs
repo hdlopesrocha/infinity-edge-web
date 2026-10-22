@@ -168,7 +168,7 @@ try {
     await until(() => mp.debugGuests().filter((g) => g.joined).length === ${GUESTS}, 120000);
     return {
       playing, started, levelKey: gi.levelKey,
-      ships: gi.teams.get('human') ? gi.teams.get('human').objects.length : 0,
+      ships: gi.teams.get('team1') ? gi.teams.get('team1').objects.length : 0,
       guests: mp.debugGuests(), hash: location.hash,
     };
   })()`).catch((e) => ({ failed: String(e.message), trace: [] }));

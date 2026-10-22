@@ -9,7 +9,7 @@ import {
 import { bech32Decode, decodeKeyEntity, npubEncode, nsecEncode } from '../src/game/nostr/bech32';
 import {
   eventId, finalizeEvent, verifyEvent, roomFromEvent, roomTemplate, signalFromEvent, signalTemplate,
-  KIND_ROOM, KIND_SIGNAL, TAG_ROOM,
+  KIND_ROOM, KIND_SIGNAL,
 } from '../src/game/nostr/event';
 
 // ------------------------------------------------------------------- sha256
@@ -179,7 +179,7 @@ describe('nostr events', () => {
     const room = finalizeEvent({
       kind: KIND_ROOM,
       created_at: 1700000000,
-      tags: [['d', '0123456789abcdef01234567'], ['t', TAG_ROOM], ['t', 'CTF'], ['expiration', '1700001800']],
+      tags: [['d', '0123456789abcdef01234567'], ['t', 'ie3d-mp-room'], ['t', 'CTF'], ['expiration', '1700001800']],
       content: JSON.stringify({
         v: 1, game: 'ctf-easy', type: 'CTF', title: 'Capture the Flag - Easy', host: 'Pilot',
         players: 2, max: 8, ice: ['stun:stun.l.google.com:19302'], created: 1700000000,
@@ -197,7 +197,7 @@ describe('nostr events', () => {
     const signal = finalizeEvent({
       kind: KIND_SIGNAL,
       created_at: 1700000123,
-      tags: [['d', '0123456789abcdef01234567'], ['p', pubA], ['t', TAG_ROOM]],
+      tags: [['d', '0123456789abcdef01234567'], ['p', pubA], ['t', 'ie3d-mp-room']],
       content: JSON.stringify({
         v: 1, room: '0123456789abcdef01234567', to: pubA, kind: 'offer',
         sdp: 'v=0\r\no=- 1 1 IN IP4 0.0.0.0\r\n',
@@ -247,9 +247,9 @@ describe('nostr events', () => {
     expect(room!.game).toBe('ctf-easy');
     expect(room!.hostPubkey).toBe(pubA);
     expect(room!.maxPlayers).toBe(8);
-    // Non-room kinds and missing `t` tag are ignored.
+    // Non-room kinds and a missing board `p` tag are ignored.
     expect(roomFromEvent({ ...evt, kind: 1 })).toBeNull();
-    expect(roomFromEvent({ ...evt, tags: evt.tags.filter((t) => t[0] !== 't') })).toBeNull();
+    expect(roomFromEvent({ ...evt, tags: evt.tags.filter((t) => t[0] !== 'p') })).toBeNull();
     // Expired rooms are dropped locally, whatever the relay kept.
     const expired = finalizeEvent(roomTemplate({
       id: '0123456789abcdef01234568',

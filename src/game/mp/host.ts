@@ -31,6 +31,11 @@ import { simHooks } from './bridge';
 const HOST_GZIP_THRESHOLD = 64;
 /** Input has to keep arriving; after this the ship coasts on its own. */
 const INPUT_TIMEOUT_MS = 1200;
+/**
+ * The team a player flies when they have not picked one in the waiting room
+ * ('auto'). Levels that field no such team fall back to the host's team.
+ */
+export const DEFAULT_TEAM = 'team1';
 
 /** A framed link to one guest (RTC data channel, or a test double). */
 export interface GuestTransport {
@@ -124,6 +129,87 @@ export class HostSession {
   onGuests: ((list: GuestSummary[]) => void) | null = null;
   /** Called when a guest's link closes on its own. */
   onGuestClosed: ((id: number) => void) | null = null;
+  /** Called when the network-pause state changes (host views + guests). */
+  onPauseChanged: ((paused: boolean, names: string) => void) | null = null;
+  /** Guests whose link dropped mid-match: the match waits for them. */
+  private suspended = new Set<number>();
+
+  /** True when the match is frozen waiting for a disconnected guest. */
+  get netPaused(): boolean {
+    return this.suspended.size > 0;
+  }
+
+  /** Comma-separated names of the guests the match is waiting for. */
+  get netPausedBy(): string {
+    const names: string[] = [];
+    for (const id of this.suspended) {
+      const g = this.guests.get(id);
+      if (g) names.push(g.name);
+    }
+    return names.join(', ');
+  }
+
+  /** The guests currently suspended (for the host's drop list). */
+  suspendedGuests(): { id: number; name: string }[] {
+    const out: { id: number; name: string }[] = [];
+    for (const id of this.suspended) {
+      const g = this.guests.get(id);
+      if (g) out.push({ id, name: g.name });
+    }
+    return out;
+  }
+
+  /** True once the match has ended (no reason to wait for a missing guest). */
+  get finished(): boolean {
+    return this.gi.finished;
+  }
+
+  /**
+   * A joined guest's link dropped mid-match: keep its slot and ship and freeze
+   * the match for everyone (the host included). Cleared when it rejoins, or by
+   * {@link dropGuest}.
+   */
+  suspendGuest(id: number): void {
+    const guest = this.guests.get(id);
+    if (!guest) return;
+    if (!guest.joined) {
+      // Never joined: nothing to wait for, just remove it.
+      this.removeGuest(id, false);
+      return;
+    }
+    guest.control.release();
+    this.suspended.add(id);
+    this.onGuests?.(this.guestList());
+    this.onPauseChanged?.(true, this.netPausedBy);
+  }
+
+  /** The host drops a waiting guest: free its ship and let the match resume. */
+  dropGuest(id: number): void {
+    if (!this.suspended.delete(id)) return;
+    this.removeGuest(id, true);
+    this.onPauseChanged?.(this.netPaused, this.netPausedBy);
+  }
+
+  /**
+   * A reconnecting guest (same pubkey) re-binds to its waiting slot. Returns
+   * the guest id; the fresh Scene + baseline are sent when its Join arrives.
+   */
+  reattachGuest(pubkey: string, transport: GuestTransport): number | null {
+    for (const guest of this.guests.values()) {
+      if (guest.pubkey !== pubkey || !this.suspended.has(guest.id)) continue;
+      guest.transport = transport;
+      guest.joined = false;
+      guest.liveIds = new Set();
+      guest.events = [];
+      guest.lastInputAt = 0;
+      guest.control.release();
+      this.suspended.delete(guest.id);
+      this.onGuests?.(this.guestList());
+      this.onPauseChanged?.(this.netPaused, this.netPausedBy);
+      return guest.id;
+    }
+    return null;
+  }
 
   constructor(private gi: GameInstance, hostTeam = '') {
     this.installHooks();
@@ -137,8 +223,9 @@ export class HostSession {
    */
   private moveHostToTeam(teamName: string): void {
     const ship = this.gi.selectedObject;
-    if (!ship || !teamName) return;
-    const team = this.gi.teams.get(teamName);
+    if (!ship) return;
+    // An unpicked ('auto') host flies the default team when the level has it.
+    const team = this.gi.teams.get(teamName || DEFAULT_TEAM);
     if (!team || team === ship.team) return;
     const old = ship.team;
     const idx = old.objects.indexOf(ship);
@@ -224,6 +311,7 @@ export class HostSession {
     const guest = this.guests.get(id);
     if (!guest) return;
     this.guests.delete(id);
+    this.suspended.delete(id);
     this.releaseShip(guest);
     if (closeTransport) {
       try { guest.transport.close(); } catch { /* already closed */ }
@@ -236,6 +324,7 @@ export class HostSession {
     simHooks.host = null;
     for (const guest of [...this.guests.values()]) this.removeGuest(guest.id);
     this.guests.clear();
+    this.suspended.clear();
   }
 
   // -------------------------------------------------------------- inbound
@@ -313,7 +402,7 @@ export class HostSession {
       this.sendError(guest, 'room is playing ' + this.gi.levelKey);
       return;
     }
-    const ship = this.assignShip(guest);
+    const ship = guest.ship ?? this.assignShip(guest);
     if (!ship) {
       this.sendError(guest, 'no ship available');
       return;
@@ -348,8 +437,11 @@ export class HostSession {
     const host = gi.selectedObject;
     if (!host) return null;
     // The waiting room may have assigned this guest to another team: adopt an
-    // AI ship of that team or spawn a wingman on it.
-    const team = (guest.team && gi.teams.get(guest.team)) || host.team;
+    // AI ship of that team or spawn a wingman on it. An unpicked guest ('auto')
+    // defaults to team1 when the level has it, else the host's team.
+    const team = (guest.team && gi.teams.get(guest.team))
+      || gi.teams.get(DEFAULT_TEAM)
+      || host.team;
     const taken = new Set<SpaceShip>();
     for (const g of this.guests.values()) if (g.ship) taken.add(g.ship);
     // 1. An AI ship of the host's team still flying its own brain.

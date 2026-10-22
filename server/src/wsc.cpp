@@ -179,6 +179,7 @@ struct WsClient::Impl {
   std::thread reader;
   std::mutex writeMutex;
   std::atomic<bool> closed{false};
+  std::atomic<bool> closing{false};
 };
 
 WsClient::WsClient() : impl_(std::make_unique<Impl>()) {}
@@ -186,6 +187,21 @@ WsClient::WsClient() : impl_(std::make_unique<Impl>()) {}
 WsClient::~WsClient() {
   close();
   if (impl_ && impl_->reader.joinable()) impl_->reader.join();
+  // No thread can touch the socket now: free the TLS context and the fd.
+  if (impl_) {
+    if (impl_->ssl) {
+      SSL_free(impl_->ssl);
+      impl_->ssl = nullptr;
+    }
+    if (impl_->ctx) {
+      SSL_CTX_free(impl_->ctx);
+      impl_->ctx = nullptr;
+    }
+    if (impl_->fd >= 0) {
+      ::close(impl_->fd);
+      impl_->fd = -1;
+    }
+  }
 }
 
 bool WsClient::connect(const std::string& url, std::string* err) {
@@ -342,22 +358,14 @@ void WsClient::sendText(const std::string& text) {
 
 void WsClient::close() {
   if (!impl_) return;
+  // Only the first caller acts; the reader thread may still be inside SSL_read,
+  // so free nothing here (the destructor does that after joining).
+  bool expected = false;
+  if (!impl_->closing.compare_exchange_strong(expected, true)) return;
   impl_->closed = true;
-  if (impl_->ssl) {
-    SSL_shutdown(impl_->ssl);
-    SSL_free(impl_->ssl);
-    impl_->ssl = nullptr;
-  }
-  if (impl_->ctx) {
-    SSL_CTX_free(impl_->ctx);
-    impl_->ctx = nullptr;
-  }
-  if (impl_->fd >= 0) {
-    ::shutdown(impl_->fd, SHUT_RDWR);
-    ::close(impl_->fd);
-    impl_->fd = -1;
-  }
   open_ = false;
+  // Unblock the reader without touching the SSL object it may be using.
+  if (impl_->fd >= 0) ::shutdown(impl_->fd, SHUT_RDWR);
 }
 
 }  // namespace ie

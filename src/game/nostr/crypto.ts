@@ -250,6 +250,22 @@ export function validSecretKey(seckey: Uint8Array): boolean {
   return d > 0n && d < CURVE_N;
 }
 
+/**
+ * NIP-04 ECDH: the x coordinate of `secretKey * P`, where P is the even-y
+ * lift of the peer's x-only public key (the convention nostr-tools uses for the
+ * `02`-prefixed compressed key). Both endpoints derive the same 32 bytes; the
+ * caller hashes them into an AES key (see nostr/nip04.ts).
+ */
+export function ecdhSharedX(secretKey: Uint8Array, pubkeyXOnly: Uint8Array): Uint8Array {
+  if (!validSecretKey(secretKey)) throw new Error('ecdh: invalid secret key');
+  if (pubkeyXOnly.length !== 32) throw new Error('ecdh: invalid public key');
+  const point = liftX(bytesToBigInt(pubkeyXOnly));
+  if (!point) throw new Error('ecdh: invalid public key');
+  const shared = toAffine(jMul(point, bytesToBigInt(secretKey)));
+  if (!shared) throw new Error('ecdh: point at infinity');
+  return bigIntToBytes(shared.x, 32);
+}
+
 // ------------------------------------------------------------------ BIP-340
 function taggedHash(tag: string, ...msgs: Uint8Array[]): Uint8Array {
   const tagHash = sha256(new TextEncoder().encode(tag));
