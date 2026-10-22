@@ -8,7 +8,7 @@
 import type { Renderer } from '../../engine/renderer';
 import type { Options } from '../resources';
 import { audio } from '../audio';
-import { normalizeHexColor } from '../colors';
+import { normalizeHexColor, teamDefaultColor } from '../colors';
 import { pickMusicFile } from '../musicfile';
 import { clearGameData, saveOptions, store } from '../store';
 import { enableVr, setVr } from '../vr';
@@ -83,7 +83,7 @@ export class PauseMenuUi {
     if (this.view === 'main') return [{ label: 'PAUSED', current: true }];
     return [
       { label: 'PAUSED', current: false },
-      { label: 'OPTIONS', current: true },
+      { label: 'SETTINGS', current: true },
     ];
   }
 
@@ -165,7 +165,7 @@ export class PauseMenuUi {
     }
     if (this.view === 'main') {
       if (id === 'pause:resume') this.primary();
-      else if (id === 'pause:options') this.openOptions();
+      else if (id === 'pause:settings') this.openOptions();
       else if (id === 'pause:leave') this.back();
       return;
     }
@@ -174,7 +174,7 @@ export class PauseMenuUi {
         clearGameData();
         this.refresh();
         break;
-      case 'vr':
+      case 'vr-toggle':
         void this.toggleVr();
         break;
       case 'music':
@@ -203,8 +203,13 @@ export class PauseMenuUi {
       case 'showMs': o.showMs = Boolean(value); break;
       case 'partyMode': o.partyMode = Boolean(value); break;
       case 'dwellTime': o.dwellTime = Math.max(0.5, Math.min(5, Math.round(Number(value) * 10) / 10)); break;
-      case 'playerColor': o.playerColor = normalizeHexColor(value, o.playerColor); break;
-      case 'enemyColor': o.enemyColor = normalizeHexColor(value, o.enemyColor); break;
+      case 'team1Color':
+        o.teamColors.team1 = normalizeHexColor(value, o.playerColor);
+        o.playerColor = o.teamColors.team1;
+        break;
+      case 'team2Color': o.teamColors.team2 = normalizeHexColor(value, o.enemyColor); break;
+      case 'team3Color': o.teamColors.team3 = normalizeHexColor(value, teamDefaultColor('team3')); break;
+      case 'team4Color': o.teamColors.team4 = normalizeHexColor(value, teamDefaultColor('team4')); break;
       case 'axisX': o.axisX = Boolean(value); break;
       case 'axisY': o.axisY = Boolean(value); break;
       default: break;

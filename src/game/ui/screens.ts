@@ -4,15 +4,53 @@
 import { store } from '../store';
 import { audio } from '../audio';
 import { CTF_LEVELS, KOTS_LEVELS, MODE_CAPS, MODE_ICONS, SURV_LEVELS, TT_GROUPS } from '../levels';
-import { MODELS } from '../config';
+import { MODELS, SKIRMISH_TEAMS } from '../config';
+import { BOT_AIS } from '../ai';
+import type { AgentConfig } from '../agents';
+import { resolveAimbot } from '../aimbot';
+import { shortKey } from '../social';
+import { SHOP_ITEMS, SHOP_SELLER_LUD16, availableAimbotPresets, resolveUnlockedAimbot } from '../shop';
+import { satsLabel } from '../wallet';
+import { teamDisplayName } from '../team';
+import { teamDefaultColor } from '../colors';
 import { P } from '../physics';
-import type { MenuPanel, MenuScreen } from './menuui';
+import type { MenuPanel, MenuRow, MenuScreen, MenuTab, PanelLine } from './menuui';
 
 /** TEAMS / SOLO switch on the King of the System and Survival menus. */
 let teamsMode = true;
 export function toggleTeamsMode(): void {
   teamsMode = !teamsMode;
 }
+
+/** SETTINGS tab: the settings, or the controls reference moved out of the hangar. */
+export type OptionsTab = 'settings' | 'controls';
+let optionsTab: OptionsTab = 'settings';
+export function setOptionsTab(tab: OptionsTab): void {
+  optionsTab = tab;
+}
+
+/** Keyboard / gamepad / VR reference shown on Settings → Controls. */
+const KEYBOARD_CONTROLS: [string, string][] = [
+  ['Thrust', 'C'],
+  ['Turn / pitch', 'W A S D or arrows'],
+  ['Fire cannon', 'Space'],
+  ['Homing missile', 'M'],
+  ['Nitro', 'Shift or N'],
+  ['Back', 'Esc or Backspace'],
+];
+const GAMEPAD_CONTROLS: [string, string][] = [
+  ['Steer', 'Left stick'],
+  ['Thrust', 'RT (or A)'],
+  ['Fire cannon', 'A'],
+  ['Homing missile', 'B'],
+  ['Nitro', 'X'],
+  ['Pause', 'Start'],
+];
+const VR_CONTROLS: [string, string][] = [
+  ['Look around', 'Move / rotate the device'],
+  ['Re-centre', 'Tap the scene'],
+  ['Input', 'Gamepad, keyboard or touch'],
+];
 
 function icon(id: string, label: string, file: string) {
   return { id, label, icon: file };
@@ -30,8 +68,9 @@ export function mainMenu(): MenuScreen {
       icons: [
         icon('/single-player', 'SINGLE PLAYER', '_singlePlayer.png'),
         icon('/multiplayer', 'MULTIPLAYER', '_multiPlayer.png'),
+        icon('/social', 'SOCIAL', '_multiPlayer.png'),
         icon('/hangar', 'HANGAR', 'Fighter3_icon.png'),
-        icon('/options', 'OPTIONS', '_optionsIcon.png'),
+        icon('/settings', 'SETTINGS', '_optionsIcon.png'),
         icon('/about', 'ABOUT', '_about.png'),
       ],
     },
@@ -109,17 +148,54 @@ export function tracksMenu(diff: string): MenuScreen {
 }
 
 // ---------------------------------------------------------------- briefing
-export function briefingScreen(levelKey: string, text: string, rows: string[]): MenuScreen {
+/**
+ * The briefing carries the whole roster in two sections: the player(s) as
+ * compact lines, then every bot as one row with inline AI and TEAM dropdowns
+ * and a remove control. The level's own bots and the added ones share the list;
+ * GameInstance.create applies it.
+ */
+export function briefingScreen(
+  levelKey: string, text: string, rows: string[], roster: AgentConfig[],
+): MenuScreen {
+  const players = roster.filter((a) => a.role === 'player');
+  const bots = roster.filter((a) => a.role === 'bot' && a.enabled);
+  const aiOptions = BOT_AIS.map((a) => ({ value: a.id, label: a.label }));
+  const teamOptions = SKIRMISH_TEAMS.map((t) => ({ value: t, label: teamDisplayName(t) }));
+  const rosterRows: MenuRow[] = [];
+  // Players: the current user can change its own team here too.
+  rosterRows.push({ kind: 'info', text: `PLAYERS · ${players.length}` });
+  for (const p of players) {
+    rosterRows.push({
+      kind: 'select', id: `player:${p.id}:team`,
+      label: `${p.name} · you`, value: p.team, options: teamOptions,
+    });
+  }
+  // Bots: one compact row each (AI + TEAM dropdowns + remove).
+  rosterRows.push({ kind: 'info', text: `BOTS · ${bots.length}` });
+  for (const b of bots) {
+    rosterRows.push({
+      kind: 'agent', id: b.id, name: b.name,
+      ai: b.ai, aiOptions, team: b.team, teamOptions, removable: true,
+    });
+  }
+  rosterRows.push({ kind: 'button', id: 'agent:add', label: 'Add Bot' });
+  const scores = rows.filter((r) => r.trim().length > 0);
   return {
     title: 'BRIEFING',
     left: {
-      heading: 'High Scores',
-      table: { rows: rows.length > 0 ? rows : [''] },
-      footer: levelKey.startsWith('tt-') ? 'beat the clock, collect the gates' : '',
+      heading: `ROSTER · ${players.length + bots.length}`,
+      rows: rosterRows,
     },
     right: {
       heading: 'MISSION',
-      lines: [{ text: text || 'No briefing text.', wrap: true, size: 14 }],
+      lines: [
+        { text: text || 'No briefing text.', wrap: true, size: 14 },
+        { text: 'HIGH SCORES', size: 14, gapBefore: 16, color: 'rgba(255,255,255,0.8)' },
+        ...(scores.length > 0
+          ? scores.map((r) => ({ text: r, size: 12, gapBefore: 2, color: 'rgba(255,255,255,0.72)' }))
+          : [{ text: 'no scores yet', size: 12, gapBefore: 2, color: 'rgba(255,255,255,0.45)' }]),
+      ],
+      footer: levelKey.startsWith('tt-') ? 'beat the clock, collect the gates' : '',
     },
     primary: { id: 'start', label: 'start' },
   };
@@ -134,16 +210,66 @@ export function briefingLoading(): MenuScreen {
 
 // ----------------------------------------------------------------- options
 export function optionsMenu(): MenuScreen {
+  const tabs: MenuTab[] = [
+    { id: 'options-tab:settings', label: 'GENERAL', active: optionsTab === 'settings' },
+    { id: 'options-tab:controls', label: 'CONTROLS', active: optionsTab === 'controls' },
+  ];
+  if (optionsTab === 'controls') {
+    const c = store.options;
+    return {
+      title: 'SETTINGS',
+      tabs,
+      left: {
+        heading: 'CONTROLS',
+        rows: [
+          {
+            kind: 'slider', id: 'dwellTime', label: 'VR Dwell Time', value: c.dwellTime,
+            min: 0.5, max: 5, step: 0.1, display: (v) => v.toFixed(1) + ' s',
+          },
+          { kind: 'check', id: 'axisX', label: 'Invert X axis', value: c.axisX },
+          { kind: 'check', id: 'axisY', label: 'Invert Y axis', value: c.axisY },
+        ],
+        footer: 'Esc = back (unsaved changes are reverted)',
+      },
+      right: {
+        heading: 'KEYBOARD & GAMEPAD',
+        lines: [
+          { text: 'KEYBOARD', size: 14, gapBefore: 2, color: 'rgba(255,255,255,0.72)' },
+          ...KEYBOARD_CONTROLS.map(([left, right]) => ({ left, right, gapBefore: 2 })),
+          { text: 'GAMEPAD', size: 14, gapBefore: 14, color: 'rgba(255,255,255,0.72)' },
+          ...GAMEPAD_CONTROLS.map(([left, right]) => ({ left, right, gapBefore: 2 })),
+          { text: 'VR MODE', size: 14, gapBefore: 14, color: 'rgba(255,255,255,0.72)' },
+          ...VR_CONTROLS.map(([left, right]) => ({ left, right, gapBefore: 2 })),
+        ],
+      },
+      primary: { id: 'save', label: 'save' },
+    };
+  }
   const o = store.options;
   const detailNames = ['Very High', 'High', 'Normal', 'Low', 'Very Low'];
   return {
-    title: 'OPTIONS',
+    title: 'SETTINGS',
+    tabs,
     left: {
       heading: 'SETTINGS',
       rows: [
         { kind: 'text', id: 'username', label: 'Username', value: o.username, maxLength: 12 },
-        { kind: 'color', id: 'playerColor', label: 'Player Colour', value: o.playerColor },
-        { kind: 'color', id: 'enemyColor', label: 'Enemy Colour', value: o.enemyColor },
+        {
+          kind: 'color', id: 'team1Color', label: 'Team 1 Colour (you)',
+          value: o.teamColors.team1 || o.playerColor,
+        },
+        {
+          kind: 'color', id: 'team2Color', label: 'Team 2 Colour',
+          value: o.teamColors.team2 || o.enemyColor,
+        },
+        {
+          kind: 'color', id: 'team3Color', label: 'Team 3 Colour',
+          value: o.teamColors.team3 || teamDefaultColor('team3'),
+        },
+        {
+          kind: 'color', id: 'team4Color', label: 'Team 4 Colour',
+          value: o.teamColors.team4 || teamDefaultColor('team4'),
+        },
         {
           kind: 'slider', id: 'distance', label: 'Draw Distance', value: o.distance,
           min: 128, max: 512, step: 1, display: (v) => String(Math.round(v)),
@@ -163,15 +289,8 @@ export function optionsMenu(): MenuScreen {
       ],
     },
     right: {
-      heading: 'CONTROLS & DATA',
+      heading: 'DATA',
       rows: [
-        { kind: 'button', id: 'vr', label: 'VR Mode', value: store.vr ? 'ON' : 'OFF' },
-        {
-          kind: 'slider', id: 'dwellTime', label: 'VR Dwell Time', value: o.dwellTime,
-          min: 0.5, max: 5, step: 0.1, display: (v) => v.toFixed(1) + ' s',
-        },
-        { kind: 'check', id: 'axisX', label: 'Invert X axis', value: o.axisX },
-        { kind: 'check', id: 'axisY', label: 'Invert Y axis', value: o.axisY },
         {
           kind: 'button', id: 'music', label: 'Music File',
           value: audio.customMusicName() ?? 'Default soundtrack',
@@ -180,7 +299,7 @@ export function optionsMenu(): MenuScreen {
           ? [{ kind: 'button' as const, id: 'music-reset', label: 'Reset Music' }]
           : []),
         { kind: 'button', id: 'clear', label: 'Clear All' },
-        { kind: 'info', text: 'scores, options, ghost data and the music file', small: true },
+        { kind: 'info', text: 'scores, settings, ghost data and the music file', small: true },
       ],
       footer: 'Esc = back (unsaved changes are reverted)',
     },
@@ -232,43 +351,202 @@ export function hangarMenu(): MenuScreen {
     ['Shield', 'absorbs 10 hits'],
     ['Repair', 'restores the full hull'],
   ];
-  const controls = [
-    ['Thrust', 'C'],
-    ['Turn / pitch', 'W A S D or arrows'],
-    ['Fire cannon', 'Space'],
-    ['Homing missile', 'M'],
-    ['Nitro', 'Shift or N'],
-    ['Back', 'Esc or Backspace'],
-  ];
-  const padControls = [
-    ['Steer', 'Left stick'],
-    ['Thrust', 'RT (or A)'],
-    ['Fire cannon', 'A'],
-    ['Homing missile', 'B'],
-    ['Nitro', 'X'],
-    ['Pause', 'Start'],
+  // Aimbot selection lives on the ship panel: cycle the preset with the button
+  // and read the tuning just above it. Locked shop presets are never selectable:
+  // only the free presets plus the ones the player owns are offered.
+  const owned = store.ownedItems;
+  const available = availableAimbotPresets(owned);
+  const aimbot = resolveUnlockedAimbot(store.options.aimbot, owned);
+  const aimbotStats: PanelLine[] = [
+    { text: 'AIMBOT', size: 15, gapBefore: 14, align: 'center' },
+    { left: 'Preset', right: aimbot.label, gapBefore: 2 },
+    { left: 'Aim cone', right: `${(Math.acos(aimbot.aimbotAngle) * (180 / Math.PI)).toFixed(0)}°`, gapBefore: 2 },
+    { left: 'Range', right: `${aimbot.aimbotDistance} u`, gapBefore: 2 },
+    { left: 'Engage stick', right: `≤ ${Math.round(aimbot.aimbotThreshold * 100)}%`, gapBefore: 2 },
+    { left: 'Assist', right: `${Math.round(aimbot.assist * 100)}%`, gapBefore: 2 },
+    { left: 'Unlocked', right: `${available.length} presets`, gapBefore: 2 },
   ];
   const left: MenuPanel = {
     icons: [{ id: 'noop', label: ship.name.replace(/(\D)(\d)/, '$1 $2').toUpperCase(), icon: 'Fighter3_icon.png' }],
     lines: [
       { text: 'multi-role interceptor', size: 13, align: 'center', color: 'rgba(255,255,255,0.6)' },
+      { text: `${satsLabel(store.sats)} · ${store.walletConnected ? 'Lightning linked' : 'no wallet linked'}`, size: 12, align: 'center', gapBefore: 8, color: 'rgba(255,255,255,0.72)' },
+      ...aimbotStats,
+    ],
+    rows: [
+      { kind: 'button', id: 'aimbot', label: 'Aimbot preset', value: aimbot.label },
+      { kind: 'button', id: '/shop', label: 'Shop', value: satsLabel(store.sats) },
+      { kind: 'button', id: '/social', label: 'Social', value: 'identity & messages' },
     ],
   };
   const right: MenuPanel = {
     heading: 'SHIP',
     lines: [
       ...statRows.map(([leftText, rightText]) => ({ left: leftText, right: rightText, gapBefore: 3 })),
-      { text: 'CONTROLS', size: 15, gapBefore: 16, align: 'center' },
-      ...controls.map(([leftText, rightText]) => ({ left: leftText, right: rightText, gapBefore: 2 })),
-      { text: 'GAMEPAD', size: 15, gapBefore: 16, align: 'center' },
-      ...padControls.map(([leftText, rightText]) => ({ left: leftText, right: rightText, gapBefore: 2 })),
-      { text: 'VR MODE', size: 15, gapBefore: 16, align: 'center' },
-      { left: 'Look around', right: 'Move / rotate the device', gapBefore: 2 },
-      { left: 'Re-centre', right: 'Tap the scene', gapBefore: 2 },
-      { left: 'Input', right: 'Gamepad, keyboard or touch', gapBefore: 2 },
+      {
+        text: 'Keyboard, gamepad and VR controls live under SETTINGS > CONTROLS.',
+        size: 12, gapBefore: 20, wrap: true, color: 'rgba(255,255,255,0.5)',
+      },
     ],
   };
-  return { title: 'HANGAR', left, right };
+  return {
+    title: 'HANGAR',
+    left,
+    right,
+    actions: [{ id: 'refresh-wallet', label: 'refresh' }],
+  };
+}
+
+// ------------------------------------------------------------------ social
+/**
+ * SOCIAL: the player's Nostr identity (npub/nsec, import + copy), the best run
+ * of each game mode read from everyone's Nostr score profiles, and the private
+ * DM inbox with a small composer.
+ */
+export function socialMenu(): MenuScreen {
+  const scores = store.gameHighScores;
+  const scoreLines: PanelLine[] = scores.length > 0
+    ? scores.flatMap((s): PanelLine[] => ([
+        { text: s.label, size: 13, gapBefore: 8, color: 'rgba(255,255,255,0.85)' },
+        {
+          left: s.value,
+          right: s.name || shortKey(s.owner),
+          gapBefore: 2, color: 'rgba(255,255,255,0.7)',
+        },
+      ]))
+    : [{ text: 'no scores on Nostr yet — press refresh', size: 12, color: 'rgba(255,255,255,0.5)' }];
+  const identityLines: PanelLine[] = [
+    { text: 'npub (public key)', size: 11, color: 'rgba(255,255,255,0.5)' },
+    { text: store.identityNpub || '(no identity yet)', wrap: true, size: 12, color: 'rgba(255,255,255,0.8)' },
+    { text: 'nsec (secret key — keep private)', size: 11, gapBefore: 6, color: 'rgba(255,255,255,0.5)' },
+    {
+      text: store.identityRevealed ? (store.identityNsec || '—') : '•'.repeat(24),
+      wrap: true, size: 12, color: 'rgba(255,255,255,0.8)',
+    },
+    {
+      text: `${satsLabel(store.sats)} · ${store.walletConnected ? 'Lightning linked' : 'no wallet linked'}`,
+      size: 12, gapBefore: 6, color: 'rgba(255,255,255,0.6)',
+    },
+  ];
+  const inbox = store.socialInbox;
+  const messageLines: PanelLine[] = inbox.length > 0
+    ? inbox.slice(0, 2).flatMap((m): PanelLine[] => ([
+        {
+          left: shortKey(m.from),
+          right: new Date(m.created * 1000).toLocaleTimeString(),
+          gapBefore: 4, color: 'rgba(255,255,255,0.55)',
+        },
+        { text: m.text, wrap: true, size: 13 },
+      ]))
+    : [{ text: 'no messages yet', size: 12, color: 'rgba(255,255,255,0.5)' }];
+  return {
+    title: 'SOCIAL',
+    left: {
+      heading: 'HIGH SCORES',
+      lines: [
+        ...scoreLines,
+        { text: 'LIGHTNING WALLET (NIP-47)', size: 13, gapBefore: 14, color: 'rgba(255,255,255,0.72)' },
+        {
+          text: store.walletStatus
+            || (store.walletConnected ? `${satsLabel(store.sats)} · linked` : 'no wallet linked'),
+          size: 12, gapBefore: 2,
+          color: store.walletStatus ? '#ffd479' : 'rgba(255,255,255,0.6)',
+        },
+      ],
+      rows: [
+        { kind: 'text', id: 'nwc-uri', label: 'NWC URI (nostr+walletconnect://…)', value: store.nwcUri, maxLength: 400 },
+        {
+          kind: 'button', id: 'wallet-connect', label: 'Link wallet',
+          value: store.walletConnected ? satsLabel(store.sats) : 'not linked',
+        },
+        ...(store.walletConnected
+          ? [{ kind: 'button' as const, id: 'wallet-disconnect', label: 'Unlink wallet' }]
+          : []),
+      ],
+    },
+    right: {
+      heading: 'NOSTR IDENTITY',
+      lines: [
+        ...identityLines,
+        { text: 'MESSAGES', size: 13, gapBefore: 12, color: 'rgba(255,255,255,0.72)' },
+        ...messageLines,
+        { text: ' ', size: 10, gapBefore: 14 },
+      ],
+      rows: [
+        { kind: 'button', id: 'identity-copy:npub', label: 'Copy npub' },
+        { kind: 'button', id: 'identity-copy:nsec', label: 'Copy nsec' },
+        { kind: 'text', id: 'identity-nsec', label: 'Import nsec or hex', value: store.identityInput, maxLength: 80 },
+        { kind: 'button', id: 'identity-import', label: 'Use this identity' },
+        ...(store.identityStatus
+          ? [{ kind: 'info' as const, text: store.identityStatus, small: true }]
+          : []),
+        { kind: 'text', id: 'social-to', label: 'Message to (npub or hex)', value: store.socialTo, maxLength: 80 },
+        { kind: 'text', id: 'social-body', label: 'Message', value: store.socialBody, maxLength: 200 },
+        { kind: 'button', id: 'social-send', label: 'Send message' },
+        ...(store.socialStatus
+          ? [{ kind: 'info' as const, text: store.socialStatus, small: true }]
+          : []),
+      ],
+    },
+    actions: [{ id: 'refresh-social', label: 'refresh' }],
+  };
+}
+
+// -------------------------------------------------------------------- shop
+/** The SHOP: spend satoshis (Lightning) on stronger aimbot presets. */
+export function shopMenu(): MenuScreen {
+  const owned = store.ownedItems;
+  const rows: MenuRow[] = [
+    { kind: 'info', text: `Balance: ${satsLabel(store.sats)}` },
+    {
+      kind: 'info',
+      small: true,
+      text: store.walletConnected
+        ? `paying ${SHOP_SELLER_LUD16 || 'no seller configured'} over Lightning`
+        : 'link a Lightning wallet on the Social page to buy',
+    },
+    ...(store.shopStatus ? [{ kind: 'info' as const, text: store.shopStatus, small: true }] : []),
+  ];
+  for (const item of SHOP_ITEMS) {
+    const has = owned.includes(item.id);
+    const affordable = store.sats === null || store.sats >= item.priceSats;
+    const preset = resolveAimbot(item.preset);
+    rows.push({
+      kind: 'button',
+      id: `buy:${item.id}`,
+      label: item.label,
+      value: has ? 'OWNED' : `${item.priceSats} sats`,
+      disabled: has,
+    });
+    rows.push({
+      kind: 'info',
+      small: true,
+      text: has
+        ? `${preset.label} preset unlocked.`
+        : `${item.blurb}${affordable ? '' : ' — need more sats'}`,
+    });
+  }
+  const detailLines: PanelLine[] = [
+    {
+      text: 'Buy premium aimbot presets with satoshis over Lightning. The shop asks the seller for a BOLT-11 invoice and pays it with the wallet linked to your npub; once the payment settles the preset unlocks in the hangar.',
+      wrap: true, size: 13, color: 'rgba(255,255,255,0.72)',
+    },
+    { text: ' ', size: 8 },
+  ];
+  for (const item of SHOP_ITEMS) {
+    const preset = resolveAimbot(item.preset);
+    detailLines.push({ text: preset.label.toUpperCase(), size: 14, color: '#ffffff', gapBefore: 10 });
+    detailLines.push({ left: 'Price', right: `${item.priceSats} sats`, gapBefore: 2 });
+    detailLines.push({ left: 'Aim cone', right: `${(Math.acos(preset.aimbotAngle) * (180 / Math.PI)).toFixed(0)}°`, gapBefore: 2 });
+    detailLines.push({ left: 'Range', right: `${preset.aimbotDistance} u`, gapBefore: 2 });
+    detailLines.push({ left: 'Assist', right: `${Math.round(preset.assist * 100)}%`, gapBefore: 2 });
+  }
+  return {
+    title: 'SHOP',
+    left: { heading: 'ITEMS', rows },
+    right: { heading: 'DETAILS', lines: detailLines },
+    actions: [{ id: 'refresh-wallet', label: 'refresh' }],
+  };
 }
 
 // ------------------------------------------------------------------- pause
@@ -276,27 +554,36 @@ export function hangarMenu(): MenuScreen {
  *  screen, drawn over the frozen match. HUD and flight input are hidden until
  *  the player resumes. */
 export function pauseMenu(): MenuScreen {
+  // The pause menu is the one runtime screen that switches the generic plane's
+  // action column back on: every paused action lives there, not in the content
+  // panel, so the frozen match keeps the whole left side.
   return {
     title: 'PAUSED',
     left: {
-      icons: [
-        icon('pause:resume', 'RESUME', '_resume.png'),
-        icon('pause:options', 'OPTIONS', '_optionsIcon.png'),
-        icon('pause:leave', 'LEAVE MATCH', '_leave.png'),
+      heading: 'MATCH PAUSED',
+      lines: [
+        {
+          text: 'The simulation is frozen. Use the actions column to resume, change settings or leave the match.',
+          size: 14,
+          wrap: true,
+        },
       ],
     },
     primary: { id: 'pause:resume', label: 'resume' },
+    actions: [{ id: 'pause:settings', label: 'settings' }],
     backLabel: 'leave match',
+    showActions: true,
   };
 }
 
 // ------------------------------------------------------------------ result
-export function resultMenu(won: boolean, message: string | null, medal: string | null): MenuScreen {
+export function resultMenu(won: boolean, message: string | null, medal: string | null, draw = false): MenuScreen {
   const lines = [];
-  if (won) lines.push({ text: `Congratulations ${username()}!`, size: 20, align: 'center' as const });
+  if (draw) lines.push({ text: 'The match is a draw.', size: 20, align: 'center' as const });
+  else if (won) lines.push({ text: `Congratulations ${username()}!`, size: 20, align: 'center' as const });
   if (message) lines.push({ text: message, size: 17, align: 'center' as const, gapBefore: 10 });
   return {
-    title: won ? 'VICTORY' : 'DEFEAT',
+    title: draw ? 'DRAW' : won ? 'VICTORY' : 'DEFEAT',
     left: { lines },
     right: medal
       ? { icons: [{ id: 'medal', label: '', icon: medal }] }
