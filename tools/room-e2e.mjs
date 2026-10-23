@@ -157,6 +157,12 @@ try {
   step('guest waiting in the same room menu', bothInRoom);
   check('guest not in the match', bothInRoom.hash === '#/room' && bothInRoom.meIndex === 1, bothInRoom);
   check('roster mirrored to the guest', bothInRoom.players.length === 2 && bothInRoom.players[1][0] === 'WingPilot');
+  // The level's bots are part of the roster on both clients (read-only rows).
+  const hostBots = await host.evaluate(`(async () => { ${PAGE} const s = snap(); return s.bots.map((b) => b.name).join(','); })()`);
+  const guestBots = await guest.evaluate(`(async () => { ${PAGE} const s = snap(); return s.bots.map((b) => b.name).join(','); })()`);
+  check('level bots are listed in the room', hostBots.length > 0 && guestBots === hostBots, {
+    count: hostBots.split(',').length,
+  });
   await poll(host, `snap() && snap().players.length === 2`, 30000);
   await host.screenshot(join(SHOTS, 'room-host-two-players.png'));
   await guest.screenshot(join(SHOTS, 'room-guest-two-players.png'));
