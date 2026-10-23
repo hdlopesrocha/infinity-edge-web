@@ -182,9 +182,4 @@ onBeforeUnmount(() => {
     </div>
   </div>
   <GazeCursor v-if="!paused" />
-  <template v-if="!paused">
-    <div class="corner-btn ru" aria-hidden="true"></div>
-    <div class="corner-btn rd" aria-hidden="true"></div>
-    <div class="corner-btn ld" aria-hidden="true"></div>
-  </template>
 </template>

@@ -32,7 +32,7 @@ body {
 .ui-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 /* The menu and lobby screens are painted into the game canvas, so the DOM
    overlay must not swallow their clicks: interactive in-match elements opt
-   back in below (.touch-layer, .corner-btn, inputs, …). The pause screen is
+   back in below (.touch-layer, inputs, …). The pause screen is
    painted into the same canvas, so no DOM backdrop sits over it. */
 
 .c-white { color: var(--ink); }
@@ -41,21 +41,6 @@ body {
 .c-white50 { color: var(--ink-50); }
 .c-yellow { color: var(--yellow); }
 .c-lime { color: var(--lime); }
-
-.corner-btn {
-  position: absolute; width: 160px; height: 48px;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--panel); color: var(--ink);
-  border: none; font-size: 18px; cursor: pointer; pointer-events: auto;
-  text-transform: lowercase; font-family: inherit; padding: 0;
-}
-.corner-btn.lu:hover { background: var(--red-50); }
-.corner-btn.ru { background: var(--panel); }
-.corner-btn.ru.go:hover { background: var(--green-50); }
-.corner-btn.lu { left: 0; top: 0; }
-.corner-btn.ru { right: 0; top: 0; }
-.corner-btn.ld { left: 0; bottom: 0; }
-.corner-btn.rd { right: 0; bottom: 0; }
 
 .track-btn {
   border: none; padding: 0 18px; height: 32px; font-size: 18px;
@@ -163,24 +148,6 @@ input[type='checkbox'].opt-check { width: 20px; height: 20px; margin: 0; pointer
   --accent-soft: rgba(127, 232, 216, 0.35);
   --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
-
-
-.corner-btn {
-  border-radius: var(--radius-sm);
-  background: rgba(10, 14, 22, 0.55);
-  border: 1px solid var(--accent-soft);
-  color: var(--accent-text);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  letter-spacing: 0.05em;
-  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
-}
-.corner-btn:hover { background: rgba(30, 40, 60, 0.65); border-color: var(--accent); }
-.corner-btn:active { transform: translateY(1px); }
-.corner-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.corner-btn.lu:hover { background: rgba(70, 18, 18, 0.6); }
-.corner-btn.ru.go:hover { background: rgba(14, 60, 30, 0.6); }
 
 
 .track-btn, .menubtn-wide { border-radius: var(--radius-sm); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); transition: filter 140ms ease, transform 140ms ease; }
