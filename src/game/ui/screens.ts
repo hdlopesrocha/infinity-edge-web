@@ -155,7 +155,7 @@ export function tracksMenu(diff: string): MenuScreen {
  * filter above it narrows the visible entries to one team; the player's own
  * team is editable, bots keep their AI/TEAM dropdowns and remove control.
  */
-let briefingTeamFilter: string | null = null;
+let briefingTeamFilter: string | null = 'team1';
 
 /** Set (or clear with null) the briefing roster's team filter. */
 export function setBriefingTeamFilter(team: string | null): void {

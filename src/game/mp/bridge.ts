@@ -28,8 +28,8 @@ export interface HostSimHooks {
   shipSfx(ship: SpaceObject, name: string, volume: number): void;
   /** A voice line for the crew of `ship`. */
   shipNotification(ship: SpaceObject, field: string): void;
-  /** Every voice the match raises (fanned out to all guests). */
-  voice(field: string): void;
+  /** A voice line raised for one team: routed to the guests that fly for it. */
+  teamVoice(team: string, field: string): void;
   /** An explosion was spawned: stream it (visuals replay on every client). */
   explosion(info: ExplosionSpawnInfo): void;
   /** Distance sfx of a destroyed object, once per remote viewpoint. */

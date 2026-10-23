@@ -340,8 +340,16 @@ export class GameInstance {
   setNotification(voiceField: string): void {
     this.notificationText = this.rc.playVoice(voiceField);
     this.notificationTime = 3000;
-    // Multiplayer host: the same line is a wire voice event for the guests.
-    simHooks.host?.voice(voiceField);
+  }
+
+  /**
+   * A voice line raised for one team. The local player hears its own team's
+   * lines; a hosted match routes every team's line to the guests that fly for
+   * it, so each client prints the event from its own team's point of view.
+   */
+  teamVoice(team: Team, field: string): void {
+    if (this.selectedObject?.team === team) this.setNotification(field);
+    simHooks.host?.teamVoice(team.name, field);
   }
 
   /**
@@ -503,7 +511,7 @@ export class GameInstance {
       });
       if (this.ghostRecords.length > 30000) this.ghostRecords.shift();
     }
-    for (const t of this.teams.values()) t.manage(this, obj);
+    for (const t of this.teams.values()) t.manage(this);
     if (this.control.nitroButton.value && obj) obj.launchNitro(this.dtMs);
     if (obj) {
       this.control.homings = obj.homings;

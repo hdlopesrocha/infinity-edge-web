@@ -18,7 +18,7 @@ import { quat, vec3 } from '../src/engine/math';
 import { decodeMessage, encodeMessage } from '../src/game/net';
 import {
   decodeEvents, decodeHud, decodeResult, decodeScene, decodeSnapshot, encodeInput, encodeJoin,
-  GameMsg, NO_INDEX, Reader, WireAddon, WireFlag, WireKind,
+  GameMsg, NO_INDEX, Reader, VOICE_FIELDS, WireAddon, WireFlag, WireKind,
 } from '../src/game/protocol';
 import type { NetScene } from '../src/game/protocol';
 
@@ -355,14 +355,18 @@ describe('multiplayer host session', () => {
     const { simHooks } = await import('../src/game/mp/bridge');
     simHooks.host!.shipSfx(shipRef, 'hitSound', 0.4);
     simHooks.host!.shipNotification(shipRef, 'leavingFieldOfBattle');
-    simHooks.host!.voice('ourFlagWasStolen');
+    // A team line reaches only the guests flying for that team.
+    simHooks.host!.teamVoice(shipRef.team.name, 'ourFlagWasStolen');
+    simHooks.host!.teamVoice('nobody', 'youLost');
     simHooks.host!.explosion({ pos: [1, 2, 3], scale: 3, life: 750, smoke: 12, debris: 6, model: MODEL });
     host.preTick(16);
     host.postTick(40);
     const events = (await guest.ofType(GameMsg.Events)).map((f) => decodeEvents(new Reader(f.payload), 1024));
     const all = events.flat();
     expect(all.some((e) => e.type === 'sound' && e.id === 3 && Math.abs(e.volume - 0.4) < 0.01)).toBe(true);
-    expect(all.some((e) => e.type === 'voice')).toBe(true);
+    const voices = all.filter((e) => e.type === 'voice');
+    expect(voices.some((e) => e.type === 'voice' && e.id === VOICE_FIELDS.indexOf('ourFlagWasStolen'))).toBe(true);
+    expect(voices.some((e) => e.type === 'voice' && e.id === VOICE_FIELDS.indexOf('youLost'))).toBe(false);
     const ex = all.find((e) => e.type === 'explosion');
     expect(ex).toBeDefined();
     if (ex && ex.type === 'explosion') {

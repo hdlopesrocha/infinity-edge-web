@@ -194,7 +194,19 @@ describe('menu screens', () => {
       { id: 'AS1', name: 'AS1', role: 'bot', team: 'team2', ai: 'AIHunt', enabled: true, added: false },
       { id: 'AS2', name: 'AS2', role: 'bot', team: 'team2', ai: 'AIHunt', enabled: false, added: false },
     ];
-    const briefing = screens.briefingScreen('ctf-easy', 'hello', ['1 - 10'], roster);
+    // The filter starts on Team 1 (the default), listing only its entries.
+    const defaultView = screens.briefingScreen('ctf-easy', 'hello', ['1 - 10'], roster);
+    expect((defaultView.left?.rows ?? []).map((r) => r.id)).toEqual(['HS1', 'HS2', 'agent:add']);
+    expect(defaultView.left?.filter?.active).toBe('team1');
+    expect(defaultView.left?.filter?.teams).toEqual(['team1', 'team2']);
+    // ALL shows the players and bots of every team.
+    let briefing: ReturnType<typeof screens.briefingScreen>;
+    try {
+      screens.setBriefingTeamFilter(null);
+      briefing = screens.briefingScreen('ctf-easy', 'hello', ['1 - 10'], roster);
+    } finally {
+      screens.setBriefingTeamFilter('team1');
+    }
     expect(briefing.primary?.id).toBe('start');
     // No separate skirmish menu any more.
     expect(briefing.actions).toBeUndefined();
@@ -223,7 +235,7 @@ describe('menu screens', () => {
       expect(filteredIds).toEqual(['AS1', 'agent:add']);
       expect(filtered.left?.filter?.active).toBe('team2');
     } finally {
-      screens.setBriefingTeamFilter(null);
+      screens.setBriefingTeamFilter('team1');
     }
     // High scores moved into the mission panel.
     expect(briefing.right?.lines?.some((l) => 'text' in l && l.text === 'HIGH SCORES')).toBe(true);

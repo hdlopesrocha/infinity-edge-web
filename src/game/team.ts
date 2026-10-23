@@ -46,13 +46,10 @@ export class Team {
     this.allies.push(this);
   }
 
-  manage(gi: GameInstance, controlled: SpaceObject | null): void {
-    if (controlled && this === controlled.team) {
-      while (this.sounds.length > 0) {
-        gi.setNotification(this.sounds.shift()!);
-      }
-    }
-    this.sounds.length = 0;
+  manage(gi: GameInstance): void {
+    // Every line is raised for the team it belongs to; the instance plays the
+    // player's own team locally and routes the others to their guests.
+    while (this.sounds.length > 0) gi.teamVoice(this, this.sounds.shift()!);
   }
 }
 

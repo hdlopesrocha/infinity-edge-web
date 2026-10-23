@@ -194,8 +194,10 @@ is rendered there either. The host owns the room state; the guests mirror it.
   can join again from the lobby. Chat and voice frames keep flowing on the
   same data channels during the match (the client has no in-match chat UI yet).
 
-The room menu renders no DOM: roster, team dropdowns, chat log/input, the mic
-meter, PLAY and the corner buttons are all part of the WebGL overlay.
+The room menu renders no DOM: the roster (players plus the level's read-only
+bots, narrowed by the shared team filter, which starts on Team 1), team
+dropdowns, chat log/input, the mic meter, PLAY and the corner buttons are all
+part of the WebGL overlay.
 
 ## Dedicated server (no player, all computation on the server)
 

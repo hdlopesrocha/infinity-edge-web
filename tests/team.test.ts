@@ -92,6 +92,21 @@ describe('CTF points conditions', () => {
     const lost = instanceWith([combatant('team1', 3), combatant('team2', 1)], combatant('team2', 1));
     expect(new CondMorePoints('team1').check(lost)).toBe(false);
   });
+  it('raises each queued line for its own team', () => {
+    const a = combatant('team1', 0);
+    const b = combatant('team2', 0);
+    a.sounds.push('ourTeamHasTheFlag');
+    b.sounds.push('ourFlagWasStolen');
+    const seen: [string, string][] = [];
+    const gi = {
+      teamVoice: (t: Team, f: string) => seen.push([t.name, f]),
+    } as unknown as GameInstance;
+    a.manage(gi);
+    b.manage(gi);
+    expect(seen).toEqual([['team1', 'ourTeamHasTheFlag'], ['team2', 'ourFlagWasStolen']]);
+    expect(a.sounds).toHaveLength(0);
+    expect(b.sounds).toHaveLength(0);
+  });
 });
 
 describe('team display names', () => {

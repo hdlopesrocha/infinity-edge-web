@@ -17,6 +17,7 @@ import { store } from '../store';
 import { cssColor, accentMoved, currentPlayerAccent, readableAccent } from '../ui/theme';
 import { optionListHeight, paintOptionList, paintRosterRow, paintTeamFilter, teamOptions } from '../ui/rosterui';
 import type { RosterEntry, RosterOption } from '../ui/rosterui';
+import { BOT_AIS } from '../ai';
 import {
   UI_FONT as FONT, CONTENT_CX, CONTENT_W, PANEL_W, PANEL_Y, PANEL_H, leftPanelX,
   paintActionColumn, paintContentShell, paintNavbar, contentFocusRect,
@@ -60,8 +61,8 @@ export class RoomUi implements ScreenUi {
   private hover: string | null = null;
   private pressed: string | null = null;
   private openTeam: number | null = null;
-  /** Team filter for the players list (null = show everyone). */
-  private teamFilter: string | null = null;
+  /** Team filter for the players/bots list (null = show everyone). */
+  private teamFilter: string | null = 'team1';
   private focusChat = false;
   private chatText = '';
   private chatScroll = 0;
@@ -192,15 +193,28 @@ export class RoomUi implements ScreenUi {
     ctx.fillText('PLAYERS', X(x0 + 20), Y(y0 + 26));
 
     // The shared roster component: the same team filter and rows the briefing
-    // uses, fed from the room snapshot.
+    // uses, fed from the room snapshot. The level's bots are listed too (they
+    // fly the match), read-only: their AI and team come from the briefing.
     const options = teamOptions(snap.teams);
-    const entries: RosterEntry[] = snap.players.map((p) => ({
-      id: p.pubkey,
-      name: p.name,
-      team: p.team,
-      teamOptions: options,
-      badges: [...(p.host ? ['HOST'] : []), ...(p.mic ? ['MIC'] : [])],
-    }));
+    const aiOptions = BOT_AIS.map((a) => ({ value: a.id, label: a.label }));
+    const bots = snap.bots ?? [];
+    const entries: RosterEntry[] = [
+      ...snap.players.map((p): RosterEntry => ({
+        id: p.pubkey,
+        name: p.name,
+        team: p.team,
+        teamOptions: options,
+        badges: [...(p.host ? ['HOST'] : []), ...(p.mic ? ['MIC'] : [])],
+      })),
+      ...bots.map((b): RosterEntry => ({
+        id: 'bot:' + b.name,
+        name: b.name,
+        team: b.team,
+        teamOptions: options,
+        ai: b.ai,
+        aiOptions,
+      })),
+    ];
     const teamsPresent = [...new Set(entries.map((e) => e.team || DEFAULT_TEAM))].sort();
     if (this.teamFilter !== null && !teamsPresent.includes(this.teamFilter)) this.teamFilter = null;
     this.regions.push(...paintTeamFilter({
@@ -224,6 +238,20 @@ export class RoomUi implements ScreenUi {
         teamRgb: teamColor(team, store.options),
         ids: { team: canPick ? 'team:' + i : undefined },
         teamPrefix: '', chipW: 150, highlight: me,
+      }));
+      y += rowH;
+    });
+    bots.forEach((bot, i) => {
+      const team = bot.team || DEFAULT_TEAM;
+      if (this.teamFilter !== null && team !== this.teamFilter) return;
+      this.regions.push(...paintRosterRow({
+        ctx, x: X(x0 + 22), y: Y(y - 4), w: U(w - 44), h: U(rowH - 6), scale: s,
+        entry: entries[snap.players.length + i],
+        hover: this.hover,
+        accent: this.accent, accentText: this.accentText, font: FONT, fontPx: U(15),
+        teamRgb: teamColor(team, store.options),
+        ids: {},
+        teamPrefix: '', chipW: 150,
       }));
       y += rowH;
     });

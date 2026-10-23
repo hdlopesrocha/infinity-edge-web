@@ -33,6 +33,7 @@ import { decodeMessage, encodeMessage, textDecoder, textEncoder } from '../net';
 import { GameMsg } from '../protocol';
 import { decodeVoiceFrame, encodeVoiceFrame } from './voice';
 import { loadLevel } from '../levels';
+import { rosterFor } from '../agents';
 import { TEAMS } from '../config';
 import {
   createHostCert, importCertKey, newNonce, signAnswer, signAuth, verifyAnswer, verifyAuth,
@@ -99,6 +100,15 @@ export interface RoomPlayerInfo {
   lud16?: string;
 }
 
+/** One of the level's bots as the waiting room shows it (read-only). */
+export interface RoomBotInfo {
+  name: string;
+  /** Team id ('' = the level's default). */
+  team: string;
+  /** AI brain id (see BOT_AIS). */
+  ai: string;
+}
+
 export interface ChatLine {
   from: string;
   text: string;
@@ -118,6 +128,8 @@ export interface RoomSnapshot {
   /** Teams the level offers (host loads the level, guests get them in state). */
   teams: string[];
   players: RoomPlayerInfo[];
+  /** The level's bots, shown next to the players (they fly in the match). */
+  bots: RoomBotInfo[];
   meIndex: number;
   isHost: boolean;
   phase: 'waiting' | 'playing';
@@ -383,7 +395,8 @@ export class Multiplayer implements DmTransport {
   private chat: ChatLine[] = [];
   private roomPhase: 'waiting' | 'playing' = 'waiting';
   private roomTeams: string[] = [];
-  private roomTeamsFor = '';
+  /** The level's bots, listed in the waiting room next to the players. */
+  private roomBots: RoomBotInfo[] = [];
   private hostTeam = '';
   private micOn = false;
   /** Host-set escrowed bet amount (0 = none). */
@@ -500,6 +513,7 @@ export class Multiplayer implements DmTransport {
     try { this.guestRoom?.transport.close(); } catch { /* already closed */ }
     this.guestRoom = null;
     this.roster = [];
+    this.roomBots = [];
     this.chat = [];
     this.roomPhase = 'waiting';
     this.guestBetAccepted = false;
@@ -822,17 +836,21 @@ export class Multiplayer implements DmTransport {
 
   /** Teams the level offers (config order), used by the team pickers. */
   private async loadTeams(levelKey: string): Promise<void> {
-    if (this.roomTeamsFor === levelKey && this.roomTeams.length > 0) return;
     try {
       const def = await loadLevel(levelKey);
       const names = [...new Set(def.objects.map((o) => o.team))].filter((n) => n && n !== 'ambient');
       const order = TEAMS.map((t) => t.name);
       names.sort((a, b) => order.indexOf(a) - order.indexOf(b));
       this.roomTeams = names.length > 0 ? names : ['team1'];
+      // The host applies this roster when the match starts (instance.ts), so the
+      // waiting room lists exactly the bots that will fly it.
+      this.roomBots = rosterFor(levelKey, def)
+        .filter((a) => a.role === 'bot' && a.enabled)
+        .map((a) => ({ name: a.name, team: a.team, ai: a.ai }));
     } catch {
       this.roomTeams = ['team1'];
+      this.roomBots = [];
     }
-    this.roomTeamsFor = levelKey;
     this.onRoom?.();
   }
 
@@ -992,6 +1010,7 @@ export class Multiplayer implements DmTransport {
     this.hostKey = null;
     this.roomPassword = '';
     this.roster = [];
+    this.roomBots = [];
     this.chat = [];
     this.roomPhase = 'waiting';
     this.betAmount = 0;
@@ -1050,6 +1069,7 @@ export class Multiplayer implements DmTransport {
       protected: info.protected,
       teams: this.roomTeams,
       players,
+      bots: this.roomBots,
       meIndex: this.hostingRoom ? 0 : (this.guestRoom?.you ?? 0),
       isHost: !!this.hostingRoom,
       phase: this.roomPhase,
@@ -1780,6 +1800,7 @@ export class Multiplayer implements DmTransport {
       teams: this.roomTeams,
       you,
       players,
+      bots: this.roomBots,
       bet: this.betAmount,
       betError: this.betError,
     }));
@@ -2355,7 +2376,7 @@ export class Multiplayer implements DmTransport {
   /** Guest: host -> client waiting-room messages (chat, roster, start). */
   private handleGuestRoomMessage(msg: {
     t?: string; level?: string; title?: string; max?: number; phase?: 'waiting' | 'playing';
-    you?: number; players?: RoomPlayerInfo[]; teams?: string[];
+    you?: number; players?: RoomPlayerInfo[]; teams?: string[]; bots?: RoomBotInfo[];
     from?: string; text?: string; system?: boolean;
     /** Host-set escrowed bet amount and its last bank error. */
     bet?: number; betError?: string;
@@ -2378,6 +2399,7 @@ export class Multiplayer implements DmTransport {
         room.you = typeof msg.you === 'number' ? msg.you : room.you;
         room.players = Array.isArray(msg.players) ? msg.players : room.players;
         room.teams = Array.isArray(msg.teams) && msg.teams.length > 0 ? msg.teams : room.teams;
+        if (Array.isArray(msg.bots)) this.roomBots = msg.bots;
         room.phase = msg.phase === 'playing' ? 'playing' : 'waiting';
         room.betAmount = typeof msg.bet === 'number' ? msg.bet : room.betAmount;
         room.betError = typeof msg.betError === 'string' ? msg.betError : '';

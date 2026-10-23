@@ -161,6 +161,13 @@ try {
   await host.screenshot(join(SHOTS, 'room-host-two-players.png'));
   await guest.screenshot(join(SHOTS, 'room-guest-two-players.png'));
 
+  // -------------------------------------------------------------- roster UI
+  // The shared roster filter starts on Team 1; the checks below move players
+  // between teams, so show every team first.
+  check('room roster filter defaults to team1', await host.evaluate(`(async () => { ${PAGE}
+    return R().uiOverlay.teamFilter === 'team1'; })()`));
+  await clickRegion(host, 'filter:all');
+
   // ------------------------------------------------------------------- chat
   await clickRegion(guest, 'chat');
   await typeChat(guest, 'hello from the guest');
@@ -184,7 +191,7 @@ try {
     return R().uiOverlay.regions.some((r) => r.id === 'team:0'); })()`);
   check('guest cannot open the host team picker', guestHostRow === false);
   await clickRegion(guest, 'team:1');
-  await clickRegion(guest, 'opt:team:1:alien');
+  await clickRegion(guest, 'opt:team:1:team2');
   const ownTeam = await poll(host, `snap() && snap().players[1].team === 'team2'`, 30000);
   check('guest changed its own team (host sees it)', ownTeam === true);
   // Put the guest back on human for the match check below.

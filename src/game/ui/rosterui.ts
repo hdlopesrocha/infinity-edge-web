@@ -215,28 +215,31 @@ export function paintRosterRow(p: RosterRowPaint): UiRect[] {
     rects.push({ id: p.ids.remove, x: rx, y: p.y, w: removeW, h: p.h });
     right -= removeW + gap;
   }
-  if (entry.showTeam !== false && p.ids.team) {
+  if (entry.showTeam !== false) {
+    // Read-only rows (a room's bots) paint the chip without a hit region.
+    const id = p.ids.team;
     const cx = right - chipW;
     paintChip({
       ctx, x: cx, y: midY - chipH / 2, w: chipW, h: chipH,
       text: (p.teamPrefix ?? 'TEAM: ') + optionLabel(entry.teamOptions, entry.team || 'auto'),
-      hovered: p.hover === p.ids.team,
+      hovered: id !== undefined && p.hover === id,
       accent: p.teamRgb, accentText: readableAccent(p.teamRgb), lineWidth: scale,
-      fontPx: chipFont, font: p.font,
+      fontPx: chipFont, font: p.font, caret: id !== undefined,
     });
-    rects.push({ id: p.ids.team, x: cx, y: midY - chipH / 2, w: chipW, h: chipH });
+    if (id !== undefined) rects.push({ id, x: cx, y: midY - chipH / 2, w: chipW, h: chipH });
     right -= chipW + gap;
   }
-  if (entry.ai !== undefined && p.ids.ai) {
+  if (entry.ai !== undefined) {
+    const id = p.ids.ai;
     const cx = right - chipW;
     paintChip({
       ctx, x: cx, y: midY - chipH / 2, w: chipW, h: chipH,
       text: (p.aiPrefix ?? 'AI: ') + optionLabel(entry.aiOptions ?? [], entry.ai),
-      hovered: p.hover === p.ids.ai,
+      hovered: id !== undefined && p.hover === id,
       accent: p.accent, accentText: p.accentText, lineWidth: scale,
-      fontPx: chipFont, font: p.font,
+      fontPx: chipFont, font: p.font, caret: id !== undefined,
     });
-    rects.push({ id: p.ids.ai, x: cx, y: midY - chipH / 2, w: chipW, h: chipH });
+    if (id !== undefined) rects.push({ id, x: cx, y: midY - chipH / 2, w: chipW, h: chipH });
     right -= chipW + gap;
   }
   void right;

@@ -132,14 +132,18 @@ input[type='checkbox'].opt-check { width: 20px; height: 20px; margin: 0; pointer
 /* Boot loading bar (Floating-Gear chrome: Black40 panel, black `_pixel` bar
    with a white fill, DejaVu labels). */
 
-.fs-btn {
+.game-chrome {
   position: fixed; top: 56px; right: 8px; z-index: 60;
+  display: flex; align-items: center; gap: 6px;
+}
+.chrome-btn {
   width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
   background: rgba(0, 0, 0, 0.35); color: var(--accent-text, #d8dde3);
   border: 1px solid var(--accent-soft, rgba(255, 255, 255, 0.25)); border-radius: 4px;
   cursor: pointer; pointer-events: auto; padding: 0; font: inherit;
 }
-.fs-btn:hover { background: rgba(0, 0, 0, 0.6); color: var(--accent, #fff); border-color: var(--accent, #fff); }
+.chrome-btn:hover { background: rgba(0, 0, 0, 0.6); color: var(--accent, #fff); border-color: var(--accent, #fff); }
+.chrome-btn.on { background: var(--accent-soft, rgba(127, 232, 216, 0.35)); color: var(--accent, #fff); }
 
 .medal { width: 128px; height: 128px; cursor: pointer; }
 

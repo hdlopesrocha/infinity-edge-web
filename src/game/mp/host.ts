@@ -121,8 +121,6 @@ export class HostSession {
   private teamList: { team: import('../team').Team; wireIndex: number }[] = [];
   private resultSent = false;
   private accumMs = 0;
-  /** Voices raised this tick (sent to every guest). */
-  private voices: number[] = [];
   /** Explosions spawned this tick (sent to every guest). */
   private explosions: NetEvent[] = [];
   /** Called whenever the guest list changes (room updates, HUD). */
@@ -529,7 +527,6 @@ export class HostSession {
       }));
     }
     this.tick = (this.tick + 1) >>> 0;
-    this.voices.length = 0;
     this.explosions.length = 0;
   }
 
@@ -687,7 +684,6 @@ export class HostSession {
   // ---------------------------------------------------------------- events
   private sendEvents(guest: Guest): void {
     const events: NetEvent[] = [];
-    for (const id of this.voices) events.push({ type: 'voice', id });
     events.push(...guest.events);
     for (const e of this.explosions) events.push(e);
     guest.events = [];
@@ -721,9 +717,14 @@ export class HostSession {
         if (id < 0 || !guest) return;
         guest.events.push({ type: 'voice', id });
       },
-      voice: (field) => {
+      // A line raised for one team: only the guests flying for it hear it, so
+      // every client prints the event from its own team's point of view.
+      teamVoice: (team, field) => {
         const id = VOICE_FIELDS.indexOf(field);
-        if (id >= 0) this.voices.push(id);
+        if (id < 0) return;
+        for (const guest of this.guests.values()) {
+          if (guest.ship?.team.name === team) guest.events.push({ type: 'voice', id });
+        }
       },
       explosion: (info) => {
         this.explosions.push({
