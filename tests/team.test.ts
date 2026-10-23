@@ -14,8 +14,11 @@ function combatant(name: string, points: number): Team {
   return t;
 }
 
-function instanceWith(teams: Team[]): GameInstance {
-  return { teams: new Map(teams.map((t) => [t.name, t])) } as unknown as GameInstance;
+function instanceWith(teams: Team[], selected: Team | null = null): GameInstance {
+  return {
+    teams: new Map(teams.map((t) => [t.name, t])),
+    selectedObject: selected ? { team: selected } : null,
+  } as unknown as GameInstance;
 }
 
 describe('CTF points conditions', () => {
@@ -23,33 +26,33 @@ describe('CTF points conditions', () => {
     const a = combatant('team1', 3);
     const b = combatant('team2', 2);
     const gi = instanceWith([a, b]);
-    expect(new CondMorePoints(a).check(gi)).toBe(true);
-    expect(new CondMorePoints(b).check(gi)).toBe(false);
+    expect(new CondMorePoints('team1').check(gi)).toBe(true);
+    expect(new CondMorePoints('team2').check(gi)).toBe(false);
   });
 
   it('is a draw when the lead is shared, not a defeat', () => {
     const a = combatant('team1', 3);
     const b = combatant('team2', 3);
     const gi = instanceWith([a, b]);
-    expect(new CondMorePoints(a).check(gi)).toBe(false);
-    expect(new CondDrawPoints(a).check(gi)).toBe(true);
-    expect(new CondDrawPoints(b).check(gi)).toBe(true);
+    expect(new CondMorePoints('team1').check(gi)).toBe(false);
+    expect(new CondDrawPoints('team1').check(gi)).toBe(true);
+    expect(new CondDrawPoints('team2').check(gi)).toBe(true);
   });
 
   it('is a draw at 0-0', () => {
     const a = combatant('team1', 0);
     const b = combatant('team2', 0);
     const gi = instanceWith([a, b]);
-    expect(new CondMorePoints(a).check(gi)).toBe(false);
-    expect(new CondDrawPoints(a).check(gi)).toBe(true);
+    expect(new CondMorePoints('team1').check(gi)).toBe(false);
+    expect(new CondDrawPoints('team1').check(gi)).toBe(true);
   });
 
   it('is a loss when another combatant is ahead (no draw)', () => {
     const a = combatant('team1', 2);
     const b = combatant('team2', 4);
     const gi = instanceWith([a, b]);
-    expect(new CondMorePoints(a).check(gi)).toBe(false);
-    expect(new CondDrawPoints(a).check(gi)).toBe(false);
+    expect(new CondMorePoints('team1').check(gi)).toBe(false);
+    expect(new CondDrawPoints('team1').check(gi)).toBe(false);
   });
 
   it('ignores the neutral ambient team and teams with no objects', () => {
@@ -61,8 +64,8 @@ describe('CTF points conditions', () => {
     const gi = instanceWith([a, b, ambient, empty]);
     // 0-0 between the two real teams is a draw: ambient and the empty team
     // must not turn it into a win for either side.
-    expect(new CondMorePoints(a).check(gi)).toBe(false);
-    expect(new CondDrawPoints(a).check(gi)).toBe(true);
+    expect(new CondMorePoints('team1').check(gi)).toBe(false);
+    expect(new CondDrawPoints('team1').check(gi)).toBe(true);
   });
 
   it('supports up to four mutually hostile teams', () => {
@@ -71,10 +74,23 @@ describe('CTF points conditions', () => {
     const c = combatant('team3', 4);
     const d = combatant('team4', 1);
     const gi = instanceWith([a, b, c, d]);
-    expect(new CondMorePoints(a).check(gi)).toBe(true);
+    expect(new CondMorePoints('team1').check(gi)).toBe(true);
     // b and c are tied behind the leader: neither wins nor draws the top.
-    expect(new CondDrawPoints(b).check(gi)).toBe(false);
-    expect(new CondMorePoints(b).check(gi)).toBe(false);
+    expect(new CondDrawPoints('team2').check(gi)).toBe(false);
+    expect(new CondMorePoints('team2').check(gi)).toBe(false);
+  });
+
+  it("follows the player's own team, not a hard-coded team1", () => {
+    const a = combatant('team1', 1);
+    const b = combatant('team2', 2);
+    // The player is on team2, but the level's goal names `team1` (the friendly
+    // side by convention): the condition must judge the player's own team.
+    const gi = instanceWith([a, b], b);
+    expect(new CondMorePoints('team1').check(gi)).toBe(true);
+    expect(new CondDrawPoints('team1').check(gi)).toBe(false);
+    // And a player losing on team2 gets no victory.
+    const lost = instanceWith([combatant('team1', 3), combatant('team2', 1)], combatant('team2', 1));
+    expect(new CondMorePoints('team1').check(lost)).toBe(false);
   });
 });
 

@@ -1444,6 +1444,9 @@ export class Multiplayer implements DmTransport {
     peer.guestPubkey = pubkey;
     peer.name = body.name || 'Pilot';
     this.hostPeers.set(pubkey, peer);
+    // The channel may already be open (its onopen fired before this answer):
+    // register it now so the guest's auth-request is handled.
+    this.openHostChannel(peer);
     try {
       await peer.pc.setRemoteDescription({ type: 'answer', sdp: body.sdp });
       peer.remoteSet = true;
@@ -1516,10 +1519,9 @@ export class Multiplayer implements DmTransport {
     };
     // The host created the channel: once it opens, the guest answers the room
     // challenge (auth-request) and the link becomes a waiting-room guest.
-    channel.onopen = () => {
-      if (!peer.guestPubkey) return;
-      this.addGuestChannel(peer.guestPubkey, peer.name, rtcTransport(channel));
-    };
+    // The channel may open before the guest's answer is applied (or after):
+    // openHostChannel is idempotent and is retried from onHostAnswer.
+    channel.onopen = () => this.openHostChannel(peer);
     channel.onclose = () => {
       if (peer.guestPubkey) this.dropPeer(peer.guestPubkey);
     };
@@ -1593,6 +1595,18 @@ export class Multiplayer implements DmTransport {
     this.links.set(pubkey, { name, transport, authed: false, team: '', mic: false, betAccepted: false, lud16: '' });
     transport.onclose = () => this.dropPeer(pubkey);
     transport.onmessage = (data) => void this.onGuestFrame(pubkey, data);
+  }
+
+  /**
+   * Register a host peer's data channel once it is open and its guest is known.
+   * The channel can open before the guest's answer arrives (the onopen fires
+   * first and there is no guest yet), so onHostAnswer calls this again.
+   */
+  private openHostChannel(peer: HostPeer): void {
+    const channel = peer.channel;
+    if (!peer.guestPubkey || !channel || channel.readyState !== 'open') return;
+    if (this.links.has(peer.guestPubkey)) return;
+    this.addGuestChannel(peer.guestPubkey, peer.name, rtcTransport(channel));
   }
 
   private async onGuestFrame(pubkey: string, data: ArrayBuffer | Uint8Array): Promise<void> {
@@ -2134,11 +2148,19 @@ export class Multiplayer implements DmTransport {
     room: RoomInfo, channel: RTCDataChannel, transport: GameTransport, pc: RTCPeerConnection,
     resolve: (t: GameTransport) => void, reject: (e: Error) => void,
   ): void {
-    let nonce = '';
-    const sendAuthRequest = (): void => {
-      nonce = newNonce();
-      const payload = textEncoder.encode(JSON.stringify({ t: 'auth-request', pubkey: this.pubkey, nonce }));
-      transport.send(encodeMessage(GameMsg.Auth, payload));
+    const nonce = newNonce();
+    const request = encodeMessage(GameMsg.Auth, textEncoder.encode(
+      JSON.stringify({ t: 'auth-request', pubkey: this.pubkey, nonce })));
+    let retry = 0;
+    const stop = (): void => {
+      if (retry) { clearInterval(retry); retry = 0; }
+    };
+    const sendAuthRequest = (): void => transport.send(request);
+    const arm = (): void => {
+      sendAuthRequest();
+      // The host may not have registered this channel yet (its onopen can lose
+      // the race with our answer): keep asking until it answers.
+      if (!retry) retry = setInterval(sendAuthRequest, 700) as unknown as number;
     };
     transport.onmessage = (data) => {
       void (async () => {
@@ -2151,12 +2173,15 @@ export class Multiplayer implements DmTransport {
           if (msg.t !== 'auth-ok' || msg.nonce !== nonce
               || !verifyAuth(room.hostPubkey, room.id, this.pubkey, nonce, msg.sig ?? '')) {
             trace('joinRoom.authFailed', msg.reason ?? 'bad signature');
+            stop();
             reject(new Error('host authentication failed'));
             return;
           }
           trace('joinRoom.authOk', null);
+          stop();
           resolve(tapTransport(transport, (data) => void this.onRoomFrame(data)));
         } catch {
+          stop();
           reject(new Error('host authentication failed'));
         }
       })();
@@ -2165,13 +2190,13 @@ export class Multiplayer implements DmTransport {
       trace('joinRoom.channelOpen', null);
       const join = this.guestJoin;
       if (join?.answerTimer) { clearTimeout(join.answerTimer); join.answerTimer = 0; }
-      sendAuthRequest();
+      arm();
     };
-    channel.onclose = () => reject(new Error('connection closed'));
+    channel.onclose = () => { stop(); reject(new Error('connection closed')); };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') reject(new Error('connection failed'));
+      if (pc.connectionState === 'failed') { stop(); reject(new Error('connection failed')); }
     };
-    if (channel.readyState === 'open') sendAuthRequest();
+    if (channel.readyState === 'open') arm();
   }
 
   /** Guest: a signal from the host (offer / ICE / bye) for a browser room. */

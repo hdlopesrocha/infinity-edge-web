@@ -231,11 +231,9 @@ export class GameInstance {
         else if (goal.name === 'Destroyed') {
           r.addCondition(new CondDestroyed((gi.objects.get(goal.value ?? '') as SpaceObject | undefined) ?? null));
         } else if (goal.name === 'MorePoints') {
-          const team = gi.teams.get(goal.value ?? '');
-          if (team) r.addCondition(new CondMorePoints(team));
+          r.addCondition(new CondMorePoints(goal.value ?? ''));
         } else if (goal.name === 'DrawPoints') {
-          const team = gi.teams.get(goal.value ?? '');
-          if (team) r.addCondition(new CondDrawPoints(team));
+          r.addCondition(new CondDrawPoints(goal.value ?? ''));
         }
       }
       gi.goals.push(r);

@@ -208,39 +208,52 @@ export class CondLessTime extends Condition {
   }
 }
 
+/**
+ * The team a level goal's `MorePoints`/`DrawPoints` name refers to. Levels name
+ * the friendly side `team1`, but the player may have picked another team, so a
+ * `team1` goal resolves to the player's own team; any other name is used as-is.
+ */
+function friendlyTeam(gi: GameInstance, name: string): Team | null {
+  const own = gi.selectedObject?.team ?? null;
+  if (own && (name === '' || name === 'team1')) return own;
+  return gi.teams.get(name) ?? own;
+}
+
 export class CondMorePoints extends Condition {
-  constructor(private team: Team) {
+  constructor(private teamName: string) {
     super();
   }
 
-  /** True when `team` has strictly more points than every other combatant. */
+  /** True when the player's team has strictly more points than every other. */
   check(gi: GameInstance): boolean {
-    const mine = this.team.points;
+    const mine = friendlyTeam(gi, this.teamName);
+    if (!mine) return false;
     for (const t of combatants(gi)) {
-      if (t === this.team) continue;
-      if (t.points >= mine) return false;
+      if (t === mine) continue;
+      if (t.points >= mine.points) return false;
     }
     return true;
   }
 }
 
 /**
- * CTF draw: `team` is tied for the top score with at least one other combatant
- * (nobody is strictly ahead, and at least one other shares the lead). A team
- * that is strictly ahead is a win, not a draw.
+ * CTF draw: the player's team is tied for the top score with at least one other
+ * combatant (nobody is strictly ahead, and at least one other shares the lead).
+ * A team that is strictly ahead is a win, not a draw.
  */
 export class CondDrawPoints extends Condition {
-  constructor(private team: Team) {
+  constructor(private teamName: string) {
     super();
   }
 
   check(gi: GameInstance): boolean {
-    const mine = this.team.points;
+    const mine = friendlyTeam(gi, this.teamName);
+    if (!mine) return false;
     let tied = false;
     for (const t of combatants(gi)) {
-      if (t === this.team) continue;
-      if (t.points > mine) return false;
-      if (t.points === mine) tied = true;
+      if (t === mine) continue;
+      if (t.points > mine.points) return false;
+      if (t.points === mine.points) tied = true;
     }
     return tied;
   }
